@@ -1,0 +1,14 @@
+(mod (PUZZLE_HASH_A PUZZLE_HASH_B puzzle_reveal solution)
+
+     (include utility_macros.clib)
+
+     (include sha256tree.clib)
+
+     (defun is_one_of (x A B)
+         (any (= x A) (= x B))
+     )
+
+     (assert (is_one_of (sha256tree puzzle_reveal) PUZZLE_HASH_A PUZZLE_HASH_B)
+             (a puzzle_reveal solution)
+     )
+)
