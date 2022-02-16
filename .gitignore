@@ -5,3 +5,4 @@ chia_internal_custody.egg-info
 __pycache__
 *.recompiled
 .mypy_cache
+main.sym
