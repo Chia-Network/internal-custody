@@ -61,7 +61,7 @@
   ;; we return the hash of the curried expression
   ;;   (a (q . function-hash) (c (cp1 (c cp2 (c ... 1)...))))
 
-  (defun puzzle-hash-of-curried-function (function-hash . reversed-curry-parameter-hashes)
+  (defun puzzle_hash_of_curried_function (function-hash . reversed-curry-parameter-hashes)
      (tree-hash-of-apply function-hash
                          (build-curry-list reversed-curry-parameter-hashes (sha256 ONE ONE)))
   )

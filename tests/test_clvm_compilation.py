@@ -8,6 +8,7 @@ from chia.types.blockchain_format.program import Program, SerializedProgram
 program_files = set(
     [
         "cic/clsp/singleton_top_layer_v1_1.clsp",
+        "cic/clsp/rl.clsp",
     ]
 )
 
