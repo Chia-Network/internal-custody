@@ -10,6 +10,7 @@ from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.spend_bundle import SpendBundle
 from chia.types.coin_spend import CoinSpend
 from chia.util.ints import uint64
+from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import pay_to_singleton_puzzle
 
 from cic.drivers.prefarm import construct_singleton_inner_puzzle
@@ -26,6 +27,7 @@ class SetupInfo:
     singleton: Coin
     p2_singleton: Coin
     launcher_id: bytes32
+    first_lineage_proof: LineageProof
     initial_drain_date: uint64
     drain_rate: uint64
 
@@ -83,6 +85,7 @@ async def setup_info():
         big_coin,
         small_coin,
         launch_spend.coin.name(),
+        LineageProof(parent_name=launch_spend.coin.parent_coin_info, amount=launch_spend.coin.amount),
         INITIAL_DRAIN_DATE,
         DRAIN_RATE,
     )

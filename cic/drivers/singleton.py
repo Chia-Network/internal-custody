@@ -7,11 +7,14 @@ from chia.types.coin_spend import CoinSpend
 from chia.types.condition_opcodes import ConditionOpcode
 from chia.util.hash import std_hash
 from chia.util.ints import uint64
-from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER, SINGLETON_LAUNCHER_HASH
+from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER, SINGLETON_LAUNCHER_HASH, solution_for_singleton
 
 from cic.load_clvm import load_clvm
 
 SINGLETON_MOD = load_clvm("singleton_top_layer_v1_1.clsp", package_or_requirement="cic.clsp")
+
+
+solve_singleton = solution_for_singleton
 
 
 # Return the puzzle reveal of a singleton with specific ID and innerpuz
