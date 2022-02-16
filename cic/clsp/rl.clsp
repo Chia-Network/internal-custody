@@ -49,8 +49,8 @@
 
   (defun-inline assert_rate (possible_withdrawal_amount withdrawal_amount current_time)
     (assert
-      (> possible_withdrawal_amount withdrawal_amount)
-      (list ASSERT_HEIGHT_ABSOLUTE current_time)
+      (i withdrawal_amount (> possible_withdrawal_amount withdrawal_amount) ONE)
+      (list ASSERT_SECONDS_ABSOLUTE current_time)
     )
   )
 
