@@ -5,6 +5,7 @@ from chia.util.ints import uint64
 from cic.drivers.singleton import construct_singleton
 from cic.drivers.rate_limiting import construct_rate_limiting_puzzle
 
+
 def construct_singleton_inner_puzzle(
     initial_drain_date: uint64,
     drain_rate: uint64,
@@ -16,6 +17,7 @@ def construct_singleton_inner_puzzle(
         inner_puzzle,
     )
 
+
 def construct_full_singleton(
     launcher_id: bytes32,
     initial_drain_date: uint64,
@@ -24,9 +26,9 @@ def construct_full_singleton(
 ) -> Program:
     return construct_singleton(
         launcher_id,
-        construct_inner_puzzle(
+        construct_singleton_inner_puzzle(
             initial_drain_date,
             drain_rate,
             inner_puzzle,
-        )
+        ),
     )

@@ -1,6 +1,3 @@
-import importlib
-import inspect
-import os
 import pathlib
 
 import pkg_resources
@@ -24,7 +21,11 @@ def load_serialized_clvm(clvm_filename, package_or_requirement=__name__) -> Seri
         if pkg_resources.resource_exists(package_or_requirement, clvm_filename):
             full_path = pathlib.Path(pkg_resources.resource_filename(package_or_requirement, clvm_filename))
             output = full_path.parent / hex_filename
-            compile_clvm(str(full_path), str(output), search_paths=[str(full_path.parent), str(full_path.parent.joinpath("include"))])
+            compile_clvm(
+                str(full_path),
+                str(output),
+                search_paths=[str(full_path.parent), str(full_path.parent.joinpath("include"))],
+            )
     except NotImplementedError:
         # pyinstaller doesn't support `pkg_resources.resource_exists`
         # so we just fall through to loading the hex clvm
