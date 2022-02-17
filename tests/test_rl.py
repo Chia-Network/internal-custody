@@ -29,7 +29,7 @@ class SetupInfo:
     singleton: Coin
     launcher_id: bytes32
     first_lineage_proof: LineageProof
-    initial_drain_date: uint64
+    start_date: uint64
     drain_rate: uint64
 
 
@@ -40,7 +40,7 @@ async def setup_info():
     await sim.farm_block(ACS_PH)
 
     # Define constants
-    INITIAL_DRAIN_DATE = uint64(sim.timestamp)
+    START_DATE = uint64(sim.timestamp)
     DRAIN_RATE = 1  # 1 mojo per second
 
     # Identify the coin
@@ -48,8 +48,9 @@ async def setup_info():
     coin = next(cr.coin for cr in prefarm_coins if cr.coin.amount == 18375000000000000000)
 
     # Launch it to the starting state
+    starting_amount = 18374999999999999999
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
-        coin, construct_rate_limiting_puzzle(INITIAL_DRAIN_DATE, DRAIN_RATE, ACS), 18374999999999999999
+        coin, construct_rate_limiting_puzzle(START_DATE, starting_amount, DRAIN_RATE, ACS), 18374999999999999999
     )
     creation_bundle = SpendBundle(
         [
@@ -76,7 +77,7 @@ async def setup_info():
         coin,
         launch_spend.coin.name(),
         LineageProof(parent_name=launch_spend.coin.parent_coin_info, amount=launch_spend.coin.amount),
-        INITIAL_DRAIN_DATE,
+        START_DATE,
         DRAIN_RATE,
     )
 
@@ -92,7 +93,7 @@ async def test_draining(setup_info):
 
         # Construct the spend
         initial_rl_puzzle: Program = construct_rate_limiting_puzzle(
-            setup_info.initial_drain_date, setup_info.drain_rate, ACS
+            setup_info.start_date, setup_info.singleton.amount, setup_info.drain_rate, ACS
         )
         first_drain_spend = SpendBundle(
             [
@@ -106,7 +107,6 @@ async def test_draining(setup_info):
                         setup_info.first_lineage_proof,
                         setup_info.singleton.amount,
                         solve_rate_limiting_puzzle(
-                            setup_info.singleton.amount,
                             drain_time,
                             Program.to([[51, ACS_PH, setup_info.singleton.amount - TO_DRAIN]]),
                         ),
@@ -133,14 +133,13 @@ async def test_draining(setup_info):
         await setup_info.sim.farm_block()
 
         # Create the next spend
-        new_rl_puzzle: Program = construct_rate_limiting_puzzle(drain_time, setup_info.drain_rate, ACS)
         second_drain_spend = SpendBundle(
             [
                 CoinSpend(
                     new_coin,
                     construct_singleton(
                         setup_info.launcher_id,
-                        new_rl_puzzle,
+                        initial_rl_puzzle,
                     ),
                     solve_singleton(
                         LineageProof(
@@ -150,7 +149,6 @@ async def test_draining(setup_info):
                         ),
                         new_coin.amount,
                         solve_rate_limiting_puzzle(
-                            new_coin.amount,
                             next_drain_time,
                             Program.to([[51, ACS_PH, new_coin.amount - TO_DRAIN]]),
                         ),
@@ -171,7 +169,7 @@ async def test_draining(setup_info):
             new_coin.puzzle_hash
             == construct_singleton(
                 setup_info.launcher_id,
-                construct_rate_limiting_puzzle(next_drain_time, setup_info.drain_rate, ACS),
+                initial_rl_puzzle,
             ).get_tree_hash()
         )
     finally:
@@ -189,7 +187,7 @@ async def test_cant_drain_more(setup_info):
 
         # Construct the spend
         initial_rl_puzzle: Program = construct_rate_limiting_puzzle(
-            setup_info.initial_drain_date, setup_info.drain_rate, ACS
+            setup_info.start_date, setup_info.singleton.amount, setup_info.drain_rate, ACS
         )
         drain_spend = SpendBundle(
             [
@@ -203,7 +201,6 @@ async def test_cant_drain_more(setup_info):
                         setup_info.first_lineage_proof,
                         setup_info.singleton.amount,
                         solve_rate_limiting_puzzle(
-                            setup_info.singleton.amount,
                             drain_time,
                             Program.to([[51, ACS_PH, setup_info.singleton.amount - TO_DRAIN]]),
                         ),
@@ -238,7 +235,7 @@ async def test_refill_is_ignored(setup_info):
         # Construct a spend without any time having passed
         TO_REFILL = uint64(10)
         initial_rl_puzzle: Program = construct_rate_limiting_puzzle(
-            setup_info.initial_drain_date, setup_info.drain_rate, ACS
+            setup_info.start_date, setup_info.singleton.amount, setup_info.drain_rate, ACS
         )
         refill_spend = SpendBundle(
             [
@@ -252,8 +249,7 @@ async def test_refill_is_ignored(setup_info):
                         setup_info.first_lineage_proof,
                         setup_info.singleton.amount,
                         solve_rate_limiting_puzzle(
-                            setup_info.singleton.amount,
-                            setup_info.initial_drain_date,
+                            setup_info.start_date,
                             Program.to([[51, ACS_PH, setup_info.singleton.amount + TO_REFILL]]),
                         ),
                     ),
