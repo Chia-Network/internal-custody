@@ -28,7 +28,7 @@ class SetupInfo:
     p2_singleton: Coin
     launcher_id: bytes32
     first_lineage_proof: LineageProof
-    initial_drain_date: uint64
+    start_date: uint64
     drain_rate: uint64
 
 
@@ -39,7 +39,7 @@ async def setup_info():
     await sim.farm_block(ACS_PH)
 
     # Define constants
-    INITIAL_DRAIN_DATE = uint64(sim.timestamp)
+    START_DATE = uint64(sim.timestamp)
     DRAIN_RATE = 1  # 1 mojo per second
 
     # Identify the prefarm coins
@@ -48,8 +48,9 @@ async def setup_info():
     small_coin = next(cr.coin for cr in prefarm_coins if cr.coin.amount == 2625000000000000000)
 
     # Launch them to their starting state
+    starting_amount = 18374999999999999999
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
-        big_coin, construct_singleton_inner_puzzle(INITIAL_DRAIN_DATE, DRAIN_RATE, ACS), 18374999999999999999
+        big_coin, construct_singleton_inner_puzzle(START_DATE, starting_amount, DRAIN_RATE, ACS), starting_amount
     )
     creation_bundle = SpendBundle(
         [
@@ -86,7 +87,7 @@ async def setup_info():
         small_coin,
         launch_spend.coin.name(),
         LineageProof(parent_name=launch_spend.coin.parent_coin_info, amount=launch_spend.coin.amount),
-        INITIAL_DRAIN_DATE,
+        START_DATE,
         DRAIN_RATE,
     )
 

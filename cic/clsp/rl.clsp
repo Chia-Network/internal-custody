@@ -1,11 +1,11 @@
 (mod
   (
     MOD_HASH
+    START_DATE
+    STARTING_AMOUNT
     RATE  ; mojos per second
-    LAST_DRAIN
     INNER_PUZZLE
     current_time
-    my_amount
     inner_solution
   )
 
@@ -28,6 +28,8 @@
     (
       singleton_condition
       MOD_HASH
+      START_DATE
+      STARTING_AMOUNT
       RATE
       current_time
     )
@@ -37,8 +39,9 @@
       (c
         (puzzle_hash_of_curried_function MOD_HASH
           (puzzle_hash singleton_condition)
-          (sha256 1 current_time)
           (sha256 1 RATE)
+          (sha256 1 STARTING_AMOUNT)
+          (sha256 1 START_DATE)
           (sha256 1 MOD_HASH)
         )
         (r (r singleton_condition))
@@ -47,40 +50,43 @@
   )
 
 
-  (defun-inline assert_rate (possible_withdrawal_amount withdrawal_amount current_time)
+  (defun-inline assert_rate (withdrawn_amount possible_withdrawn_amount current_time)
     (assert
-      (i withdrawal_amount (> possible_withdrawal_amount withdrawal_amount) ONE)
+      (> possible_withdrawn_amount withdrawn_amount)
       (list ASSERT_SECONDS_ABSOLUTE current_time)
     )
-  )
-
-  (defun-inline calculate_possible_withdrawal (RATE LAST_HEIGHT current_time)
-    (* RATE (- current_time LAST_HEIGHT))
   )
 
   (defun generate_final_conditions
     (
       singleton_condition
       remaining_conditions
-      withdrawal_amount
-      possible_withdrawal_amount
+      withdrawn_amount
+      possible_withdrawn_amount
       MOD_HASH
+      START_DATE
+      STARTING_AMOUNT
       RATE
       current_time
     )
 
     (c
-      (assert_rate possible_withdrawal_amount withdrawal_amount current_time)
+      (assert_rate withdrawn_amount possible_withdrawn_amount current_time)
       (c
         (morph_singleton_condition
           singleton_condition
           MOD_HASH
+          START_DATE
+          STARTING_AMOUNT
           RATE
-          current_time
         )
         remaining_conditions
       )
     )
+  )
+
+  (defun-inline calculate_possible_withdrawal (START_DATE RATE current_time)
+    (* RATE (- current_time START_DATE))
   )
 
   (defun found_singleton
@@ -89,19 +95,21 @@
       remaining_conditions
       (
         MOD_HASH
+        START_DATE
+        STARTING_AMOUNT
         RATE
-        LAST_DRAIN
         current_time
-        my_amount
       )
     )
 
     (generate_final_conditions
       singleton_condition
       remaining_conditions
-      (max (- my_amount (coin_amount singleton_condition)) 0)  ; adding value does not count for negative rate accounting
-      (calculate_possible_withdrawal RATE LAST_DRAIN current_time)
+      (- STARTING_AMOUNT (coin_amount singleton_condition))
+      (calculate_possible_withdrawal START_DATE RATE current_time)
       MOD_HASH
+      START_DATE
+      STARTING_AMOUNT
       RATE
       current_time
     )
@@ -124,18 +132,15 @@
   )
 
   ; main
-  (c
-    (list ASSERT_MY_AMOUNT my_amount)
-    (search_for_singleton
-      (a INNER_PUZZLE inner_solution)
-      found_singleton
-      (list
-        MOD_HASH
-        RATE
-        LAST_DRAIN
-        current_time
-        my_amount
-      )
+  (search_for_singleton
+    (a INNER_PUZZLE inner_solution)
+    found_singleton
+    (list
+      MOD_HASH
+      START_DATE
+      STARTING_AMOUNT
+      RATE
+      current_time
     )
   )
 )
