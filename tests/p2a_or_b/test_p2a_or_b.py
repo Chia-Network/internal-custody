@@ -5,7 +5,7 @@ from chia.wallet.puzzles.p2_conditions import puzzle_for_conditions
 from chia.types.blockchain_format.program import Program
 
 
-from cic.p2a_or_b import puzzle_for_puzzle_hashes, solution_for_inner_solution
+from cic.rk.p2a_or_b import puzzle_for_puzzle_hashes, solution_for_inner_solution
 
 
 def test_p2_a_or_b():

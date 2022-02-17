@@ -1,7 +1,7 @@
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
 
-from cic.drivers.load_clvm import load_clvm
+from cic.rk.load_clvm import load_clvm
 
 MOD = load_clvm("p2a_or_b.clsp", package_or_requirement=__package__, include_paths=["../clsp/include/"])
 
