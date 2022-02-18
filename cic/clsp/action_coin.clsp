@@ -1,0 +1,32 @@
+(mod
+  (
+    LAUNCHER_MOD_HASH
+    ACTION_PUZZLE
+    additional_conditions
+    additional_state
+    (launcher_parent launcher_amount)
+    action_solution
+  )
+
+  (include condition_codes.clib)
+  (include curry_and_treehash.clib)
+  (include sha256tree.clib)
+
+  (defun-inline calculate_launcher_puzzle_hash (LAUNCHER_MOD_HASH additional_conditions additional_state)
+    (puzzle_hash_of_curried_function LAUNCHER_MOD_HASH
+      (sha256tree additional_state)
+      (sha256tree additional_conditions)
+    )
+  )
+
+  (c
+    (list ASSERT_MY_PARENT_ID
+      (sha256
+        launcher_parent
+        (calculate_launcher_puzzle_hash LAUNCHER_MOD_HASH additional_conditions additional_state)
+        launcher_amount
+      )
+    )
+    (a ACTION_PUZZLE (c additional_conditions (c additional_state action_solution)))
+  )
+)
