@@ -1,7 +1,5 @@
 import pytest
 
-from typing import List
-
 from blspy import G2Element
 
 from chia.clvm.spend_sim import SpendSim, SimClient
@@ -13,9 +11,10 @@ from chia.types.spend_bundle import SpendBundle
 from chia.wallet.lineage_proof import LineageProof
 
 from cic.drivers.action_coins import (
-    generate_stateful_launch_conditions_and_coin_spend,
-    construct_action_coin,
-    solve_action_coin,
+    construct_action_launcher,
+    construct_action_puzzle,
+    solve_action_launcher,
+    solve_action_puzzle,
 )
 
 ACS = Program.to(1)
@@ -33,25 +32,26 @@ async def test_setup():
         fund_coin: Coin = coin_records[0].coin
 
         # Define our action's state
-        ADDITIONAL_CONDITIONS: List[Program] = [Program.to([60, b"\xdeadbeef"])]
-        ADDITIONAL_STATE: Program = Program.to([b"\xcafef00d", b"\xf00dcafe", b"\xf00d"])
+        INITIATION_PUZZLE: Program = ACS
+        ACTION_INNER_PUZZLE: Program = ACS
+        action_full_puzzle: Program = construct_action_puzzle(INITIATION_PUZZLE, ACTION_INNER_PUZZLE)
+        INITIATION_SOLUTION: Program = Program.to([[51, action_full_puzzle.get_tree_hash(), fund_coin.amount]])
 
         # Generate the launch spend
-        launch_conditions, launch_spend = generate_stateful_launch_conditions_and_coin_spend(
-            fund_coin,
-            ADDITIONAL_CONDITIONS,
-            ADDITIONAL_STATE,
-            Program.to([]),
-            fund_coin.amount,
-        )
+        launcher_puzzle: Program = construct_action_launcher(INITIATION_PUZZLE, INITIATION_SOLUTION)
+        launcher_coin = Coin(fund_coin.name(), launcher_puzzle.get_tree_hash(), fund_coin.amount)
         launch_bundle = SpendBundle(
             [
                 CoinSpend(
                     fund_coin,
                     ACS,
-                    Program.to([*launch_conditions]),
+                    Program.to([[51, launcher_puzzle.get_tree_hash(), fund_coin.amount]]),
                 ),
-                launch_spend,
+                CoinSpend(
+                    launcher_coin,
+                    launcher_puzzle,
+                    solve_action_launcher(),
+                ),
             ],
             G2Element(),
         )
@@ -62,8 +62,7 @@ async def test_setup():
         await sim.farm_block()
 
         # Find the next coin
-        action_puzzle: Program = construct_action_coin(Program.to([]))
-        coin_records = await sim_client.get_coin_records_by_puzzle_hashes([action_puzzle.get_tree_hash()])
+        coin_records = await sim_client.get_coin_records_by_puzzle_hashes([action_full_puzzle.get_tree_hash()])
         action_coin: Coin = coin_records[0].coin
 
         # Try to spend it
@@ -71,11 +70,10 @@ async def test_setup():
             [
                 CoinSpend(
                     action_coin,
-                    action_puzzle,
-                    solve_action_coin(
-                        ADDITIONAL_CONDITIONS,
-                        ADDITIONAL_STATE,
-                        LineageProof(parent_name=launch_spend.coin.parent_coin_info, amount=launch_spend.coin.amount),
+                    action_full_puzzle,
+                    solve_action_puzzle(
+                        LineageProof(parent_name=launcher_coin.parent_coin_info, amount=launcher_coin.amount),
+                        INITIATION_SOLUTION,
                         Program.to([]),
                     ),
                 ),
@@ -83,9 +81,11 @@ async def test_setup():
             G2Element(),
         )
 
-        # Process the results
-        result = await sim_client.push_tx(action_bundle)
-        assert result[0] == MempoolInclusionStatus.SUCCESS
-        await sim.farm_block()
+        # Check the output of the action coin
+        action_coin_puzzle: Program = action_bundle.coin_spends[0].puzzle_reveal.to_program()
+        action_coin_solution: Program = action_bundle.coin_spends[0].solution.to_program()
+        assert action_coin_puzzle.run(action_coin_solution) == Program.to(
+            ([71, launcher_coin.name()], [INITIATION_PUZZLE.get_tree_hash(), INITIATION_SOLUTION])
+        )
     finally:
         await sim.close()

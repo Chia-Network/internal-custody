@@ -1,0 +1,11 @@
+(mod
+  (
+      INITIATION_PUZZLE
+      INITIATION_SOLUTION
+  )
+
+  (include condition_codes.clib)
+  (include sha256tree.clib)
+
+  (a INITIATION_PUZZLE INITIATION_SOLUTION)
+)

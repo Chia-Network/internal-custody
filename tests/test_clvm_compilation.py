@@ -9,7 +9,7 @@ program_files = set(
     [
         "cic/clsp/singleton_top_layer_v1_1.clsp",
         "cic/clsp/rl.clsp",
-        "cic/clsp/stateful_launcher.clsp",
+        "cic/clsp/action_launcher.clsp",
         "cic/clsp/action_coin.clsp",
     ]
 )
