@@ -1,8 +1,12 @@
-from typing import Tuple, Dict, List, Any
+from typing import Tuple, Dict, List, Any, Union
 
 import hashlib
 
 from chia.types.blockchain_format.sized_bytes import bytes32
+
+
+TupleTree = Any  # Union[bytes32, Tuple["TupleTree", "TupleTree"]]
+Proof_Tree_Type = Any  # Union[bytes32, Tuple[bytes32, "Proof_Tree_Type"]]
 
 
 # paths here are not quite the same a `NodePath` paths. We don't need the high order bit
@@ -13,12 +17,13 @@ def compose_paths(path_1: int, path_2: int, path_2_length: int) -> int:
     return (path_1 << path_2_length) | path_2
 
 
-def sha256(*args: Tuple[bytes]) -> bytes32:
+def sha256(*args: bytes) -> bytes32:
     return bytes32(hashlib.sha256(b"".join(args)).digest())
 
 
-def build_merkle_tree_from_2_tuples(tuples) -> Tuple[bytes32, Dict[bytes32, List[bytes32]]]:
+def build_merkle_tree_from_2_tuples(tuples: TupleTree) -> Tuple[bytes32, Dict[bytes32, Tuple[int, List[bytes32]]]]:
     if isinstance(tuples, bytes):
+        tuples = bytes32(tuples)
         return tuples, {tuples: (0, [])}
 
     left, right = tuples
@@ -47,12 +52,58 @@ def list_to_2_tuples(objects: List[Any]):
     return (list_to_2_tuples(first_half), list_to_2_tuples(last_half))
 
 
-def build_merkle_tree(objects: List[bytes32]) -> Tuple[bytes32, Dict[bytes32, List[bytes32]]]:
+def build_merkle_tree(objects: List[bytes32]) -> Tuple[bytes32, Dict[bytes32, Tuple[int, List[bytes32]]]]:
     """
     return (merkle_root, dict_of_proofs)
     """
     objects_2_tuples = list_to_2_tuples(objects)
     return build_merkle_tree_from_2_tuples(objects_2_tuples)
+
+
+def build_merkle_tree_from_2_tuples2(tuples) -> Tuple[bytes32, Dict[bytes32, int], TupleTree]:
+    if isinstance(tuples, bytes):
+        tuples = bytes32(tuples)
+        return tuples, {tuples: 1}, tuples
+
+    left, right = tuples
+    left_root, left_lookup, left_subtree = build_merkle_tree_from_2_tuples2(left)
+    right_root, right_lookup, right_subtree = build_merkle_tree_from_2_tuples2(right)
+
+    new_root = sha256(left_root, right_root)
+
+    new_lookup = {}
+    for name, path in left_lookup.items():
+        new_lookup[name] = path + path
+    for name, path in right_lookup.items():
+        new_lookup[name] = path + path + 1
+
+    new_subtree = (new_root, (left_subtree, right_subtree))
+    return new_root, new_lookup, new_subtree
+
+
+def build_merkle_tree2(objects: List[bytes32]) -> Tuple[bytes32, Dict[bytes32, int], TupleTree]:
+    """
+    return (merkle_root, dict_of_paths, tuple_tree)
+    """
+    objects_2_tuples = list_to_2_tuples(objects)
+    return build_merkle_tree_from_2_tuples2(objects_2_tuples)
+
+
+def merkle_proof_from_path_and_tree(node_path: int, proof_tree: Proof_Tree_Type) -> Union[int, List[bytes32]]:
+    proof_path = 0
+    proof = []
+    while not isinstance(proof_tree, bytes32):
+        left_vs_right = node_path & 1
+        path_element = proof_tree[1][1 - left_vs_right]
+        if isinstance(path_element, bytes32):
+            proof.append(path_element)
+        else:
+            proof.append(path_element[0])
+        node_path >>= 1
+        proof_tree = proof_tree[1][left_vs_right]
+        proof_path += proof_path + left_vs_right
+    proof.reverse()
+    return proof_path, proof
 
 
 def simplify_merkle_proof(tree_hash: bytes32, proof: Tuple[int, List[bytes32]]) -> bytes32:
