@@ -1,0 +1,36 @@
+(mod (INNER_PUZZLE MERKLE_ROOT parameters merkle_proof solution)
+  ; This puzzle takes an inner puzzle and a merkle root.
+  ; The merkle root contains a tree of parameters that will be passed to the
+  ; `INNER_PUZZLE` function along with the solution.
+  ;
+  ; Note that this inner puzzle takes TWO parameters, as opposed to a typical puzzle
+  ; which only takes one (the solution).
+
+  (defun sha256tree
+         (TREE)
+         (if (l TREE)
+             (sha256 2 (sha256tree (f TREE)) (sha256tree (r TREE)))
+             (sha256 1 TREE)
+         )
+  )
+
+  (defun simplify_merkle_proof (leaf_hash (bitpath . hashes_path))
+         (if hashes_path
+             (simplify_merkle_proof
+  
+                 (if (logand 1 bitpath)
+                     (sha256 (f hashes_path) leaf_hash)
+                     (sha256 leaf_hash (f hashes_path))
+                 )
+                 (c (lsh bitpath -1) (r hashes_path))
+             )
+             leaf_hash
+          )
+  )
+
+  (if
+    (= MERKLE_ROOT (simplify_merkle_proof (sha256tree parameters) merkle_proof))
+    (a INNER_PUZZLE (list parameters solution))
+    (x)
+  )
+)
