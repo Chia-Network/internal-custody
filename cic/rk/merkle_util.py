@@ -60,35 +60,6 @@ def build_merkle_tree(objects: List[bytes32]) -> Tuple[bytes32, Dict[bytes32, Tu
     return build_merkle_tree_from_binary_tree(objects_binary_tree)
 
 
-def build_merkle_tree_from_binary_tree2(tuples) -> Tuple[bytes32, Dict[bytes32, int], TupleTree]:
-    if isinstance(tuples, bytes):
-        tuples = bytes32(tuples)
-        return tuples, {tuples: 1}, tuples
-
-    left, right = tuples
-    left_root, left_lookup, left_subtree = build_merkle_tree_from_binary_tree2(left)
-    right_root, right_lookup, right_subtree = build_merkle_tree_from_binary_tree2(right)
-
-    new_root = sha256(left_root, right_root)
-
-    new_lookup = {}
-    for name, path in left_lookup.items():
-        new_lookup[name] = path + path
-    for name, path in right_lookup.items():
-        new_lookup[name] = path + path + 1
-
-    new_subtree = (new_root, (left_subtree, right_subtree))
-    return new_root, new_lookup, new_subtree
-
-
-def build_merkle_tree2(objects: List[bytes32]) -> Tuple[bytes32, Dict[bytes32, int], TupleTree]:
-    """
-    return (merkle_root, dict_of_paths, tuple_tree)
-    """
-    objects_binary_tree = list_to_binary_tree(objects)
-    return build_merkle_tree_from_binary_tree2(objects_binary_tree)
-
-
 def merkle_proof_from_path_and_tree(node_path: int, proof_tree: Proof_Tree_Type) -> Union[int, List[bytes32]]:
     proof_path = 0
     proof = []

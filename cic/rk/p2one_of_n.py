@@ -1,6 +1,6 @@
 from typing import List
 
-from ..merkle_util import build_merkle_tree
+from .merkle_util import build_merkle_tree
 
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32

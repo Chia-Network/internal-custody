@@ -5,7 +5,7 @@ from chia.wallet.puzzles.p2_conditions import puzzle_for_conditions
 from chia.types.blockchain_format.program import Program
 
 
-from cic.rk.p2a_or_b.p2a_or_b_merkle import puzzle_for_puzzle_hashes, solution_for_inner_solution
+from cic.rk.p2one_of_n import puzzle_for_puzzle_hashes, solution_for_inner_solution
 
 
 def test_p2_a_or_b():
@@ -13,12 +13,12 @@ def test_p2_a_or_b():
     puzzle_b = puzzle_for_conditions([b"BAR"])
     puzzle_a_hash = puzzle_a.get_tree_hash()
     puzzle_b_hash = puzzle_b.get_tree_hash()
-    puzzle = puzzle_for_puzzle_hashes(puzzle_a_hash, puzzle_b_hash)
-    solution_for_a = solution_for_inner_solution(puzzle_a_hash, puzzle_b_hash, puzzle_a, Program.to(b""))
+    puzzle = puzzle_for_puzzle_hashes([puzzle_a_hash, puzzle_b_hash])
+    solution_for_a = solution_for_inner_solution([puzzle_a_hash, puzzle_b_hash], puzzle_a, Program.to(b""))
     r = puzzle.run(solution_for_a)
     assert r.as_bin().hex() == "ff83464f4f80"
 
-    solution_for_b = solution_for_inner_solution(puzzle_a_hash, puzzle_b_hash, puzzle_b, Program.to(b""))
+    solution_for_b = solution_for_inner_solution([puzzle_a_hash, puzzle_b_hash], puzzle_b, Program.to(b""))
     r = puzzle.run(solution_for_b)
     assert r.as_bin().hex() == "ff8342415280"
 
