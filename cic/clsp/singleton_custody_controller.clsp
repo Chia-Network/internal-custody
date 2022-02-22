@@ -1,0 +1,37 @@
+(mod
+  (
+    THIS_MOD_HASH
+    ACTIONS_ROOT
+    STATE
+    my_amount
+    action_reveal
+    proof_of_inclusion
+    new_actions_root
+    new_state
+    new_amount
+  )
+
+  (include merkle_utils.clib)
+  (include condition_codes.clib)
+  (include utility_macros.clib)
+  (include sha256tree.clib)
+  (include curry_and_treehash.clib)
+
+  (defun-inline calculate_new_puzzle_hash (THIS_MOD_HASH new_actions_root new_state)
+    (puzzle_hash_of_curried_function THIS_MOD_HASH
+      (sha256tree new_state)
+      (sha256 1 new_actions_root)
+      (sha256 1 THIS_MOD_HASH)
+    )
+  )
+
+  (assert (= ACTIONS_ROOT (calculate_merkle_root_for_merkle_proof action_reveal proof_of_inclusion))
+    (list
+      (list ASSERT_MY_AMOUNT my_amount)
+      (list ASSERT_PUZZLE_ANNOUNCEMENT (sha256 action_reveal (sha256tree (list new_actions_root new_state new_amount))))
+      (list CREATE_PUZZLE_ANNOUNCEMENT (sha256tree (list ACTIONS_ROOT STATE my_amount)))
+      (list CREATE_COIN (calculate_new_puzzle_hash THIS_MOD_HASH new_actions_root new_state) new_amount)
+    )
+  )
+
+)
