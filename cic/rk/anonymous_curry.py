@@ -7,7 +7,7 @@ from chia.types.blockchain_format.sized_bytes import bytes32
 from clvm_tools.binutils import assemble
 
 
-def sha256(*args: Tuple[bytes]) -> bytes32:
+def sha256(*args: bytes) -> bytes32:
     return bytes32(hashlib.sha256(b"".join(args)).digest())
 
 
@@ -63,7 +63,7 @@ def anonymous_curry(template_hash: bytes32, *parameter_hashes: Tuple[bytes32]) -
     return final_hash
 
 
-def test_anonymous_curry(puzzle: Program, *args: Tuple[Program]):
+def test_anonymous_curry(puzzle: Program, *args: Program):
     p1_curried = puzzle.curry(*list(args))
     p1 = p1_curried.get_tree_hash()
     p2 = anonymous_curry(puzzle.get_tree_hash(), *[Program.to(_).get_tree_hash() for _ in args])
