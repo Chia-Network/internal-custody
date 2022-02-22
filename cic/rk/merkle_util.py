@@ -21,14 +21,14 @@ def sha256(*args: bytes) -> bytes32:
     return bytes32(hashlib.sha256(b"".join(args)).digest())
 
 
-def build_merkle_tree_from_2_tuples(tuples: TupleTree) -> Tuple[bytes32, Dict[bytes32, Tuple[int, List[bytes32]]]]:
+def build_merkle_tree_from_binary_tree(tuples: TupleTree) -> Tuple[bytes32, Dict[bytes32, Tuple[int, List[bytes32]]]]:
     if isinstance(tuples, bytes):
         tuples = bytes32(tuples)
         return tuples, {tuples: (0, [])}
 
     left, right = tuples
-    left_root, left_proofs = build_merkle_tree_from_2_tuples(left)
-    right_root, right_proofs = build_merkle_tree_from_2_tuples(right)
+    left_root, left_proofs = build_merkle_tree_from_binary_tree(left)
+    right_root, right_proofs = build_merkle_tree_from_binary_tree(right)
 
     new_root = sha256(left_root, right_root)
     new_proofs = {}
@@ -42,32 +42,32 @@ def build_merkle_tree_from_2_tuples(tuples: TupleTree) -> Tuple[bytes32, Dict[by
     return new_root, new_proofs
 
 
-def list_to_2_tuples(objects: List[Any]):
+def list_to_binary_tree(objects: List[Any]):
     size = len(objects)
     if size == 1:
         return objects[0]
     midpoint = (size + 1) >> 1
     first_half = objects[:midpoint]
     last_half = objects[midpoint:]
-    return (list_to_2_tuples(first_half), list_to_2_tuples(last_half))
+    return (list_to_binary_tree(first_half), list_to_binary_tree(last_half))
 
 
 def build_merkle_tree(objects: List[bytes32]) -> Tuple[bytes32, Dict[bytes32, Tuple[int, List[bytes32]]]]:
     """
     return (merkle_root, dict_of_proofs)
     """
-    objects_2_tuples = list_to_2_tuples(objects)
-    return build_merkle_tree_from_2_tuples(objects_2_tuples)
+    objects_binary_tree = list_to_binary_tree(objects)
+    return build_merkle_tree_from_binary_tree(objects_binary_tree)
 
 
-def build_merkle_tree_from_2_tuples2(tuples) -> Tuple[bytes32, Dict[bytes32, int], TupleTree]:
+def build_merkle_tree_from_binary_tree2(tuples) -> Tuple[bytes32, Dict[bytes32, int], TupleTree]:
     if isinstance(tuples, bytes):
         tuples = bytes32(tuples)
         return tuples, {tuples: 1}, tuples
 
     left, right = tuples
-    left_root, left_lookup, left_subtree = build_merkle_tree_from_2_tuples2(left)
-    right_root, right_lookup, right_subtree = build_merkle_tree_from_2_tuples2(right)
+    left_root, left_lookup, left_subtree = build_merkle_tree_from_binary_tree2(left)
+    right_root, right_lookup, right_subtree = build_merkle_tree_from_binary_tree2(right)
 
     new_root = sha256(left_root, right_root)
 
@@ -85,8 +85,8 @@ def build_merkle_tree2(objects: List[bytes32]) -> Tuple[bytes32, Dict[bytes32, i
     """
     return (merkle_root, dict_of_paths, tuple_tree)
     """
-    objects_2_tuples = list_to_2_tuples(objects)
-    return build_merkle_tree_from_2_tuples2(objects_2_tuples)
+    objects_binary_tree = list_to_binary_tree(objects)
+    return build_merkle_tree_from_binary_tree2(objects_binary_tree)
 
 
 def merkle_proof_from_path_and_tree(node_path: int, proof_tree: Proof_Tree_Type) -> Union[int, List[bytes32]]:
