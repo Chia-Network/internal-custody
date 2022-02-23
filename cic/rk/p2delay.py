@@ -1,12 +1,12 @@
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
 
-from cic.drivers.load_clvm import load_clvm
+from cic.rk.load_clvm import load_clvm
 
-from .anonymous_curry import anonymous_curry
+from cic.rk.anonymous_curry import anonymous_curry
 
 
-MOD = load_clvm("p2delay.clsp", package_or_requirement=__package__, include_paths=["./clsp/include/"])
+MOD = load_clvm("p2delay.clsp", package_or_requirement=__package__, include_paths=["../clsp/include/"])
 
 
 def morph_puzzle_hash_with_delay(puzzle_hash: bytes32, delay_in_seconds: int) -> bytes32:
