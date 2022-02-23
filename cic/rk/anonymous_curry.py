@@ -1,35 +1,17 @@
-import hashlib
-
 from typing import Tuple
 
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
-from clvm_tools.binutils import assemble
 
 
-def sha256(*args: bytes) -> bytes32:
-    return bytes32(hashlib.sha256(b"".join(args)).digest())
-
-
-ONE_BLOB = bytes.fromhex("01")
-
-
-def sha256atom(blob: bytes) -> bytes32:
-    return sha256(ONE_BLOB, blob)
-
-
-TWO_BLOB = bytes.fromhex("02")
-
-
-def sha256pair(left: bytes32, right: bytes32) -> bytes32:
-    return sha256(TWO_BLOB, left, right)
-
-
-NULL_TREEHASH = Program.to(0).get_tree_hash()
-ONE_TREEHASH = Program.to(1).get_tree_hash()
-A_TREEHASH = Program.to(assemble("#a")).get_tree_hash()
-C_TREEHASH = Program.to(assemble("#c")).get_tree_hash()
-Q_TREEHASH = Program.to(assemble("#q")).get_tree_hash()
+from .hashutils import (
+    sha256pair,
+    A_TREEHASH,
+    C_TREEHASH,
+    Q_TREEHASH,
+    ONE_TREEHASH,
+    NULL_TREEHASH,
+)
 
 
 def anonymous_curry(template_hash: bytes32, *parameter_hashes: Tuple[bytes32]) -> bytes32:
