@@ -1,0 +1,244 @@
+(mod
+  (
+    THIS_MOD_HASH
+    ROOTS
+    STATE
+    spend_type
+    spend_solution
+  )
+
+  (include condition_codes.clib)
+  (include curry_and_treehash.clib)
+  (include sha256tree.clib)
+  (include utility_macros.clib)
+  (include merkle_utils.clib)
+
+  ; ROOTS is a list with the following elements in order
+  ; - PUBKEY_ROOT
+  ; - LOCK_LEVEL_ROOT
+  ; - SLOW_REKEY_ROOT
+  (defun-inline PUBKEY_ROOT (ROOTS) (f ROOT))
+  (defun-inline LOCK_LEVEL_ROOT (ROOTS) (f (r ROOT)))
+  (defun-inline SLOW_REKEY_ROOT (ROOTS) (f (r (r ROOTS))))
+
+  ; STATE is a list with the following elements in order
+  ; - REKEY_MOD_HASH
+  ; - ACH_MOD_HASH
+  ; - P2_SINGLETON_MOD_HASH
+  ; - SLOW_REKEY_MOD_HASH
+  (defun-inline REKEY_MOD_HASH (STATE) (f STATE))
+  (defun-inline ACH_MOD_HASH (STATE) (f (r STATE)))
+  (defun-inline P2_SINGLETON_MOD_HASH (STATE) (f (r (r STATE))))
+  (defun-inline SLOW_REKEY_MOD_HASH (STATE) (f (r (r (r STATE)))))
+
+  ; utility functions
+  (defun calculate_our_ph (THIS_MOD_HASH ROOTS STATE)
+    (puzzle_hash_of_curried_function THIS_MOD_HASH
+      (sha256tree STATE)
+      (sha256tree ROOTS)
+      (sha256 1 THIS_MOD_HASH)
+    )
+  )
+
+  ; FINISH REKEY
+  (defun-inline calculate_rekey_ph (REKEY_MOD_HASH PUBKEY_ROOT new_roots)
+    (puzzle_hash_of_curried_function REKEY_MOD_HASH
+      (sha256 1 PUBKEY_ROOT)
+      (sha256tree new_roots)
+    )
+  )
+  (defun-inline finish_rekey (THIS_MOD_HASH ROOTS STATE
+    (
+      my_amount
+      new_roots
+    )
+  )
+    (list
+      (list ASSERT_PUZZLE_ANNOUNCEMENT
+            (sha256
+              (calculate_rekey_ph (REKEY_MOD_HASH STATE) (PUBKEY_ROOT ROOTS) new_roots)
+              (sha256tree new_roots)
+            )
+      )
+      (list ASSERT_MY_AMOUNT my_amount)
+      (list CREATE_COIN
+            (calculate_our_ph THIS_MOD_HASH new_roots STATE)
+            my_amount
+      )
+    )
+  )
+
+  ; LOCK
+  (defun-inline lock (THIS_MOD_HASH ROOTS STATE
+    (
+      my_amount
+      pubkey_reveal
+      proof_of_inclusion
+      new_pubkey_root
+      new_lock_level_root
+    )
+  )
+    (assert
+      (= (PUBKEY_ROOT ROOTS) (calculate_merkle_root_for_merkle_proof (pubkey_reveal ss) (proof_of_inclusion ss)))
+      (= (LOCK_LEVEL_ROOT ROOTS) (sha256tree (c (new_pubkey_root ss) (new_lock_level_root ss))))
+      ; then
+      (list
+        (list ASSERT_MY_AMOUNT my_amount)
+        (list AGG_SIG_ME pubkey_reveal '$')
+        (list CREATE_COIN
+              (calculate_our_ph
+                THIS_MOD_HASH
+                (sha256tree (list new_pubkey_root new_lock_level_root (SLOW_REKEY_ROOT ROOTS)))
+                STATE
+              )
+              my_amount
+        )
+      )
+    )
+  )
+
+  ; START REKEY
+  ; spend solution:
+  (defun-inline start_rekey (THIS_MOD_HASH ROOTS STATE
+    (
+      my_amount
+      pubkey_reveal
+      proof_of_inclusion
+      new_roots_after
+    )
+  )
+    (assert
+      (= (PUBKEY_ROOT ROOTS) (calculate_merkle_root_for_merkle_proof pubkey_reveal proof_of_inclusion))
+      ; then
+      (list
+        (list ASSERT_MY_AMOUNT my_amount)
+        (list AGG_SIG_ME pubkey_reveal (sha256tree new_roots_after))
+        (list CREATE_COIN (calculate_our_ph THIS_MOD_HASH ROOTS STATE) my_amount)
+        (list CREATE_COIN (calculate_rekey_ph REKEY_MOD_HASH (PUBKEY_ROOT ROOTS) new_roots_after) 0)
+      )
+    )
+  )
+
+  ; WITHDRAW_PAYMENT
+  (defun-inline calculate_ach_payment (ACH_MOD_HASH PUBKEY_ROOT P2_SINGLETON_MOD_HASH p2_ph)
+    (puzzle_hash_of_curried_function ACH_MOD_HASH
+      (sha256 1 PUBKEY_ROOT)
+      (sha256 1 P2_SINGLETON_MOD_HASH)
+      (sha256 1 p2_ph)
+    )
+  )
+  (defun-inline withdraw_payment (THIS_MOD_HASH ROOTS STATE
+    (
+      my_amount
+      pubkey_reveal
+      proof_of_inclusion
+      withdrawal_amount
+      p2_ph
+    )
+  )
+    (assert
+      (= (PUBKEY_ROOT ROOTS) (calculate_merkle_root_for_merkle_proof pubkey_reveal proof_of_inclusion))
+      ; then
+      (list
+        (list AGG_SIG_ME pubkey_reveal (sha256tree (list withdrawal_amount p2_ph)))
+        (list CREATE_COIN
+              (calculate_our_ph THIS_MOD_HASH ROOTS STATE)
+              (- my_amount withdrawal_amount)
+        )
+        (list CREATE_COIN
+              (calculate_ach_payment (ACH_MOD_HASH STATE) (PUBKEY_ROOT STATE) (P2_SINGLETON_MOD_HASH STATE) p2_ph)
+              withdrawal_amount
+        )
+      )
+    )
+  )
+
+  ; ACCEPT PAYMENT
+  (defun-inline accept_payment (THIS_MOD_HASH ROOTS STATE
+    (
+      my_amount
+      (p2_parent p2_amount)
+    )
+  )
+    (list
+      (list CREATE_PUZZLE_ANNOUNCEMENT (sha256 p2_parent (P2_SINGLETON_MOD_HASH STATE) p2_amount))
+      (list ASSERT_COIN_ANNOUNCEMENT (sha256 (sha256 p2_parent (P2_SINGLETON_MOD_HASH STATE) p2_amount) '$'))
+      (list CREATE_COIN (calculate_our_ph THIS_MOD_HASH ROOTS STATE) (+ my_amount p2_amount))
+    )
+  )
+
+  ; START SLOW REKEY
+  (defun-inline calculate_slow_rekey_ph (REKEY_MOD_HASH PUBKEY_ROOT pubkey_reveal new_roots)
+    (puzzle_hash_of_curried_function REKEY_MOD_HASH
+      (sha256 1 PUBKEY_ROOT)
+      (sha256 1 pubkey_reveal)
+      (sha256tree new_roots)
+    )
+  )
+  (defun-inline start_slow_rekey (THIS_MOD_HASH ROOTS STATE
+    (
+      my_amount
+      pubkey_reveal
+      proof_of_inclusion
+      new_roots_after
+    )
+  )
+    (assert
+      (= (SLOW_REKEY_ROOT ROOTS) (calculate_merkle_root_for_merkle_proof pubkey_reveal proof_of_inclusion))
+      ; then
+      (list
+        (list ASSERT_MY_AMOUNT my_amount)
+        (list AGG_SIG_ME pubkey_reveal (sha256tree new_roots_after))
+        (list CREATE_COIN (calculate_our_ph THIS_MOD_HASH ROOTS STATE my_amount)
+        (list CREATE_COIN (calculate_slow_rekey_ph SLOW_REKEY_MOD_HASH (PUBKEY_ROOT ROOTS) pubkey_reveal new_roots_after) 0)
+      )
+    )
+  )
+
+  ; FINISH SLOW REKEY
+  (defun-inline finish_rekey (THIS_MOD_HASH ROOTS STATE
+    (
+      my_amount
+      new_roots
+      pubkey_reveal
+    )
+  )
+    (list
+      (list ASSERT_PUZZLE_ANNOUNCEMENT
+            (sha256
+              (calculate_slow_rekey_ph (SLOW_REKEY_MOD_HASH STATE) (PUBKEY_ROOT ROOTS) pubkey_reveal new_roots)
+              (sha256tree new_roots)
+            )
+      )
+      (list ASSERT_MY_AMOUNT my_amount)
+      (list CREATE_COIN
+            (calculate_post_rekey_ph THIS_MOD_HASH new_roots STATE)
+            my_amount
+      )
+    )
+  )
+
+  ; main
+  (if (= spend_type "finish rekey")
+      (finish_rekey THIS_MOD_HASH ROOTS STATE spend_solution)
+      (if (= spend_type "lock")
+          (lock THIS_MOD_HASH ROOTS STATE spend_solution)
+          (if (= spend_type "start rekey")
+              (start_rekey THIS_MOD_HASH ROOTS STATE spend_solution)
+              (if (= spend_type "withdraw payment")
+                  (withdraw_payment THIS_MOD_HASH ROOTS STATE spend_solution)
+                  (if (= spend_type "accept payment")
+                      (accept_payment THIS_MOD_HASH ROOTS STATE spend_solution)
+                      (if (= spend_type "start slow rekey")
+                          (start_slow_rekey THIS_MOD_HASH ROOTS STATE spend_solution)
+                          (if (= spend_type "finish slow rekey")
+                              (finish_slow_rekey THIS_MOD_HASH ROOTS STATE spend_solution)
+                              (x)
+                          )
+                      )
+                  )
+              )
+          )
+      )
+  )
+)

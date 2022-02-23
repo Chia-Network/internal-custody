@@ -1,0 +1,31 @@
+(
+  (defun-inline tree_branch_hash (left right) (sha256 2 left right))
+
+  (defun calculate_merkle_root (path current_hash additional_steps)
+   (if additional_steps
+     (calculate_merkle_root
+       (lsh path -1)
+       (if (logand path 1)
+         (tree_branch_hash
+           (f additional_steps)
+           current_hash
+         )
+         (tree_branch_hash
+           current_hash
+           (f additional_steps)
+         )
+       )
+       (r additional_steps)
+     )
+     current_hash
+   )
+ )
+
+ (defun calculate_merkle_root_for_merkle_proof (LEAF_REVEAL proof_of_inclusion)
+   (calculate_merkle_root
+     (f proof_of_inclusion)
+     LEAF_REVEAL
+     (r proof_of_inclusion)
+   )
+ )
+)
