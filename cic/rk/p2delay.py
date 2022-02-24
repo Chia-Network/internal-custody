@@ -1,18 +1,17 @@
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
 
-from cic.rk.load_clvm import load_clvm
-
-from cic.rk.anonymous_curry import anonymous_curry
+from cic.rk.wrap_additional_conditions import morph_puzzle_with_conditions, morph_puzzle_hash_with_conditions
 
 
-MOD = load_clvm("p2delay.clsp", package_or_requirement=__package__, include_paths=["../clsp/include/"])
+ASSERT_SECONDS_RELATIVE_BLOB = 80
 
 
 def morph_puzzle_hash_with_delay(puzzle_hash: bytes32, delay_in_seconds: int) -> bytes32:
-    delay_hash = Program.to(delay_in_seconds).get_tree_hash()
-    return anonymous_curry(MOD.get_tree_hash(), puzzle_hash, delay_hash)
+    conditions = [Program.to([ASSERT_SECONDS_RELATIVE_BLOB, delay_in_seconds])]
+    return morph_puzzle_hash_with_conditions(puzzle_hash, conditions)
 
 
 def morph_puzzle_with_delay(puzzle: Program, delay_in_seconds: int) -> Program:
-    return MOD.curry(puzzle, delay_in_seconds)
+    conditions = [Program.to([ASSERT_SECONDS_RELATIVE_BLOB, delay_in_seconds])]
+    return morph_puzzle_with_conditions(puzzle, conditions)
