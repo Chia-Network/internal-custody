@@ -31,7 +31,7 @@
   (defun-inline P2_SINGLETON_MOD_HASH (STATE) (f (r (r STATE))))
   (defun-inline SLOW_REKEY_MOD_HASH (STATE) (f (r (r (r STATE)))))
 
-  ; utility functions
+  ;;; utility functions ;;;
   (defun calculate_our_ph (THIS_MOD_HASH ROOTS STATE)
     (puzzle_hash_of_curried_function THIS_MOD_HASH
       (sha256tree STATE)
@@ -41,20 +41,37 @@
   )
 
   (defmacro not (bool) (i bool () 1))
-  (defun check_for_create_coins (conditions)
-    (if conditions
-      (assert (not (= (f (f conditions)) CREATE_COIN))
-        (c (f conditions) (check_for_create_coins (r conditions)))
-      )
-      ()
+
+  ; This function enforces only one create coin with a specifed puzzle hash and amount
+  (defun enforce_one_specific_coin (conditions ph amt seen)
+    (if (r condtions)
+        (c
+          (f conditions)
+          (enforce_one_specific_coin
+            conditions
+            ph
+            amt
+            (if (= CREATE_COIN (f (f conditions)))
+                (assert
+                  (not seen)
+                  (= ph (f (r (f conditions))))
+                  (= amt (f (r (r (f condtions)))))
+                  ; then
+                  1
+                )
+                seen
+            )
+          )
+        )
+        ()
     )
   )
 
-  ; FINISH REKEY
-  (defun-inline calculate_rekey_ph (REKEY_MOD_HASH PUZZLE_ROOT new_roots)
+  ;;; FINISH REKEY ;;;
+  (defun-inline calculate_rekey_ph (REKEY_MOD_HASH PUZZLE_ROOT new_roots_hash)
     (puzzle_hash_of_curried_function REKEY_MOD_HASH
       (sha256 1 PUZZLE_ROOT)
-      (sha256tree new_roots)
+      (sha256 1 new_roots_hash)
     )
   )
   (defun-inline finish_rekey (THIS_MOD_HASH ROOTS STATE
@@ -66,7 +83,7 @@
     (list
       (list ASSERT_PUZZLE_ANNOUNCEMENT
             (sha256
-              (calculate_rekey_ph (REKEY_MOD_HASH STATE) (PUZZLE_ROOT ROOTS) new_roots)
+              (calculate_rekey_ph (REKEY_MOD_HASH STATE) (PUZZLE_ROOT ROOTS) (sha256tree new_roots))
               (sha256tree new_roots)
             )
       )
@@ -95,22 +112,22 @@
       (c
         (list ASSERT_MY_AMOUNT my_amount)
         (c
-          (list CREATE_COIN
-              (calculate_our_ph
-                THIS_MOD_HASH
-                (sha256tree (list new_pubkey_root new_lock_level_root (SLOW_REKEY_ROOT ROOTS)))
-                STATE
-              )
-              my_amount
+          (enforce_one_specific_coin
+            (a puzzle_reveal puzzle_solution)
+            (calculate_our_ph
+              THIS_MOD_HASH
+              (sha256tree (list new_pubkey_root new_lock_level_root (SLOW_REKEY_ROOT ROOTS)))
+              STATE
+            )
+            my_amount
+            ()
           )
-          (check_for_create_coins (a puzzle_reveal (c new_pubkey_root (c new_lock_level_root puzzle_solution))))
         )
       )
     )
   )
 
   ; START REKEY
-  ; spend solution:
   (defun-inline start_rekey (THIS_MOD_HASH ROOTS STATE
     (
       my_amount
@@ -127,9 +144,11 @@
         (list ASSERT_MY_AMOUNT my_amount)
         (c
           (list CREATE_COIN (calculate_our_ph THIS_MOD_HASH ROOTS STATE) my_amount)
-          (c
-            (list CREATE_COIN (calculate_rekey_ph REKEY_MOD_HASH (PUZZLE_ROOT ROOTS) new_roots_after) 0)
-            (check_for_create_coins (a puzzle_reveal (c new_roots_after puzzle_solution)))
+          (enforce_one_specific_coin
+            (a puzzle_reveal puzzle_solution)
+            (calculate_rekey_ph (REKEY_MOD_HASH STATE) (PUZZLE_ROOT ROOTS) (sha256tree new_roots_after))
+            0
+            ()
           )
         )
       )
@@ -162,12 +181,11 @@
             (calculate_our_ph THIS_MOD_HASH ROOTS STATE)
             (- my_amount withdrawal_amount)
         )
-        (c
-          (list CREATE_COIN
-                (calculate_ach_payment (ACH_MOD_HASH STATE) (PUZZLE_ROOT STATE) (P2_SINGLETON_MOD_HASH STATE) p2_ph)
-                withdrawal_amount
-          )
-          (check_for_create_coins (a puzzle_reveal (c withdrawal_amount (c p2_ph puzzle_solution))))
+        (enforce_one_specific_coin
+          (a puzzle_reveal puzzle_solution)
+          (calculate_ach_payment (ACH_MOD_HASH STATE) (PUZZLE_ROOT STATE) (P2_SINGLETON_MOD_HASH STATE) p2_ph)
+          withdrawal_amount
+          ()
         )
       )
     )
@@ -202,10 +220,12 @@
       (c
         (list ASSERT_MY_AMOUNT my_amount)
         (c
-          (list CREATE_COIN (calculate_our_ph THIS_MOD_HASH ROOTS STATE my_amount)
-          (c
-            (list CREATE_COIN (calculate_rekey_ph SLOW_REKEY_MOD_HASH (PUZZLE_ROOT ROOTS) new_roots_after) 0)
-            (check_for_create_coins (a puzzle_reveal (c new_roots_after puzzle_solution)))
+          (list CREATE_COIN (calculate_our_ph THIS_MOD_HASH ROOTS STATE)
+          (enforce_one_specific_coin
+            (a puzzle_reveal puzzle_solution)
+            (calculate_rekey_ph (SLOW_REKEY_MOD_HASH STATE) (PUZZLE_ROOT ROOTS) (sha256tree new_roots_after))
+            0
+            ()
           )
         )
       )
@@ -222,7 +242,7 @@
     (list
       (list ASSERT_PUZZLE_ANNOUNCEMENT
             (sha256
-              (calculate_rekey_ph (SLOW_REKEY_MOD_HASH STATE) (PUZZLE_ROOT ROOTS) new_roots)
+              (calculate_rekey_ph (SLOW_REKEY_MOD_HASH STATE) (PUZZLE_ROOT ROOTS) (sha256tree new_roots))
               (sha256tree new_roots)
             )
       )
@@ -235,19 +255,19 @@
   )
 
   ; main
-  (if (= spend_type "finish rekey")
+  (if (= spend_type 1)
       (finish_rekey THIS_MOD_HASH ROOTS STATE spend_solution)
-      (if (= spend_type "lock")
+      (if (= spend_type 2)
           (lock THIS_MOD_HASH ROOTS STATE spend_solution)
-          (if (= spend_type "start rekey")
+          (if (= spend_type 3)
               (start_rekey THIS_MOD_HASH ROOTS STATE spend_solution)
-              (if (= spend_type "withdraw payment")
+              (if (= spend_type 4)
                   (withdraw_payment THIS_MOD_HASH ROOTS STATE spend_solution)
-                  (if (= spend_type "accept payment")
+                  (if (= spend_type 5)
                       (accept_payment THIS_MOD_HASH ROOTS STATE spend_solution)
-                      (if (= spend_type "start slow rekey")
+                      (if (= spend_type 6)
                           (start_slow_rekey THIS_MOD_HASH ROOTS STATE spend_solution)
-                          (if (= spend_type "finish slow rekey")
+                          (if (= spend_type 7)
                               (finish_slow_rekey THIS_MOD_HASH ROOTS STATE spend_solution)
                               (x)
                           )
