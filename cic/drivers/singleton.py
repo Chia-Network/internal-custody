@@ -7,7 +7,12 @@ from chia.types.coin_spend import CoinSpend
 from chia.types.condition_opcodes import ConditionOpcode
 from chia.util.hash import std_hash
 from chia.util.ints import uint64
-from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER, SINGLETON_LAUNCHER_HASH, solution_for_singleton
+from chia.wallet.puzzles.singleton_top_layer import (
+    SINGLETON_LAUNCHER,
+    SINGLETON_LAUNCHER_HASH,
+    P2_SINGLETON_MOD,
+    solution_for_singleton,
+)
 
 from cic.load_clvm import load_clvm
 
@@ -66,3 +71,11 @@ def generate_launch_conditions_and_coin_spend(
     )
 
     return conditions, launcher_coin_spend
+
+
+def construct_p2_singleton(launcher_id: bytes32) -> Program:
+    return P2_SINGLETON_MOD.curry(SINGLETON_MOD.get_tree_hash(), launcher_id, SINGLETON_LAUNCHER_HASH)
+
+
+def solve_p2_singleton(p2_singleton_coin: Coin, singleton_inner_puzhash: bytes32) -> Program:
+    return Program.to([singleton_inner_puzhash, p2_singleton_coin.name()])

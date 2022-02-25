@@ -7,6 +7,7 @@ from chia.types.blockchain_format.program import Program, SerializedProgram
 
 program_files = set(
     [
+        "cic/clsp/prefarm_inner.clsp",
         "cic/clsp/singleton_top_layer_v1_1.clsp",
         "cic/clsp/rl.clsp",
     ]
@@ -16,6 +17,7 @@ clvm_include_files = set(
     [
         "cic/clsp/include/condition_codes.clib",
         "cic/clsp/include/curry_and_treehash.clib",
+        "cic/clsp/include/merkle_utils.clib",
         "cic/clsp/include/sha256tree.clib",
         "cic/clsp/include/utility_macros.clib",
     ]

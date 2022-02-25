@@ -17,8 +17,8 @@
   ; - PUZZLE_ROOT
   ; - LOCK_LEVEL_ROOT
   ; - SLOW_REKEY_ROOT
-  (defun-inline PUZZLE_ROOT (ROOTS) (f ROOT))
-  (defun-inline LOCK_LEVEL_ROOT (ROOTS) (f (r ROOT)))
+  (defun-inline PUZZLE_ROOT (ROOTS) (f ROOTS))
+  (defun-inline LOCK_LEVEL_ROOT (ROOTS) (f (r ROOTS)))
   (defun-inline SLOW_REKEY_ROOT (ROOTS) (f (r (r ROOTS))))
 
   ; STATE is a list with the following elements in order
@@ -40,22 +40,20 @@
     )
   )
 
-  (defmacro not (bool) (i bool () 1))
-
   ; This function enforces only one create coin with a specifed puzzle hash and amount
   (defun enforce_one_specific_coin (conditions ph amt seen)
-    (if (r condtions)
+    (if conditions
         (c
           (f conditions)
           (enforce_one_specific_coin
-            conditions
+            (r conditions)
             ph
             amt
             (if (= CREATE_COIN (f (f conditions)))
                 (assert
-                  (not seen)
+                  (if seen () 1)  ; not seen
                   (= ph (f (r (f conditions))))
-                  (= amt (f (r (r (f condtions)))))
+                  (= amt (f (r (r (f conditions)))))
                   ; then
                   1
                 )
@@ -63,7 +61,7 @@
             )
           )
         )
-        ()
+        (assert seen ())
     )
   )
 
@@ -74,12 +72,10 @@
       (sha256 1 new_roots_hash)
     )
   )
-  (defun-inline finish_rekey (THIS_MOD_HASH ROOTS STATE
-    (
-      my_amount
-      new_roots
-    )
-  )
+  (defun finish_rekey (THIS_MOD_HASH ROOTS STATE (
+    my_amount
+    new_roots
+  ))
     (list
       (list ASSERT_PUZZLE_ANNOUNCEMENT
             (sha256
@@ -87,6 +83,7 @@
               (sha256tree new_roots)
             )
       )
+      (list CREATE_PUZZLE_ANNOUNCEMENT '$')
       (list ASSERT_MY_AMOUNT my_amount)
       (list CREATE_COIN
             (calculate_our_ph THIS_MOD_HASH new_roots STATE)
@@ -95,48 +92,42 @@
     )
   )
 
-  ; LOCK
-  (defun-inline lock (THIS_MOD_HASH ROOTS STATE
-    (
-      my_amount
-      puzzle_reveal
-      proof_of_inclusion
-      new_pubkey_root
-      new_lock_level_root
-      puzzle_solution
-    )
-  )
+  ;;; LOCK ;;;
+  (defun lock (THIS_MOD_HASH ROOTS STATE (
+    my_amount
+    puzzle_reveal
+    proof_of_inclusion
+    new_pubkey_root
+    new_lock_level_root
+    puzzle_solution
+  ))
     (assert
       (= (LOCK_LEVEL_ROOT ROOTS) (calculate_merkle_root_for_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))
       ; then
       (c
         (list ASSERT_MY_AMOUNT my_amount)
-        (c
-          (enforce_one_specific_coin
-            (a puzzle_reveal puzzle_solution)
-            (calculate_our_ph
-              THIS_MOD_HASH
-              (sha256tree (list new_pubkey_root new_lock_level_root (SLOW_REKEY_ROOT ROOTS)))
-              STATE
-            )
-            my_amount
-            ()
+        (enforce_one_specific_coin
+          (a puzzle_reveal puzzle_solution)
+          (calculate_our_ph
+            THIS_MOD_HASH
+            (list new_pubkey_root new_lock_level_root (SLOW_REKEY_ROOT ROOTS))
+            STATE
           )
+          my_amount
+          ()
         )
       )
     )
   )
 
-  ; START REKEY
-  (defun-inline start_rekey (THIS_MOD_HASH ROOTS STATE
-    (
-      my_amount
-      puzzle_reveal
-      proof_of_inclusion
-      new_roots_after
-      puzzle_solution
-    )
-  )
+  ;;; START REKEY ;;;
+  (defun start_rekey (THIS_MOD_HASH ROOTS STATE (
+    my_amount
+    puzzle_reveal
+    proof_of_inclusion
+    new_roots_after
+    puzzle_solution
+  ))
     (assert
       (= (PUZZLE_ROOT ROOTS) (calculate_merkle_root_for_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))
       ; then
@@ -155,24 +146,21 @@
     )
   )
 
-  ; WITHDRAW_PAYMENT
-  (defun-inline calculate_ach_payment (ACH_MOD_HASH PUZZLE_ROOT P2_SINGLETON_MOD_HASH p2_ph)
+  ;;; WITHDRAW_PAYMENT ;;;
+  (defun-inline calculate_ach_payment (ACH_MOD_HASH P2_SINGLETON_MOD_HASH p2_ph)
     (puzzle_hash_of_curried_function ACH_MOD_HASH
-      (sha256 1 PUZZLE_ROOT)
       (sha256 1 P2_SINGLETON_MOD_HASH)
       (sha256 1 p2_ph)
     )
   )
-  (defun-inline withdraw_payment (THIS_MOD_HASH ROOTS STATE
-    (
-      my_amount
-      puzzle_reveal
-      proof_of_inclusion
-      withdrawal_amount
-      p2_ph
-      puzzle_solution
-    )
-  )
+  (defun withdraw_payment (THIS_MOD_HASH ROOTS STATE (
+    my_amount
+    puzzle_reveal
+    proof_of_inclusion
+    withdrawal_amount
+    p2_ph
+    puzzle_solution
+  ))
     (assert
       (= (PUZZLE_ROOT ROOTS) (calculate_merkle_root_for_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))
       ; then
@@ -183,7 +171,7 @@
         )
         (enforce_one_specific_coin
           (a puzzle_reveal puzzle_solution)
-          (calculate_ach_payment (ACH_MOD_HASH STATE) (PUZZLE_ROOT STATE) (P2_SINGLETON_MOD_HASH STATE) p2_ph)
+          (calculate_ach_payment (ACH_MOD_HASH STATE) (P2_SINGLETON_MOD_HASH STATE) p2_ph)
           withdrawal_amount
           ()
         )
@@ -191,13 +179,11 @@
     )
   )
 
-  ; ACCEPT PAYMENT
-  (defun-inline accept_payment (THIS_MOD_HASH ROOTS STATE
-    (
-      my_amount
-      (p2_parent p2_amount)
-    )
-  )
+  ;;; ACCEPT PAYMENT ;;;
+  (defun accept_payment (THIS_MOD_HASH ROOTS STATE (
+    my_amount
+    (p2_parent p2_amount)
+  ))
     (list
       (list CREATE_PUZZLE_ANNOUNCEMENT (sha256 p2_parent (P2_SINGLETON_MOD_HASH STATE) p2_amount))
       (list ASSERT_COIN_ANNOUNCEMENT (sha256 (sha256 p2_parent (P2_SINGLETON_MOD_HASH STATE) p2_amount) '$'))
@@ -205,22 +191,21 @@
     )
   )
 
-  ; START SLOW REKEY
-  (defun-inline start_slow_rekey (THIS_MOD_HASH ROOTS STATE
-    (
-      my_amount
-      puzzle_reveal
-      proof_of_inclusion
-      new_roots_after
-    )
-  )
+  ;;; START SLOW REKEY ;;;
+  (defun start_slow_rekey (THIS_MOD_HASH ROOTS STATE (
+    my_amount
+    puzzle_reveal
+    proof_of_inclusion
+    new_roots_after
+    puzzle_solution
+  ))
     (assert
       (= (SLOW_REKEY_ROOT ROOTS) (calculate_merkle_root_for_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))
       ; then
       (c
         (list ASSERT_MY_AMOUNT my_amount)
         (c
-          (list CREATE_COIN (calculate_our_ph THIS_MOD_HASH ROOTS STATE)
+          (list CREATE_COIN (calculate_our_ph THIS_MOD_HASH ROOTS STATE) my_amount)
           (enforce_one_specific_coin
             (a puzzle_reveal puzzle_solution)
             (calculate_rekey_ph (SLOW_REKEY_MOD_HASH STATE) (PUZZLE_ROOT ROOTS) (sha256tree new_roots_after))
@@ -232,13 +217,11 @@
     )
   )
 
-  ; FINISH SLOW REKEY
-  (defun-inline finish_rekey (THIS_MOD_HASH ROOTS STATE
-    (
-      my_amount
-      new_roots
-    )
-  )
+  ;;; FINISH SLOW REKEY ;;;
+  (defun finish_slow_rekey (THIS_MOD_HASH ROOTS STATE (
+    my_amount
+    new_roots
+  ))
     (list
       (list ASSERT_PUZZLE_ANNOUNCEMENT
             (sha256
@@ -246,9 +229,10 @@
               (sha256tree new_roots)
             )
       )
+      (list CREATE_PUZZLE_ANNOUNCEMENT '$')
       (list ASSERT_MY_AMOUNT my_amount)
       (list CREATE_COIN
-            (calculate_post_rekey_ph THIS_MOD_HASH new_roots STATE)
+            (calculate_our_ph THIS_MOD_HASH new_roots STATE)
             my_amount
       )
     )

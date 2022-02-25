@@ -11,9 +11,9 @@ from chia.types.spend_bundle import SpendBundle
 from chia.types.coin_spend import CoinSpend
 from chia.util.ints import uint64
 from chia.wallet.lineage_proof import LineageProof
-from chia.wallet.puzzles.singleton_top_layer import pay_to_singleton_puzzle
+from chia.wallet.puzzles.singleton_top_layer import pay_to_singleton_puzzle, SINGLETON_LAUNCHER_HASH
 
-from cic.drivers.prefarm import construct_singleton_inner_puzzle
+from cic.drivers.prefarm import construct_singleton_inner_puzzle, PrefarmInfo
 from cic.drivers.singleton import generate_launch_conditions_and_coin_spend
 
 ACS = Program.to(1)
@@ -41,6 +41,9 @@ async def setup_info():
     # Define constants
     START_DATE = uint64(sim.timestamp)
     DRAIN_RATE = 1  # 1 mojo per second
+    PUZZLE_HASHES = [ACS_PH]
+    LOCK_PUZZLE_HASHES = [ACS_PH]
+    SLOW_REKEY_PUZZLE_HASHES = [ACS_PH]
 
     # Identify the prefarm coins
     prefarm_coins = await sim_client.get_coin_records_by_puzzle_hashes([ACS_PH])
@@ -49,8 +52,18 @@ async def setup_info():
 
     # Launch them to their starting state
     starting_amount = 18374999999999999999
+    launcher_coin = Coin(big_coin.name(), SINGLETON_LAUNCHER_HASH, starting_amount)
+    prefarm_info = PrefarmInfo(
+        launcher_coin.name(),  # launcher_id
+        START_DATE,  # start_date: uint64
+        starting_amount,  # starting_amount: uint64
+        DRAIN_RATE,  # mojos_per_second: uint64
+        PUZZLE_HASHES,  # puzzle_hash_list: List[bytes32]
+        LOCK_PUZZLE_HASHES,  # lock_puzzle_hash_list: List[bytes32]
+        SLOW_REKEY_PUZZLE_HASHES,  # slow_rekey_puzzle_hash_list: List[bytes32]
+    )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
-        big_coin, construct_singleton_inner_puzzle(START_DATE, starting_amount, DRAIN_RATE, ACS), starting_amount
+        big_coin, construct_singleton_inner_puzzle(prefarm_info), starting_amount
     )
     creation_bundle = SpendBundle(
         [
