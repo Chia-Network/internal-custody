@@ -31,10 +31,9 @@ class PrefarmInfo:
 
 class SpendType(int, enum.Enum):
     FINISH_REKEY = 1
-    LOCK = 2
-    START_REKEY = 3
-    WITHDRAW_PAYMENT = 4
-    ACCEPT_PAYMENT = 5
+    START_REKEY = 2
+    WITHDRAW_PAYMENT = 3
+    ACCEPT_PAYMENT = 4
 
 
 def construct_rekey_puzzle(prefarm_info: PrefarmInfo) -> Program:
@@ -92,15 +91,6 @@ def solve_prefarm_inner(spend_type: SpendType, prefarm_amount: uint64, **kwargs)
         spend_solution = Program.to(
             [
                 build_merkle_tree(kwargs["puzzle_hash_list"])[0],
-            ]
-        )
-    elif spend_type == SpendType.LOCK:
-        spend_solution = Program.to(
-            [
-                kwargs["lock_puzzle"],
-                kwargs["proof_of_inclusion"],
-                build_merkle_tree(kwargs["puzzle_hash_list"])[0],
-                kwargs["lock_puzzle_solution"],
             ]
         )
     elif spend_type == SpendType.START_REKEY:

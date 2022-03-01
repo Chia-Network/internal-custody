@@ -217,60 +217,6 @@ async def test_rekey(setup_info):
 
 
 @pytest.mark.asyncio
-async def test_lock(setup_info):
-    try:
-        new_prefarm_info: PrefarmInfo = dataclasses.replace(
-            setup_info.prefarm_info,
-            puzzle_hash_list=[ACS_PH, ACS_PH],
-        )
-        prefarm_inner_puzzle: Program = construct_prefarm_inner_puzzle(setup_info.prefarm_info)
-        lock_spend = SpendBundle(
-            [
-                CoinSpend(
-                    setup_info.singleton,
-                    construct_singleton(
-                        setup_info.launcher_id,
-                        prefarm_inner_puzzle,
-                    ),
-                    solve_singleton(
-                        setup_info.first_lineage_proof,
-                        setup_info.singleton.amount,
-                        solve_prefarm_inner(
-                            SpendType.LOCK,
-                            setup_info.singleton.amount,
-                            lock_puzzle=ACS,
-                            proof_of_inclusion=get_proof_of_inclusion(1),
-                            puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
-                            lock_puzzle_solution=[
-                                [
-                                    51,
-                                    construct_prefarm_inner_puzzle(new_prefarm_info).get_tree_hash(),
-                                    setup_info.singleton.amount,
-                                ]
-                            ],
-                        ),
-                    ),
-                )
-            ],
-            G2Element(),
-        )
-        # Process results
-        result = await setup_info.sim_client.push_tx(lock_spend)
-        assert result[0] == MempoolInclusionStatus.SUCCESS
-        await setup_info.sim.farm_block()
-        # Check the singleton is at the new state
-        new_singleton_puzzle: Program = construct_singleton(
-            setup_info.launcher_id, construct_prefarm_inner_puzzle(new_prefarm_info)
-        )
-        assert (
-            len(await setup_info.sim_client.get_coin_records_by_puzzle_hashes([new_singleton_puzzle.get_tree_hash()]))
-            == 1
-        )
-    finally:
-        await setup_info.sim.close()
-
-
-@pytest.mark.asyncio
 async def test_payments(setup_info):
     try:
         WITHDRAWAL_AMOUNT = uint64(500)

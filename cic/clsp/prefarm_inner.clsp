@@ -81,29 +81,6 @@
     )
   )
 
-  ;;; LOCK ;;;
-  (defun lock (THIS_MOD_HASH ROOT STATE my_amount (
-    puzzle_reveal
-    proof_of_inclusion
-    new_root
-    puzzle_solution
-  ))
-    (assert
-      (= ROOT (calculate_merkle_root_for_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))
-      ; then
-      (enforce_one_specific_coin
-        (a puzzle_reveal puzzle_solution)
-        (calculate_our_ph
-          THIS_MOD_HASH
-          new_root
-          STATE
-        )
-        my_amount
-        ()
-      )
-    )
-  )
-
   ;;; START REKEY ;;;
   (defun start_rekey (THIS_MOD_HASH ROOT STATE my_amount (
     puzzle_reveal
@@ -176,15 +153,12 @@
     (if (= spend_type 1)
         (finish_rekey THIS_MOD_HASH ROOT STATE my_amount spend_solution)
         (if (= spend_type 2)
-            (lock THIS_MOD_HASH ROOT STATE my_amount spend_solution)
+            (start_rekey THIS_MOD_HASH ROOT STATE my_amount spend_solution)
             (if (= spend_type 3)
-                (start_rekey THIS_MOD_HASH ROOT STATE my_amount spend_solution)
+                (withdraw_payment THIS_MOD_HASH ROOT STATE my_amount spend_solution)
                 (if (= spend_type 4)
-                    (withdraw_payment THIS_MOD_HASH ROOT STATE my_amount spend_solution)
-                    (if (= spend_type 5)
-                        (accept_payment THIS_MOD_HASH ROOT STATE my_amount spend_solution)
-                        (x)
-                    )
+                    (accept_payment THIS_MOD_HASH ROOT STATE my_amount spend_solution)
+                    (x)
                 )
             )
         )
