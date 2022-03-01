@@ -142,7 +142,7 @@ async def test_rekey(setup_info):
                         setup_info.singleton.amount,
                         solve_prefarm_inner(
                             SpendType.START_REKEY,
-                            prefarm_amount=setup_info.singleton.amount,
+                            setup_info.singleton.amount,
                             puzzle_reveal=ACS,
                             proof_of_inclusion=get_proof_of_inclusion(1),
                             puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
@@ -186,7 +186,7 @@ async def test_rekey(setup_info):
                         setup_info.singleton.amount,
                         solve_prefarm_inner(
                             SpendType.FINISH_REKEY,
-                            prefarm_amount=setup_info.singleton.amount,
+                            setup_info.singleton.amount,
                             puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
                         ),
                     ),
@@ -237,7 +237,7 @@ async def test_lock(setup_info):
                         setup_info.singleton.amount,
                         solve_prefarm_inner(
                             SpendType.LOCK,
-                            prefarm_amount=setup_info.singleton.amount,
+                            setup_info.singleton.amount,
                             lock_puzzle=ACS,
                             proof_of_inclusion=get_proof_of_inclusion(1),
                             puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
@@ -288,7 +288,7 @@ async def test_payments(setup_info):
                         setup_info.singleton.amount,
                         solve_prefarm_inner(
                             SpendType.WITHDRAW_PAYMENT,
-                            prefarm_amount=setup_info.singleton.amount,
+                            setup_info.singleton.amount,
                             puzzle_reveal=ACS,
                             proof_of_inclusion=get_proof_of_inclusion(1),
                             withdrawal_amount=WITHDRAWAL_AMOUNT,
@@ -336,7 +336,7 @@ async def test_payments(setup_info):
                         setup_info.singleton.amount - WITHDRAWAL_AMOUNT,
                         solve_prefarm_inner(
                             SpendType.ACCEPT_PAYMENT,
-                            prefarm_amount=setup_info.singleton.amount - WITHDRAWAL_AMOUNT,
+                            setup_info.singleton.amount - WITHDRAWAL_AMOUNT,
                             p2_singleton_lineage_proof=LineageProof(
                                 parent_name=setup_info.p2_singleton.parent_coin_info,
                                 amount=setup_info.p2_singleton.amount,
