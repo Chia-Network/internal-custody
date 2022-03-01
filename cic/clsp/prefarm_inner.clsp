@@ -6,6 +6,10 @@
     my_amount
     spend_type
     spend_solution
+    ; optional
+    puzzle_reveal
+    proof_of_inclusion
+    puzzle_solution
   )
 
   (include condition_codes.clib)
@@ -82,23 +86,16 @@
   )
 
   ;;; START REKEY ;;;
-  (defun start_rekey (THIS_MOD_HASH ROOT STATE my_amount (
-    puzzle_reveal
-    proof_of_inclusion
+  (defun start_rekey (THIS_MOD_HASH ROOT STATE my_amount conditions (
     new_root_after
-    puzzle_solution
   ))
-    (assert
-      (= ROOT (calculate_merkle_root_for_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))
-      ; then
-      (c
-        (list CREATE_COIN (calculate_our_ph THIS_MOD_HASH ROOT STATE) my_amount)
-        (enforce_one_specific_coin
-          (a puzzle_reveal puzzle_solution)
-          (calculate_rekey_ph (REKEY_MOD_HASH STATE) ROOT new_root_after)
-          0
-          ()
-        )
+    (c
+      (list CREATE_COIN (calculate_our_ph THIS_MOD_HASH ROOT STATE) my_amount)
+      (enforce_one_specific_coin
+        conditions
+        (calculate_rekey_ph (REKEY_MOD_HASH STATE) ROOT new_root_after)
+        0
+        ()
       )
     )
   )
@@ -110,16 +107,11 @@
       (sha256 1 p2_ph)
     )
   )
-  (defun withdraw_payment (THIS_MOD_HASH ROOT STATE my_amount (
-    puzzle_reveal
-    proof_of_inclusion
+  (defun withdraw_payment (THIS_MOD_HASH ROOT STATE my_amount conditions (
     withdrawal_amount
     p2_ph
-    puzzle_solution
   ))
-    (assert
-      (= ROOT (calculate_merkle_root_for_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))
-      (not (logand withdrawal_amount 1))
+    (assert (not (logand withdrawal_amount 1))
       ; then
       (c
         (list CREATE_COIN
@@ -127,7 +119,7 @@
             (- my_amount withdrawal_amount)
         )
         (enforce_one_specific_coin
-          (a puzzle_reveal puzzle_solution)
+          conditions
           (calculate_ach_payment (ACH_MOD_HASH STATE) (P2_SINGLETON_MOD_HASH STATE) p2_ph)
           withdrawal_amount
           ()
@@ -137,7 +129,7 @@
   )
 
   ;;; ACCEPT PAYMENT ;;;
-  (defun accept_payment (THIS_MOD_HASH ROOT STATE my_amount (
+  (defun accept_payment (THIS_MOD_HASH ROOT STATE my_amount conditions (
     p2_parent
     p2_amount
   ))
@@ -149,18 +141,22 @@
   )
 
   ; main
-  (c (list ASSERT_MY_AMOUNT my_amount)
+  (c (list ASSERT_MY_AMOUNT my_amount)  ; assert our amount because every path needs it
     (if (= spend_type 1)
         (finish_rekey THIS_MOD_HASH ROOT STATE my_amount spend_solution)
-        (if (= spend_type 2)
-            (start_rekey THIS_MOD_HASH ROOT STATE my_amount spend_solution)
-            (if (= spend_type 3)
-                (withdraw_payment THIS_MOD_HASH ROOT STATE my_amount spend_solution)
-                (if (= spend_type 4)
-                    (accept_payment THIS_MOD_HASH ROOT STATE my_amount spend_solution)
-                    (x)
-                )
-            )
+        ; After this point, all of the spends require authentication
+        (assert (= ROOT (calculate_merkle_root_for_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))
+          ; then
+          (if (= spend_type 2)
+              (start_rekey THIS_MOD_HASH ROOT STATE my_amount (a puzzle_reveal puzzle_solution) spend_solution)
+              (if (= spend_type 3)
+                  (withdraw_payment THIS_MOD_HASH ROOT STATE my_amount (a puzzle_reveal puzzle_solution) spend_solution)
+                  (if (= spend_type 4)
+                      (accept_payment THIS_MOD_HASH ROOT STATE my_amount (a puzzle_reveal puzzle_solution) spend_solution)
+                      (x)
+                  )
+              )
+          )
         )
     )
   )

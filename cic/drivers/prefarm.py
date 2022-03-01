@@ -96,20 +96,14 @@ def solve_prefarm_inner(spend_type: SpendType, prefarm_amount: uint64, **kwargs)
     elif spend_type == SpendType.START_REKEY:
         spend_solution = Program.to(
             [
-                kwargs["puzzle_reveal"],
-                kwargs["proof_of_inclusion"],
                 build_merkle_tree(kwargs["puzzle_hash_list"])[0],
-                kwargs["puzzle_solution"],
             ]
         )
     elif spend_type == SpendType.WITHDRAW_PAYMENT:
         spend_solution = Program.to(
             [
-                kwargs["puzzle_reveal"],
-                kwargs["proof_of_inclusion"],
                 kwargs["withdrawal_amount"],
                 kwargs["p2_ph"],
-                kwargs["puzzle_solution"],
             ]
         )
     elif spend_type == SpendType.ACCEPT_PAYMENT:
@@ -117,7 +111,16 @@ def solve_prefarm_inner(spend_type: SpendType, prefarm_amount: uint64, **kwargs)
     else:
         raise ValueError("An invalid spend type was specified")
 
-    return Program.to([prefarm_amount, spend_type.value, spend_solution])
+    return Program.to(
+        [
+            prefarm_amount,
+            spend_type.value,
+            spend_solution,
+            kwargs.get("puzzle_reveal"),
+            kwargs.get("proof_of_inclusion"),
+            kwargs.get("puzzle_solution"),
+        ]
+    )
 
 
 def construct_singleton_inner_puzzle(prefarm_info: PrefarmInfo) -> Program:
