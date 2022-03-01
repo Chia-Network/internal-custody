@@ -51,7 +51,7 @@
             amt
             (if (= CREATE_COIN (f (f conditions)))
                 (assert
-                  (if seen () 1)  ; not seen
+                  (not seen)  ; not seen
                   (= ph (f (r (f conditions))))
                   (= amt (f (r (r (f conditions)))))
                   ; then
@@ -83,7 +83,7 @@
               (sha256tree new_roots)
             )
       )
-      (list CREATE_PUZZLE_ANNOUNCEMENT '$')
+      (list CREATE_PUZZLE_ANNOUNCEMENT 'r')
       (list ASSERT_MY_AMOUNT my_amount)
       (list CREATE_COIN
             (calculate_our_ph THIS_MOD_HASH new_roots STATE)
@@ -163,6 +163,7 @@
   ))
     (assert
       (= (PUZZLE_ROOT ROOTS) (calculate_merkle_root_for_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))
+      (not (logand withdrawal_amount 1))
       ; then
       (c
         (list CREATE_COIN
@@ -229,7 +230,7 @@
               (sha256tree new_roots)
             )
       )
-      (list CREATE_PUZZLE_ANNOUNCEMENT '$')
+      (list CREATE_PUZZLE_ANNOUNCEMENT 's')
       (list ASSERT_MY_AMOUNT my_amount)
       (list CREATE_COIN
             (calculate_our_ph THIS_MOD_HASH new_roots STATE)
