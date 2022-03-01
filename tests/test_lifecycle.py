@@ -28,8 +28,7 @@ class SetupInfo:
     p2_singleton: Coin
     launcher_id: bytes32
     first_lineage_proof: LineageProof
-    start_date: uint64
-    drain_rate: uint64
+    prefarm_info: PrefarmInfo
 
 
 @pytest.fixture(scope="function")
@@ -42,8 +41,6 @@ async def setup_info():
     START_DATE = uint64(sim.timestamp)
     DRAIN_RATE = 1  # 1 mojo per second
     PUZZLE_HASHES = [ACS_PH]
-    LOCK_PUZZLE_HASHES = [ACS_PH]
-    SLOW_REKEY_PUZZLE_HASHES = [ACS_PH]
 
     # Identify the prefarm coins
     prefarm_coins = await sim_client.get_coin_records_by_puzzle_hashes([ACS_PH])
@@ -59,8 +56,6 @@ async def setup_info():
         starting_amount,  # starting_amount: uint64
         DRAIN_RATE,  # mojos_per_second: uint64
         PUZZLE_HASHES,  # puzzle_hash_list: List[bytes32]
-        LOCK_PUZZLE_HASHES,  # lock_puzzle_hash_list: List[bytes32]
-        SLOW_REKEY_PUZZLE_HASHES,  # slow_rekey_puzzle_hash_list: List[bytes32]
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
         big_coin, construct_singleton_inner_puzzle(prefarm_info), starting_amount
@@ -100,8 +95,7 @@ async def setup_info():
         small_coin,
         launch_spend.coin.name(),
         LineageProof(parent_name=launch_spend.coin.parent_coin_info, amount=launch_spend.coin.amount),
-        START_DATE,
-        DRAIN_RATE,
+        prefarm_info,
     )
 
 

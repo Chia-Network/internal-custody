@@ -14,7 +14,7 @@ from cic.load_clvm import load_clvm
 
 
 PREFARM_INNER = load_clvm("prefarm_inner.clsp", package_or_requirement="cic.clsp")
-# mock: (mod (mod_hash puz_root new_root_hash) (list (list 62 new_root_hash)))
+# mock: (mod (mod_hash puz_root new_root) (list (list 62 new_root)))
 REKEY_MOD = Program.fromhex("ff04ffff04ffff013effff04ff0bff808080ff8080")
 ACH_MOD = Program.to(1)  # mock
 SLOW_REKEY_MOD = REKEY_MOD  # mock
@@ -27,8 +27,6 @@ class PrefarmInfo:
     starting_amount: uint64
     mojos_per_second: uint64
     puzzle_hash_list: List[bytes32]
-    lock_puzzle_hash_list: List[bytes32]
-    slow_rekey_puzzle_hash_list: List[bytes32]
 
 
 class SpendType(int, enum.Enum):
@@ -37,8 +35,6 @@ class SpendType(int, enum.Enum):
     START_REKEY = 3
     WITHDRAW_PAYMENT = 4
     ACCEPT_PAYMENT = 5
-    START_SLOW_REKEY = 6
-    FINISH_SLOW_REKEY = 7
 
 
 def construct_rekey_puzzle(prefarm_info: PrefarmInfo) -> Program:
@@ -47,29 +43,13 @@ def construct_rekey_puzzle(prefarm_info: PrefarmInfo) -> Program:
 
 def curry_rekey_puzzle(old_prefarm_info: PrefarmInfo, new_prefarm_info: PrefarmInfo) -> Program:
     return construct_rekey_puzzle(old_prefarm_info).curry(
-        Program.to(
-            [
-                build_merkle_tree(new_prefarm_info.puzzle_hash_list)[0],
-                build_merkle_tree(new_prefarm_info.lock_puzzle_hash_list)[0],
-                build_merkle_tree(new_prefarm_info.slow_rekey_puzzle_hash_list)[0],
-            ]
-        ).get_tree_hash(),
+        build_merkle_tree(new_prefarm_info.puzzle_hash_list)[0],
         build_merkle_tree(old_prefarm_info.puzzle_hash_list)[0],
     )
 
 
 def solve_rekey_completion(new_prefarm_info: PrefarmInfo):
-    return Program.to(
-        [
-            Program.to(
-                [
-                    build_merkle_tree(new_prefarm_info.puzzle_hash_list)[0],
-                    build_merkle_tree(new_prefarm_info.lock_puzzle_hash_list)[0],
-                    build_merkle_tree(new_prefarm_info.slow_rekey_puzzle_hash_list)[0],
-                ]
-            ).get_tree_hash()
-        ]
-    )
+    return Program.to([build_merkle_tree(new_prefarm_info.puzzle_hash_list)[0]])
 
 
 def solve_rekey_clawback(puzzle_reveal: Program, solution: Program):
@@ -94,69 +74,25 @@ def solve_ach_clawback(puzzle_reveal: Program, solution: Program):
     return Program.to([puzzle_reveal, solution])
 
 
-def construct_slow_rekey_puzzle(prefarm_info: PrefarmInfo) -> Program:
-    return SLOW_REKEY_MOD
-
-
-def curry_slow_rekey_puzzle(old_prefarm_info: PrefarmInfo, new_prefarm_info: PrefarmInfo) -> Program:
-    return construct_slow_rekey_puzzle(old_prefarm_info).curry(
-        Program.to(
-            [
-                build_merkle_tree(new_prefarm_info.puzzle_hash_list)[0],
-                build_merkle_tree(new_prefarm_info.lock_puzzle_hash_list)[0],
-                build_merkle_tree(new_prefarm_info.slow_rekey_puzzle_hash_list)[0],
-            ]
-        ).get_tree_hash(),
-        build_merkle_tree(old_prefarm_info.puzzle_hash_list)[0],
-    )
-
-
-def solve_slow_rekey_completion(new_prefarm_info: PrefarmInfo):
-    return Program.to(
-        [
-            Program.to(
-                [
-                    build_merkle_tree(new_prefarm_info.puzzle_hash_list)[0],
-                    build_merkle_tree(new_prefarm_info.lock_puzzle_hash_list)[0],
-                    build_merkle_tree(new_prefarm_info.slow_rekey_puzzle_hash_list)[0],
-                ]
-            ).get_tree_hash()
-        ]
-    )
-
-
-def solve_slow_rekey_clawback(puzzle_reveal: Program, solution: Program):
-    return Program.to([puzzle_reveal, solution])
-
-
 def construct_prefarm_inner_puzzle(prefarm_info: PrefarmInfo) -> Program:
     return PREFARM_INNER.curry(
         PREFARM_INNER.get_tree_hash(),
-        [
-            build_merkle_tree(prefarm_info.puzzle_hash_list)[0],
-            build_merkle_tree(prefarm_info.lock_puzzle_hash_list)[0],
-            build_merkle_tree(prefarm_info.slow_rekey_puzzle_hash_list)[0],
-        ],
+        build_merkle_tree(prefarm_info.puzzle_hash_list)[0],
         [
             construct_rekey_puzzle(prefarm_info).get_tree_hash(),
             construct_ach_puzzle(prefarm_info).get_tree_hash(),
             construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash(),
-            construct_slow_rekey_puzzle(prefarm_info).get_tree_hash(),
         ],
     )
 
 
 def solve_prefarm_inner(spend_type: SpendType, **kwargs) -> Program:
     spend_solution: Program
-    if spend_type in (SpendType.FINISH_REKEY, SpendType.FINISH_SLOW_REKEY):
+    if spend_type == SpendType.FINISH_REKEY:
         spend_solution = Program.to(
             [
                 kwargs["prefarm_amount"],
-                [
-                    build_merkle_tree(kwargs["puzzle_hash_list"])[0],
-                    build_merkle_tree(kwargs["lock_puzzle_hash_list"])[0],
-                    build_merkle_tree(kwargs["slow_rekey_puzzle_hash_list"])[0],
-                ],
+                build_merkle_tree(kwargs["puzzle_hash_list"])[0],
             ]
         )
     elif spend_type == SpendType.LOCK:
@@ -166,21 +102,16 @@ def solve_prefarm_inner(spend_type: SpendType, **kwargs) -> Program:
                 kwargs["lock_puzzle"],
                 kwargs["proof_of_inclusion"],
                 build_merkle_tree(kwargs["puzzle_hash_list"])[0],
-                build_merkle_tree(kwargs["lock_puzzle_hash_list"])[0],
                 kwargs["lock_puzzle_solution"],
             ]
         )
-    elif spend_type in (SpendType.START_REKEY, SpendType.START_SLOW_REKEY):
+    elif spend_type == SpendType.START_REKEY:
         spend_solution = Program.to(
             [
                 kwargs["prefarm_amount"],
                 kwargs["puzzle_reveal"],
                 kwargs["proof_of_inclusion"],
-                [
-                    build_merkle_tree(kwargs["puzzle_hash_list"])[0],
-                    build_merkle_tree(kwargs["lock_puzzle_hash_list"])[0],
-                    build_merkle_tree(kwargs["slow_rekey_puzzle_hash_list"])[0],
-                ],
+                build_merkle_tree(kwargs["puzzle_hash_list"])[0],
                 kwargs["puzzle_solution"],
             ]
         )

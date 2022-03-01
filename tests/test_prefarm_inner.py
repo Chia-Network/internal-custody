@@ -19,11 +19,9 @@ from cic.drivers.merkle_utils import build_merkle_tree
 from cic.drivers.prefarm import (
     construct_prefarm_inner_puzzle,
     curry_rekey_puzzle,
-    curry_slow_rekey_puzzle,
     curry_ach_puzzle,
     solve_prefarm_inner,
     solve_rekey_completion,
-    solve_slow_rekey_completion,
     PrefarmInfo,
     SpendType,
 )
@@ -60,8 +58,6 @@ async def setup_info():
     START_DATE = uint64(0)  # pointless for this test
     DRAIN_RATE = uint64(0)  # pointless for this test
     PUZZLE_HASHES = [ACS_PH]
-    LOCK_PUZZLE_HASHES = [ACS_PH]
-    SLOW_REKEY_PUZZLE_HASHES = [ACS_PH]
 
     # Identify the prefarm coins
     prefarm_coins = await sim_client.get_coin_records_by_puzzle_hashes([ACS_PH])
@@ -77,8 +73,6 @@ async def setup_info():
         starting_amount,  # starting_amount: uint64
         DRAIN_RATE,  # mojos_per_second: uint64
         PUZZLE_HASHES,  # puzzle_hash_list: List[bytes32]
-        LOCK_PUZZLE_HASHES,  # lock_puzzle_hash_list: List[bytes32]
-        SLOW_REKEY_PUZZLE_HASHES,  # slow_rekey_puzzle_hash_list: List[bytes32]
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
         big_coin, construct_prefarm_inner_puzzle(prefarm_info), starting_amount
@@ -124,24 +118,15 @@ def get_proof_of_inclusion(num_puzzles: int) -> Tuple[int, List[bytes32]]:
     return build_merkle_tree([ACS_PH for i in range(0, num_puzzles)])[1][ACS_PH]
 
 
-@pytest.mark.parametrize(
-    "slow",
-    [True, False],
-)
 @pytest.mark.asyncio
-async def test_rekey(setup_info, slow):
+async def test_rekey(setup_info):
     try:
         new_prefarm_info: PrefarmInfo = dataclasses.replace(
             setup_info.prefarm_info,
             puzzle_hash_list=[ACS_PH, ACS_PH],
-            lock_puzzle_hash_list=[ACS_PH, ACS_PH],
-            slow_rekey_puzzle_hash_list=[ACS_PH, ACS_PH],
         )
 
-        if slow:
-            rekey_puzzle: Program = curry_slow_rekey_puzzle(setup_info.prefarm_info, new_prefarm_info)
-        else:
-            rekey_puzzle: Program = curry_rekey_puzzle(setup_info.prefarm_info, new_prefarm_info)
+        rekey_puzzle: Program = curry_rekey_puzzle(setup_info.prefarm_info, new_prefarm_info)
 
         prefarm_inner_puzzle: Program = construct_prefarm_inner_puzzle(setup_info.prefarm_info)
         start_rekey_spend = SpendBundle(
@@ -156,13 +141,11 @@ async def test_rekey(setup_info, slow):
                         setup_info.first_lineage_proof,
                         setup_info.singleton.amount,
                         solve_prefarm_inner(
-                            SpendType.START_SLOW_REKEY if slow else SpendType.START_REKEY,
+                            SpendType.START_REKEY,
                             prefarm_amount=setup_info.singleton.amount,
                             puzzle_reveal=ACS,
                             proof_of_inclusion=get_proof_of_inclusion(1),
                             puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
-                            lock_puzzle_hash_list=new_prefarm_info.lock_puzzle_hash_list,
-                            slow_rekey_puzzle_hash_list=new_prefarm_info.slow_rekey_puzzle_hash_list,
                             puzzle_solution=[[51, rekey_puzzle.get_tree_hash(), 0]],
                         ),
                     ),
@@ -202,18 +185,16 @@ async def test_rekey(setup_info, slow):
                         ),
                         setup_info.singleton.amount,
                         solve_prefarm_inner(
-                            SpendType.FINISH_SLOW_REKEY if slow else SpendType.FINISH_REKEY,
+                            SpendType.FINISH_REKEY,
                             prefarm_amount=setup_info.singleton.amount,
                             puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
-                            lock_puzzle_hash_list=new_prefarm_info.lock_puzzle_hash_list,
-                            slow_rekey_puzzle_hash_list=new_prefarm_info.slow_rekey_puzzle_hash_list,
                         ),
                     ),
                 ),
                 CoinSpend(
                     rekey_coin,
                     rekey_puzzle,
-                    solve_slow_rekey_completion(new_prefarm_info) if slow else solve_rekey_completion(new_prefarm_info),
+                    solve_rekey_completion(new_prefarm_info),
                 ),
             ],
             G2Element(),
@@ -241,7 +222,6 @@ async def test_lock(setup_info):
         new_prefarm_info: PrefarmInfo = dataclasses.replace(
             setup_info.prefarm_info,
             puzzle_hash_list=[ACS_PH, ACS_PH],
-            lock_puzzle_hash_list=[ACS_PH, ACS_PH],
         )
         prefarm_inner_puzzle: Program = construct_prefarm_inner_puzzle(setup_info.prefarm_info)
         lock_spend = SpendBundle(
@@ -261,7 +241,6 @@ async def test_lock(setup_info):
                             lock_puzzle=ACS,
                             proof_of_inclusion=get_proof_of_inclusion(1),
                             puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
-                            lock_puzzle_hash_list=new_prefarm_info.lock_puzzle_hash_list,
                             lock_puzzle_solution=[
                                 [
                                     51,
