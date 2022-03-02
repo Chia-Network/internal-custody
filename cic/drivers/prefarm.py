@@ -13,7 +13,7 @@ from cic.drivers.rate_limiting import construct_rate_limiting_puzzle
 from cic.load_clvm import load_clvm
 
 
-PREFARM_INNER = load_clvm("prefarm_inner.clsp", package_or_requirement="cic.clsp")
+PREFARM_INNER = load_clvm("prefarm_inner.clsp", package_or_requirement="cic.clsp.singleton")
 # mock: (mod (new_root puz_root timelock) (list (list 62 new_root)))
 REKEY_MOD = Program.fromhex("ff04ffff04ffff013effff04ff02ff808080ff8080")
 ACH_MOD = Program.to(1)  # mock
