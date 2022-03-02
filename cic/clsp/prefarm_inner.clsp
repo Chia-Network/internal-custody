@@ -88,6 +88,22 @@
     )
   )
 
+  (defun check_for_rekey_announcement (conditions)
+    (if conditions
+        (assert
+          (not
+            (and
+              (= (opcode (f conditions)) CREATE_PUZZLE_ANNOUNCEMENT)
+              (= (f (r (f conditions))) 'rekey')
+            )
+          )
+          ; then
+          (c (f conditions) (check_for_rekey_announcement (r conditions)))
+        )
+        ()
+    )
+  )
+
   ;;; FINISH REKEY ;;;
   (defun finish_rekey (THIS_MOD_HASH ROOT STATE my_amount (
     new_root
@@ -99,7 +115,7 @@
               new_root
             )
       )
-      (list CREATE_PUZZLE_ANNOUNCEMENT 'r')
+      (list CREATE_PUZZLE_ANNOUNCEMENT 'rekey')
       (list CREATE_COIN
             (calculate_our_ph THIS_MOD_HASH new_root STATE)
             my_amount
@@ -119,16 +135,16 @@
   )
 
   ;;; WITHDRAW_PAYMENT ;;;
-  (defun withdraw_payment (THIS_MOD_HASH ROOT STATE my_amount conditions (
-    withdrawal_amount  ; can be negative to accept payments
+  (defun handle_payment (THIS_MOD_HASH ROOT STATE my_amount conditions (
+    payment_amount  ; can be negative to accept payments
     p2_ph
   ))
-    (assert (not (logand withdrawal_amount 1))
+    (assert (not (logand payment_amount 1))
       ; then
       (check_singleton_and_even conditions
-        (c (calculate_our_ph THIS_MOD_HASH ROOT STATE) (- my_amount withdrawal_amount))  ; singleton info
-        (c (calculate_ach_payment (ACH_MOD_HASH STATE) p2_ph) withdrawal_amount)         ; drop coin info
-        (c () (> 0 withdrawal_amount))  ; if it's a negative withdrawal, we don't want evens so we set even_seen to true
+        (c (calculate_our_ph THIS_MOD_HASH ROOT STATE) (- my_amount payment_amount))  ; singleton info
+        (c (calculate_ach_payment (ACH_MOD_HASH STATE) p2_ph) payment_amount)         ; drop coin info
+        (c () (> 0 payment_amount))  ; if it's a negative withdrawal, we don't want evens so we set even_seen to true
       )
     )
   )
@@ -137,15 +153,17 @@
   (c (list ASSERT_MY_AMOUNT my_amount)  ; assert our amount because every path needs it
     (if (= spend_type 1)
         (finish_rekey THIS_MOD_HASH ROOT STATE my_amount spend_solution)
-        ; After this point, all of the spends require authentication
-        (assert (= ROOT (calculate_merkle_root_for_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))
-          ; then
-          (if (= spend_type 2)
-              (start_rekey THIS_MOD_HASH ROOT STATE my_amount (a puzzle_reveal puzzle_solution) spend_solution)
-              (if (= spend_type 3)
-                  (withdraw_payment THIS_MOD_HASH ROOT STATE my_amount (a puzzle_reveal puzzle_solution) spend_solution)
-                  (x)
-              )
+        (check_for_rekey_announcement  ; block the announcement that finishes the rekey
+          ; After this point, all of the spends require authentication
+          (assert (= ROOT (calculate_merkle_root_for_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))
+            ; then
+            (if (= spend_type 2)
+                (start_rekey THIS_MOD_HASH ROOT STATE my_amount (a puzzle_reveal puzzle_solution) spend_solution)
+                (if (= spend_type 3)
+                    (handle_payment THIS_MOD_HASH ROOT STATE my_amount (a puzzle_reveal puzzle_solution) spend_solution)
+                    (x)
+                )
+            )
           )
         )
     )

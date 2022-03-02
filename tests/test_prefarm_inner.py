@@ -240,11 +240,11 @@ async def test_payments(setup_info):
                         setup_info.first_lineage_proof,
                         setup_info.singleton.amount,
                         solve_prefarm_inner(
-                            SpendType.WITHDRAW_PAYMENT,
+                            SpendType.HANDLE_PAYMENT,
                             setup_info.singleton.amount,
                             puzzle_reveal=ACS,
                             proof_of_inclusion=get_proof_of_inclusion(1),
-                            withdrawal_amount=WITHDRAWAL_AMOUNT,
+                            payment_amount=WITHDRAWAL_AMOUNT,
                             p2_ph=ACS_PH,
                             puzzle_solution=[
                                 [
@@ -293,11 +293,11 @@ async def test_payments(setup_info):
                         ),
                         setup_info.singleton.amount - WITHDRAWAL_AMOUNT,
                         solve_prefarm_inner(
-                            SpendType.WITHDRAW_PAYMENT,
+                            SpendType.HANDLE_PAYMENT,
                             setup_info.singleton.amount - WITHDRAWAL_AMOUNT,
                             puzzle_reveal=ACS,
                             proof_of_inclusion=get_proof_of_inclusion(1),
-                            withdrawal_amount=setup_info.p2_singleton.amount * -1,
+                            payment_amount=setup_info.p2_singleton.amount * -1,
                             p2_ph=ACS_PH,
                             # create a puzzle announcement for the p2_singleton to assert
                             puzzle_solution=[

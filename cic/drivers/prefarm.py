@@ -32,7 +32,7 @@ class PrefarmInfo:
 class SpendType(int, enum.Enum):
     FINISH_REKEY = 1
     START_REKEY = 2
-    WITHDRAW_PAYMENT = 3
+    HANDLE_PAYMENT = 3
 
 
 def construct_rekey_puzzle(prefarm_info: PrefarmInfo) -> Program:
@@ -96,10 +96,10 @@ def solve_prefarm_inner(spend_type: SpendType, prefarm_amount: uint64, **kwargs)
                 build_merkle_tree(kwargs["puzzle_hash_list"])[0],
             ]
         )
-    elif spend_type == SpendType.WITHDRAW_PAYMENT:
+    elif spend_type == SpendType.HANDLE_PAYMENT:
         spend_solution = Program.to(
             [
-                kwargs["withdrawal_amount"],
+                kwargs["payment_amount"],
                 kwargs["p2_ph"],
             ]
         )
