@@ -3,7 +3,7 @@ from chia.util.ints import uint64
 
 from cic.load_clvm import load_clvm
 
-RL_MOD = load_clvm("rl.clsp", package_or_requirement="cic.clsp")
+RL_MOD = load_clvm("rl.clsp", package_or_requirement="cic.clsp.singleton")
 
 
 def construct_rate_limiting_puzzle(

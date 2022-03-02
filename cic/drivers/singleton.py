@@ -16,7 +16,7 @@ from chia.wallet.puzzles.singleton_top_layer import (
 
 from cic.load_clvm import load_clvm
 
-SINGLETON_MOD = load_clvm("singleton_top_layer_v1_1.clsp", package_or_requirement="cic.clsp")
+SINGLETON_MOD = load_clvm("singleton_top_layer_v1_1.clsp", package_or_requirement="cic.clsp.singleton")
 
 
 solve_singleton = solution_for_singleton
