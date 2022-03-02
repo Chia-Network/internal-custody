@@ -11,6 +11,7 @@ from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.mempool_inclusion_status import MempoolInclusionStatus
 from chia.types.spend_bundle import SpendBundle
 from chia.types.coin_spend import CoinSpend
+from chia.util.errors import Err
 from chia.util.ints import uint64
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
@@ -35,6 +36,7 @@ from cic.drivers.singleton import (
 
 ACS = Program.to(1)
 ACS_PH = ACS.get_tree_hash()
+SECONDS_IN_A_DAY = 86400
 
 
 @dataclasses.dataclass
@@ -121,12 +123,13 @@ def get_proof_of_inclusion(num_puzzles: int) -> Tuple[int, List[bytes32]]:
 @pytest.mark.asyncio
 async def test_rekey(setup_info):
     try:
+        TIMELOCK = uint64(60)  # one minute
         new_prefarm_info: PrefarmInfo = dataclasses.replace(
             setup_info.prefarm_info,
             puzzle_hash_list=[ACS_PH, ACS_PH],
         )
 
-        rekey_puzzle: Program = curry_rekey_puzzle(uint64(0), setup_info.prefarm_info, new_prefarm_info)
+        rekey_puzzle: Program = curry_rekey_puzzle(TIMELOCK, setup_info.prefarm_info, new_prefarm_info)
 
         prefarm_inner_puzzle: Program = construct_prefarm_inner_puzzle(setup_info.prefarm_info)
         start_rekey_spend = SpendBundle(
@@ -143,7 +146,7 @@ async def test_rekey(setup_info):
                         solve_prefarm_inner(
                             SpendType.START_REKEY,
                             setup_info.singleton.amount,
-                            timelock=0,
+                            timelock=TIMELOCK,
                             puzzle_reveal=ACS,
                             proof_of_inclusion=get_proof_of_inclusion(1),
                             puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
@@ -162,6 +165,11 @@ async def test_rekey(setup_info):
             G2Element(),
         )
         # Process results
+        result = await setup_info.sim_client.push_tx(start_rekey_spend)
+        assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
+        setup_info.sim.pass_time(TIMELOCK)
+        await setup_info.sim.farm_block()
+
         result = await setup_info.sim_client.push_tx(start_rekey_spend)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
@@ -195,7 +203,7 @@ async def test_rekey(setup_info):
                         solve_prefarm_inner(
                             SpendType.FINISH_REKEY,
                             setup_info.singleton.amount,
-                            timelock=0,
+                            timelock=TIMELOCK,
                             puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
                         ),
                     ),
@@ -228,6 +236,7 @@ async def test_rekey(setup_info):
 @pytest.mark.asyncio
 async def test_payments(setup_info):
     try:
+        THIRTY_DAYS = uint64(2592000)
         WITHDRAWAL_AMOUNT = uint64(500)
         prefarm_inner_puzzle: Program = construct_prefarm_inner_puzzle(setup_info.prefarm_info)
         withdrawal_spend = SpendBundle(
@@ -267,6 +276,11 @@ async def test_payments(setup_info):
             G2Element(),
         )
         # Process results
+        result = await setup_info.sim_client.push_tx(withdrawal_spend)
+        assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
+        setup_info.sim.pass_time(THIRTY_DAYS)
+        await setup_info.sim.farm_block()
+
         result = await setup_info.sim_client.push_tx(withdrawal_spend)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
@@ -322,6 +336,11 @@ async def test_payments(setup_info):
             G2Element(),
         )
         # Process results
+        result = await setup_info.sim_client.push_tx(accept_spend)
+        assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
+        setup_info.sim.pass_time(THIRTY_DAYS)
+        await setup_info.sim.farm_block()
+
         result = await setup_info.sim_client.push_tx(accept_spend)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
