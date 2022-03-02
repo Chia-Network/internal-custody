@@ -14,10 +14,9 @@ from cic.load_clvm import load_clvm
 
 
 PREFARM_INNER = load_clvm("prefarm_inner.clsp", package_or_requirement="cic.clsp")
-# mock: (mod (mod_hash puz_root new_root) (list (list 62 new_root)))
-REKEY_MOD = Program.fromhex("ff04ffff04ffff013effff04ff0bff808080ff8080")
+# mock: (mod (new_root puz_root timelock) (list (list 62 new_root)))
+REKEY_MOD = Program.fromhex("ff04ffff04ffff013effff04ff02ff808080ff8080")
 ACH_MOD = Program.to(1)  # mock
-SLOW_REKEY_MOD = REKEY_MOD  # mock
 
 
 @dataclass
@@ -39,10 +38,11 @@ def construct_rekey_puzzle(prefarm_info: PrefarmInfo) -> Program:
     return REKEY_MOD
 
 
-def curry_rekey_puzzle(old_prefarm_info: PrefarmInfo, new_prefarm_info: PrefarmInfo) -> Program:
+def curry_rekey_puzzle(timelock: uint64, old_prefarm_info: PrefarmInfo, new_prefarm_info: PrefarmInfo) -> Program:
     return construct_rekey_puzzle(old_prefarm_info).curry(
         build_merkle_tree(new_prefarm_info.puzzle_hash_list)[0],
         build_merkle_tree(old_prefarm_info.puzzle_hash_list)[0],
+        timelock,
     )
 
 
@@ -84,15 +84,10 @@ def construct_prefarm_inner_puzzle(prefarm_info: PrefarmInfo) -> Program:
 
 def solve_prefarm_inner(spend_type: SpendType, prefarm_amount: uint64, **kwargs) -> Program:
     spend_solution: Program
-    if spend_type == SpendType.FINISH_REKEY:
+    if spend_type in [SpendType.START_REKEY, SpendType.FINISH_REKEY]:
         spend_solution = Program.to(
             [
-                build_merkle_tree(kwargs["puzzle_hash_list"])[0],
-            ]
-        )
-    elif spend_type == SpendType.START_REKEY:
-        spend_solution = Program.to(
-            [
+                kwargs["timelock"],
                 build_merkle_tree(kwargs["puzzle_hash_list"])[0],
             ]
         )

@@ -126,7 +126,7 @@ async def test_rekey(setup_info):
             puzzle_hash_list=[ACS_PH, ACS_PH],
         )
 
-        rekey_puzzle: Program = curry_rekey_puzzle(setup_info.prefarm_info, new_prefarm_info)
+        rekey_puzzle: Program = curry_rekey_puzzle(uint64(0), setup_info.prefarm_info, new_prefarm_info)
 
         prefarm_inner_puzzle: Program = construct_prefarm_inner_puzzle(setup_info.prefarm_info)
         start_rekey_spend = SpendBundle(
@@ -143,6 +143,7 @@ async def test_rekey(setup_info):
                         solve_prefarm_inner(
                             SpendType.START_REKEY,
                             setup_info.singleton.amount,
+                            timelock=0,
                             puzzle_reveal=ACS,
                             proof_of_inclusion=get_proof_of_inclusion(1),
                             puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
@@ -194,6 +195,7 @@ async def test_rekey(setup_info):
                         solve_prefarm_inner(
                             SpendType.FINISH_REKEY,
                             setup_info.singleton.amount,
+                            timelock=0,
                             puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
                         ),
                     ),

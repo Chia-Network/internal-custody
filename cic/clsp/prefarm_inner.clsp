@@ -33,8 +33,9 @@
     )
   )
 
-  (defun-inline calculate_rekey_ph (REKEY_MOD_HASH ROOT new_root)
+  (defun-inline calculate_rekey_ph (REKEY_MOD_HASH ROOT timelock new_root)
     (puzzle_hash_of_curried_function REKEY_MOD_HASH
+      (sha256 1 timelock)
       (sha256 1 ROOT)
       (sha256 1 new_root)
     )
@@ -106,12 +107,13 @@
 
   ;;; FINISH REKEY ;;;
   (defun finish_rekey (THIS_MOD_HASH ROOT STATE my_amount (
+    timelock
     new_root
   ))
     (list
       (list ASSERT_PUZZLE_ANNOUNCEMENT
             (sha256
-              (calculate_rekey_ph (REKEY_MOD_HASH STATE) ROOT new_root)
+              (calculate_rekey_ph (REKEY_MOD_HASH STATE) ROOT timelock new_root)
               new_root
             )
       )
@@ -125,11 +127,12 @@
 
   ;;; START REKEY ;;;
   (defun start_rekey (THIS_MOD_HASH ROOT STATE my_amount conditions (
+    timelock
     new_root_after
   ))
     (check_singleton_and_even conditions
-      (c (calculate_our_ph THIS_MOD_HASH ROOT STATE) my_amount)              ; singleton info
-      (c (calculate_rekey_ph (REKEY_MOD_HASH STATE) ROOT new_root_after) 0)  ; drop coin info
+      (c (calculate_our_ph THIS_MOD_HASH ROOT STATE) my_amount)                       ; singleton info
+      (c (calculate_rekey_ph (REKEY_MOD_HASH STATE) ROOT timelock new_root_after) 0)  ; drop coin info
       (c () ())
     )
   )
