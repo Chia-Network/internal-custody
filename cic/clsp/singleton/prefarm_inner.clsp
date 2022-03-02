@@ -35,15 +35,17 @@
 
   (defun-inline calculate_rekey_ph (REKEY_MOD_HASH ROOT timelock new_root)
     (puzzle_hash_of_curried_function REKEY_MOD_HASH
-      (sha256 1 timelock)
-      (sha256 1 ROOT)
-      (sha256 1 new_root)
+      (sha256tree (list
+        new_root
+        ROOT
+        timelock
+      ))
     )
   )
 
-  (defun-inline calculate_ach_payment (ACH_MOD_HASH p2_ph)
+  (defun-inline calculate_ach_payment (ACH_MOD_HASH ROOT p2_ph)
     (puzzle_hash_of_curried_function ACH_MOD_HASH
-      (sha256 1 p2_ph)
+      (sha256tree (c ROOT p2_ph))
     )
   )
 
@@ -117,7 +119,7 @@
               new_root
             )
       )
-      (list CREATE_PUZZLE_ANNOUNCEMENT 'rekey')
+      (list CREATE_PUZZLE_ANNOUNCEMENT new_root)
       (list CREATE_COIN
             (calculate_our_ph THIS_MOD_HASH new_root STATE)
             my_amount
@@ -149,8 +151,8 @@
       ; then
       (c (list ASSERT_SECONDS_RELATIVE 2592000)  ; 30 days
         (check_singleton_and_even conditions
-          (c (calculate_our_ph THIS_MOD_HASH ROOT STATE) (- my_amount payment_amount))  ; singleton info
-          (c (calculate_ach_payment (ACH_MOD_HASH STATE) p2_ph) payment_amount)         ; drop coin info
+          (c (calculate_our_ph THIS_MOD_HASH ROOT STATE) (- my_amount payment_amount))       ; singleton info
+          (c (calculate_ach_payment (ACH_MOD_HASH STATE) ROOT p2_ph) payment_amount)         ; drop coin info
           (c () (> 0 payment_amount))  ; if it's a negative withdrawal, we don't want evens so we set even_seen to true
         )
       )

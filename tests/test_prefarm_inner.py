@@ -59,6 +59,7 @@ async def setup_info():
     # Define constants
     START_DATE = uint64(0)  # pointless for this test
     DRAIN_RATE = uint64(0)  # pointless for this test
+    CLAWBACK_PERIOD = uint64(0)  # pointless for this test
     PUZZLE_HASHES = [ACS_PH]
 
     # Identify the prefarm coins
@@ -70,11 +71,12 @@ async def setup_info():
     starting_amount = 18374999999999999999
     launcher_coin = Coin(big_coin.name(), SINGLETON_LAUNCHER_HASH, starting_amount)
     prefarm_info = PrefarmInfo(
-        launcher_coin.name(),  # launcher_id
+        launcher_coin.name(),  # launcher_id: bytes32
         START_DATE,  # start_date: uint64
         starting_amount,  # starting_amount: uint64
         DRAIN_RATE,  # mojos_per_second: uint64
         PUZZLE_HASHES,  # puzzle_hash_list: List[bytes32]
+        CLAWBACK_PERIOD,  # clawback_period: uint64
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
         big_coin, construct_prefarm_inner_puzzle(prefarm_info), starting_amount
@@ -185,6 +187,11 @@ async def test_rekey(setup_info):
         )[0].coin
 
         # Finish the rekey
+        new_singleton_lineage_proof = LineageProof(
+            setup_info.singleton.parent_coin_info,
+            prefarm_inner_puzzle.get_tree_hash(),
+            setup_info.singleton.amount,
+        )
         finish_rekey_spend = SpendBundle(
             [
                 CoinSpend(
@@ -194,11 +201,7 @@ async def test_rekey(setup_info):
                         prefarm_inner_puzzle,
                     ),
                     solve_singleton(
-                        LineageProof(
-                            setup_info.singleton.parent_coin_info,
-                            prefarm_inner_puzzle.get_tree_hash(),
-                            setup_info.singleton.amount,
-                        ),
+                        new_singleton_lineage_proof,
                         setup_info.singleton.amount,
                         solve_prefarm_inner(
                             SpendType.FINISH_REKEY,
@@ -211,12 +214,14 @@ async def test_rekey(setup_info):
                 CoinSpend(
                     rekey_coin,
                     rekey_puzzle,
-                    solve_rekey_completion(new_prefarm_info),
+                    solve_rekey_completion(setup_info.launcher_id, new_singleton_lineage_proof),
                 ),
             ],
             G2Element(),
         )
         # Process results
+        setup_info.sim.pass_time(TIMELOCK)
+        await setup_info.sim.farm_block()
         result = await setup_info.sim_client.push_tx(finish_rekey_spend)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()

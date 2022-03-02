@@ -1,0 +1,17 @@
+(mod
+  (
+    (_ PUZZLE_ROOT _)
+    puzzle_reveal
+    merkle_proof
+    puzzle_solution
+  )
+
+  (include sha256tree.clib)
+  (include merkle_utils.clib)
+  (include utility_macros.clib)
+
+  (assert (= PUZZLE_ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) merkle_proof))
+    ; then
+    (a puzzle_reveal puzzle_solution)
+  )
+)
