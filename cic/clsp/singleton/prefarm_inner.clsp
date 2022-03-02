@@ -163,7 +163,7 @@
         (finish_rekey THIS_MOD_HASH ROOT STATE my_amount spend_solution)
         (check_for_rekey_announcement  ; block the announcement that finishes the rekey
           ; After this point, all of the spends require authentication
-          (assert (= ROOT (calculate_merkle_root_for_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))
+          (assert (= ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))
             ; then
             (if (= spend_type 2)
                 (start_rekey THIS_MOD_HASH ROOT STATE my_amount (a puzzle_reveal puzzle_solution) spend_solution)
