@@ -146,7 +146,14 @@ async def test_rekey(setup_info):
                             puzzle_reveal=ACS,
                             proof_of_inclusion=get_proof_of_inclusion(1),
                             puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
-                            puzzle_solution=[[51, rekey_puzzle.get_tree_hash(), 0]],
+                            puzzle_solution=[
+                                [
+                                    51,
+                                    prefarm_inner_puzzle.get_tree_hash(),
+                                    setup_info.singleton.amount,
+                                ],
+                                [51, rekey_puzzle.get_tree_hash(), 0],
+                            ],
                         ),
                     ),
                 )
@@ -242,9 +249,14 @@ async def test_payments(setup_info):
                             puzzle_solution=[
                                 [
                                     51,
+                                    prefarm_inner_puzzle.get_tree_hash(),
+                                    setup_info.singleton.amount - WITHDRAWAL_AMOUNT,
+                                ],
+                                [
+                                    51,
                                     curry_ach_puzzle(setup_info.prefarm_info, ACS_PH).get_tree_hash(),
                                     WITHDRAWAL_AMOUNT,
-                                ]
+                                ],
                             ],
                         ),
                     ),
@@ -281,15 +293,21 @@ async def test_payments(setup_info):
                         ),
                         setup_info.singleton.amount - WITHDRAWAL_AMOUNT,
                         solve_prefarm_inner(
-                            SpendType.ACCEPT_PAYMENT,
+                            SpendType.WITHDRAW_PAYMENT,
                             setup_info.singleton.amount - WITHDRAWAL_AMOUNT,
-                            p2_singleton_lineage_proof=LineageProof(
-                                parent_name=setup_info.p2_singleton.parent_coin_info,
-                                amount=setup_info.p2_singleton.amount,
-                            ),
                             puzzle_reveal=ACS,
                             proof_of_inclusion=get_proof_of_inclusion(1),
-                            puzzle_solution=[],
+                            withdrawal_amount=setup_info.p2_singleton.amount * -1,
+                            p2_ph=ACS_PH,
+                            # create a puzzle announcement for the p2_singleton to assert
+                            puzzle_solution=[
+                                [
+                                    51,
+                                    prefarm_inner_puzzle.get_tree_hash(),
+                                    new_singleton.amount + setup_info.p2_singleton.amount,
+                                ],
+                                [62, setup_info.p2_singleton.name()],
+                            ],
                         ),
                     ),
                 ),

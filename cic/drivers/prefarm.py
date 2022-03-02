@@ -33,7 +33,6 @@ class SpendType(int, enum.Enum):
     FINISH_REKEY = 1
     START_REKEY = 2
     WITHDRAW_PAYMENT = 3
-    ACCEPT_PAYMENT = 4
 
 
 def construct_rekey_puzzle(prefarm_info: PrefarmInfo) -> Program:
@@ -60,9 +59,7 @@ def construct_ach_puzzle(prefarm_info: PrefarmInfo) -> Program:
 
 
 def curry_ach_puzzle(prefarm_info: PrefarmInfo, p2_puzzle_hash: bytes32) -> Program:
-    return construct_ach_puzzle(prefarm_info).curry(
-        p2_puzzle_hash, construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash()
-    )
+    return construct_ach_puzzle(prefarm_info).curry(p2_puzzle_hash)
 
 
 def solve_ach_completion():
@@ -106,8 +103,6 @@ def solve_prefarm_inner(spend_type: SpendType, prefarm_amount: uint64, **kwargs)
                 kwargs["p2_ph"],
             ]
         )
-    elif spend_type == SpendType.ACCEPT_PAYMENT:
-        spend_solution = Program.to(kwargs["p2_singleton_lineage_proof"].to_program())
     else:
         raise ValueError("An invalid spend type was specified")
 
