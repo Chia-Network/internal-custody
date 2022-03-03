@@ -13,16 +13,14 @@ from chia.types.mempool_inclusion_status import MempoolInclusionStatus
 from chia.types.spend_bundle import SpendBundle
 from chia.types.coin_spend import CoinSpend
 from chia.util.errors import Err
-from chia.util.ints import uint64
+from chia.util.ints import uint32, uint64
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
 
 from cic.drivers.merkle_utils import build_merkle_tree
 from cic.drivers.prefarm import (
-    construct_prefarm_inner_puzzle,
     curry_rekey_puzzle,
     curry_ach_puzzle,
-    solve_prefarm_inner,
     solve_rekey_completion,
     solve_rekey_clawback,
     solve_ach_clawback,
@@ -30,14 +28,12 @@ from cic.drivers.prefarm import (
     calculate_ach_clawback_ph,
     calculate_rekey_clawback_ph,
     PrefarmInfo,
-    SpendType,
 )
 from cic.drivers.singleton import (
     construct_singleton,
     solve_singleton,
     generate_launch_conditions_and_coin_spend,
     construct_p2_singleton,
-    solve_p2_singleton,
 )
 
 ACS = Program.to(1)

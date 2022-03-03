@@ -144,7 +144,7 @@ def curry_ach_puzzle(prefarm_info: PrefarmInfo, p2_puzzle_hash: bytes32) -> Prog
 
 
 def solve_ach_completion(
-    launcher_id: uint64,
+    launcher_id: bytes32,
     timelock: uint64,
     amount: uint64,
 ):
