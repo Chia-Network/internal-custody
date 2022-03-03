@@ -1,17 +1,50 @@
 (mod
   (
-    (_ PUZZLE_ROOT _)
+    (_ PUZZLE_ROOT TIMELOCK)
     puzzle_reveal
     merkle_proof
     puzzle_solution
   )
 
+  (include condition_codes.clib)
   (include sha256tree.clib)
   (include merkle_utils.clib)
   (include utility_macros.clib)
 
+  (defun-inline opcode (condition) (f condition))
+  (defun-inline puzhash (condition) (f (r condition)))
+  (defun-inline amount (condition) (f (r (r condition))))
+
+  (defun check_for_clawback (conditions CLAWBACK_PH amount seen)
+    (if conditions
+      (c (f conditions)
+        (check_for_clawback
+          (r conditions)
+          CLAWBACK_PH
+          amount
+          (if (= CREATE_COIN (opcode (f conditions)))
+              (assert
+                (not seen)  ; not seen
+                (= CLAWBACK_PH (puzhash (f conditions)))
+                (= amount (amount (f conditions)))
+                ; then
+                1
+              )
+              seen
+          )
+        )
+      )
+      (assert seen ())
+    )
+  )
+
   (assert (= PUZZLE_ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) merkle_proof))
     ; then
-    (a puzzle_reveal puzzle_solution)
+    (check_for_clawback
+      (a puzzle_reveal puzzle_solution)
+      (sha256tree (qq (a (q . (x)) (c (q . (unquote TIMELOCK)) 1))))  ; this is just `(x)` curried with the TIMELOCK
+      0
+      ()
+    )
   )
 )
