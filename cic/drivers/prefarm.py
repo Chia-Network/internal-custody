@@ -42,6 +42,10 @@ def construct_rekey_completion(launcher_id: bytes32) -> Program:
     return REKEY_COMPLETION_MOD.curry((SINGLETON_MOD.get_tree_hash(), (launcher_id, SINGLETON_LAUNCHER_HASH)))
 
 
+def calculate_rekey_clawback_ph(timelock: uint64) -> Program:
+    return Program.to([8]).curry(timelock).get_tree_hash()
+
+
 def construct_rekey_clawback() -> Program:
     return REKEY_CLAWBACK_MOD
 
@@ -107,8 +111,12 @@ def construct_ach_completion(timelock: uint64) -> Program:
     return ACH_COMPLETION_MOD.curry(timelock)
 
 
+def calculate_ach_clawback_ph(launcher_id: bytes32) -> bytes32:
+    return construct_p2_singleton(launcher_id).get_tree_hash()
+
+
 def construct_ach_clawback(launcher_id: bytes32) -> Program:
-    return ACH_CLAWBACK_MOD.curry(construct_p2_singleton(launcher_id).get_tree_hash())
+    return ACH_CLAWBACK_MOD.curry(calculate_ach_clawback_ph(launcher_id))
 
 
 def calculate_ach_merkle_tree(
@@ -135,12 +143,50 @@ def curry_ach_puzzle(prefarm_info: PrefarmInfo, p2_puzzle_hash: bytes32) -> Prog
     )
 
 
-def solve_ach_completion(amount: uint64):
-    return Program.to([amount])
+def solve_ach_completion(
+    launcher_id: uint64,
+    timelock: uint64,
+    amount: uint64,
+):
+    completion_puzzle: Program = construct_ach_completion(timelock)
+    merkle_proofs: Dict[bytes32, Tuple[int, List[bytes32]]] = calculate_ach_merkle_tree(launcher_id, timelock)[1]
+    completion_proof = Program.to(merkle_proofs[completion_puzzle.get_tree_hash()])
+
+    return Program.to(
+        [
+            completion_puzzle,
+            completion_proof,
+            [
+                amount,
+            ],
+        ]
+    )
 
 
-def solve_ach_clawback(amount: uint64, puzzle_reveal: Program, proof_of_inclusion: Program, solution: Program):
-    return Program.to([amount, puzzle_reveal, proof_of_inclusion, solution])
+def solve_ach_clawback(
+    launcher_id: bytes32,
+    timelock: uint64,
+    amount: uint64,
+    puzzle_reveal: Program,
+    proof_of_inclusion: Program,
+    solution: Program,
+):
+    clawback_puzzle: Program = construct_ach_clawback(launcher_id)
+    merkle_proofs: Dict[bytes32, Tuple[int, List[bytes32]]] = calculate_ach_merkle_tree(launcher_id, timelock)[1]
+    clawback_proof = Program.to(merkle_proofs[clawback_puzzle.get_tree_hash()])
+
+    return Program.to(
+        [
+            clawback_puzzle,
+            clawback_proof,
+            [
+                amount,
+                puzzle_reveal,
+                proof_of_inclusion,
+                solution,
+            ],
+        ]
+    )
 
 
 def construct_prefarm_inner_puzzle(prefarm_info: PrefarmInfo) -> Program:
