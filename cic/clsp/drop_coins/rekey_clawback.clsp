@@ -1,6 +1,6 @@
 (mod
   (
-    (_ PUZZLE_ROOT TIMELOCK)
+    (NEW_ROOT PUZZLE_ROOT TIMELOCK)
     puzzle_reveal
     merkle_proof
     puzzle_solution
@@ -14,6 +14,22 @@
   (defun-inline opcode (condition) (f condition))
   (defun-inline puzhash (condition) (f (r condition)))
   (defun-inline amount (condition) (f (r (r condition))))
+
+  (defun check_for_rekey_announcement (conditions NEW_ROOT)
+    (if conditions
+        (assert
+          (not
+            (and
+              (= (opcode (f conditions)) CREATE_PUZZLE_ANNOUNCEMENT)
+              (= (f (r (f conditions))) NEW_ROOT)
+            )
+          )
+          ; then
+          (c (f conditions) (check_for_rekey_announcement (r conditions) NEW_ROOT))
+        )
+        ()
+    )
+  )
 
   (defun check_for_clawback (conditions CLAWBACK_PH amount seen)
     (if conditions
@@ -40,11 +56,14 @@
 
   (assert (= PUZZLE_ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) merkle_proof))
     ; then
-    (check_for_clawback
-      (a puzzle_reveal puzzle_solution)
-      (sha256tree (qq (a (q . (x)) (c (q . (unquote TIMELOCK)) 1))))  ; this is just `(x)` curried with the TIMELOCK
-      0
-      ()
+    (check_for_rekey_announcement
+      (check_for_clawback
+        (a puzzle_reveal puzzle_solution)
+        (sha256tree (qq (a (q . (x)) (c (q . (unquote TIMELOCK)) 1))))  ; this is just `(x)` curried with the TIMELOCK
+        0
+        ()
+      )
+      NEW_ROOT
     )
   )
 )

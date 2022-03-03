@@ -119,7 +119,7 @@
               new_root
             )
       )
-      (list CREATE_PUZZLE_ANNOUNCEMENT new_root)
+      (list CREATE_PUZZLE_ANNOUNCEMENT 'rekey')
       (list CREATE_COIN
             (calculate_our_ph THIS_MOD_HASH new_root STATE)
             my_amount

@@ -22,7 +22,7 @@
     (list
         (list ASSERT_SECONDS_RELATIVE TIMELOCK)
         (list ASSERT_MY_PARENT_ID (sha256 parent_parent parent_puzzle parent_amount))
-        (list ASSERT_PUZZLE_ANNOUNCEMENT (sha256 parent_puzzle NEW_ROOT))
+        (list ASSERT_PUZZLE_ANNOUNCEMENT (sha256 parent_puzzle 'rekey'))
         (list CREATE_PUZZLE_ANNOUNCEMENT NEW_ROOT)
     )
   )

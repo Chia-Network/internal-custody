@@ -2,11 +2,12 @@ import dataclasses
 import pytest
 
 from blspy import G2Element
+from clvm.EvalError import EvalError
 from typing import Tuple, List
 
 from chia.clvm.spend_sim import SpendSim, SimClient
 from chia.types.blockchain_format.coin import Coin
-from chia.types.blockchain_format.program import Program
+from chia.types.blockchain_format.program import Program, INFINITE_COST
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.mempool_inclusion_status import MempoolInclusionStatus
 from chia.types.spend_bundle import SpendBundle
@@ -195,7 +196,7 @@ async def test_ach(setup_info):
                         setup_info.launcher_id,
                         setup_info.prefarm_info.clawback_period,
                         PAYMENT_AMOUNT,
-                    )
+                    ),
                 )
             ],
             G2Element(),
@@ -252,6 +253,34 @@ async def test_rekey(setup_info):
         new_singleton = Coin(setup_info.singleton.name(), setup_info.singleton.puzzle_hash, setup_info.singleton.amount)
 
         # Attempt to clawback the ACH coin
+        # First, let's try to sneakily complete the rekey and make sure it fails
+        malicious_rekey_bundle = SpendBundle(
+            [
+                CoinSpend(
+                    rekey_coin,
+                    rekey_puzzle,
+                    solve_rekey_clawback(
+                        setup_info.launcher_id,
+                        ACS,
+                        get_proof_of_inclusion(1),
+                        Program.to(
+                            [
+                                [51, calculate_rekey_clawback_ph(REKEY_TIMELOCK), 0],
+                                [62, build_merkle_tree(new_prefarm_info.puzzle_hash_list)[0]],
+                            ]
+                        ),
+                    ),
+                )
+            ],
+            G2Element(),
+        )
+        result = await setup_info.sim_client.push_tx(malicious_rekey_bundle)
+        assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
+        with pytest.raises(EvalError, match="clvm raise"):
+            malicious_rekey_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
+                INFINITE_COST, malicious_rekey_bundle.coin_spends[0].solution
+            )
+        # Then, let's do it honestly
         clawback_rekey_bundle = SpendBundle(
             [
                 CoinSpend(
@@ -283,7 +312,7 @@ async def test_rekey(setup_info):
                     solve_rekey_completion(
                         setup_info.launcher_id,
                         LineageProof(setup_info.singleton.parent_coin_info, ACS_PH, setup_info.singleton.amount),
-                    )
+                    ),
                 ),
                 CoinSpend(
                     new_singleton,
@@ -296,12 +325,12 @@ async def test_rekey(setup_info):
                         setup_info.singleton.amount,
                         Program.to(
                             [
-                                [62, build_merkle_tree(new_prefarm_info.puzzle_hash_list)[0]],
+                                [62, "rekey"],
                                 [51, ACS_PH, setup_info.singleton.amount],
                             ]
                         ),
                     ),
-                )
+                ),
             ],
             G2Element(),
         )
