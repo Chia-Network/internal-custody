@@ -1,8 +1,9 @@
 (mod
   (
+    INNER_PUZZLE
     MERKLE_ROOT
     curried_args
-    puzzle_reveal
+    parameters
     merkle_proof
     solution
   )
@@ -13,8 +14,8 @@
   (include merkle_utils.clib)
   (include utility_macros.clib)
 
-  (assert (= MERKLE_ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) merkle_proof))
+  (assert (= MERKLE_ROOT (simplify_merkle_proof (sha256tree parameters) merkle_proof))
     ; then
-    (a puzzle_reveal (c curried_args solution))
+    (a INNER_PUZZLE (list parameters (if curried_args (c curried_args solution) solution)))
   )
 )

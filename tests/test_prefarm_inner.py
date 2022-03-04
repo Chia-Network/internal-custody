@@ -167,7 +167,7 @@ async def test_rekey(setup_info):
                                         setup_info.singleton.amount,
                                     ],
                                     [51, rekey_puzzle.get_tree_hash(), 0],
-                                    *malicious_condition
+                                    *malicious_condition,
                                 ],
                             ),
                         ),
@@ -175,6 +175,7 @@ async def test_rekey(setup_info):
                 ],
                 G2Element(),
             )
+
         # Test the malicious spend fails first
         malicious_rekey_spend: SpendBundle = start_rekey_spend(True)
         result = await setup_info.sim_client.push_tx(malicious_rekey_spend)

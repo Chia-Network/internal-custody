@@ -16,6 +16,7 @@ from cic.load_clvm import load_clvm
 
 PREFARM_INNER = load_clvm("prefarm_inner.clsp", package_or_requirement="cic.clsp.singleton")
 P2_MERKLE_MOD = load_clvm("p2_merkle_tree.clsp", package_or_requirement="cic.clsp.drop_coins")
+DEFAULT_INNER = Program.to([2, 2, 5])  # (a 2 5)
 REKEY_COMPLETION_MOD = load_clvm("rekey_completion.clsp", package_or_requirement="cic.clsp.drop_coins")
 REKEY_CLAWBACK_MOD = load_clvm("rekey_clawback.clsp", package_or_requirement="cic.clsp.drop_coins")
 ACH_COMPLETION_MOD = load_clvm("ach_completion.clsp", package_or_requirement="cic.clsp.drop_coins")
@@ -60,7 +61,7 @@ def calculate_rekey_merkle_tree(launcher_id: bytes32) -> Tuple[bytes32, Dict[byt
 
 
 def construct_rekey_puzzle(prefarm_info: PrefarmInfo) -> Program:
-    return P2_MERKLE_MOD.curry(calculate_rekey_merkle_tree(prefarm_info.launcher_id)[0])
+    return P2_MERKLE_MOD.curry(DEFAULT_INNER, calculate_rekey_merkle_tree(prefarm_info.launcher_id)[0])
 
 
 def curry_rekey_puzzle(timelock: uint64, old_prefarm_info: PrefarmInfo, new_prefarm_info: PrefarmInfo) -> Program:
@@ -131,7 +132,9 @@ def calculate_ach_merkle_tree(
 
 
 def construct_ach_puzzle(prefarm_info: PrefarmInfo) -> Program:
-    return P2_MERKLE_MOD.curry(calculate_ach_merkle_tree(prefarm_info.launcher_id, prefarm_info.clawback_period)[0])
+    return P2_MERKLE_MOD.curry(
+        DEFAULT_INNER, calculate_ach_merkle_tree(prefarm_info.launcher_id, prefarm_info.clawback_period)[0]
+    )
 
 
 def curry_ach_puzzle(prefarm_info: PrefarmInfo, p2_puzzle_hash: bytes32) -> Program:
