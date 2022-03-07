@@ -1,7 +1,8 @@
 (mod
   (
     SINGLETON_STRUCT
-    (NEW_ROOT _ TIMELOCK)
+    FINISHING_TIMELOCK
+    (NEW_ROOT _ _)
     (parent_parent parent_inner_puz parent_amount)  ; lineage proof
   )
 
@@ -27,5 +28,5 @@
     )
   )
 
-  (main SINGLETON_STRUCT NEW_ROOT TIMELOCK parent_parent (calculate_full_puzzle_hash SINGLETON_STRUCT parent_inner_puz) parent_amount)
+  (main SINGLETON_STRUCT NEW_ROOT FINISHING_TIMELOCK parent_parent (calculate_full_puzzle_hash SINGLETON_STRUCT parent_inner_puz) parent_amount)
 )

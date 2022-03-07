@@ -233,7 +233,7 @@ async def test_rekey(setup_info):
                 CoinSpend(
                     rekey_coin,
                     rekey_puzzle,
-                    solve_rekey_completion(setup_info.launcher_id, new_singleton_lineage_proof),
+                    solve_rekey_completion(setup_info.prefarm_info, new_singleton_lineage_proof),
                 ),
             ],
             G2Element(),

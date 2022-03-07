@@ -26,7 +26,6 @@ from cic.drivers.prefarm import (
     solve_ach_clawback,
     solve_ach_completion,
     calculate_ach_clawback_ph,
-    calculate_rekey_clawback_ph,
     PrefarmInfo,
 )
 from cic.drivers.singleton import (
@@ -164,12 +163,11 @@ async def test_ach(setup_info):
                     ach_coin,
                     ach_puzzle,
                     solve_ach_clawback(
-                        setup_info.launcher_id,
-                        setup_info.prefarm_info.clawback_period,
+                        setup_info.prefarm_info,
                         PAYMENT_AMOUNT,
                         ACS,
                         get_proof_of_inclusion(1),
-                        Program.to([[51, calculate_ach_clawback_ph(setup_info.launcher_id), PAYMENT_AMOUNT]]),
+                        Program.to([[51, calculate_ach_clawback_ph(setup_info.prefarm_info), PAYMENT_AMOUNT]]),
                     ),
                 )
             ],
@@ -189,8 +187,7 @@ async def test_ach(setup_info):
                     ach_coin,
                     ach_puzzle,
                     solve_ach_completion(
-                        setup_info.launcher_id,
-                        setup_info.prefarm_info.clawback_period,
+                        setup_info.prefarm_info,
                         PAYMENT_AMOUNT,
                     ),
                 )
@@ -256,12 +253,13 @@ async def test_rekey(setup_info):
                     rekey_coin,
                     rekey_puzzle,
                     solve_rekey_clawback(
-                        setup_info.launcher_id,
+                        setup_info.prefarm_info,
+                        rekey_puzzle.get_tree_hash(),
                         ACS,
                         get_proof_of_inclusion(1),
                         Program.to(
                             [
-                                [51, calculate_rekey_clawback_ph(REKEY_TIMELOCK), 0],
+                                [51, rekey_puzzle.get_tree_hash(), 0],
                                 [62, build_merkle_tree(new_prefarm_info.puzzle_hash_list)[0]],
                             ]
                         ),
@@ -283,10 +281,11 @@ async def test_rekey(setup_info):
                     rekey_coin,
                     rekey_puzzle,
                     solve_rekey_clawback(
-                        setup_info.launcher_id,
+                        setup_info.prefarm_info,
+                        rekey_puzzle.get_tree_hash(),
                         ACS,
                         get_proof_of_inclusion(1),
-                        Program.to([[51, calculate_rekey_clawback_ph(REKEY_TIMELOCK), 0]]),
+                        Program.to([[51, rekey_puzzle.get_tree_hash(), 0]]),
                     ),
                 )
             ],
@@ -306,7 +305,7 @@ async def test_rekey(setup_info):
                     rekey_coin,
                     rekey_puzzle,
                     solve_rekey_completion(
-                        setup_info.launcher_id,
+                        setup_info.prefarm_info,
                         LineageProof(setup_info.singleton.parent_coin_info, ACS_PH, setup_info.singleton.amount),
                     ),
                 ),
