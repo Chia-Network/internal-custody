@@ -37,7 +37,6 @@ from cic.drivers.singleton import (
 
 ACS = Program.to(1)
 ACS_PH = ACS.get_tree_hash()
-SECONDS_IN_A_DAY = 86400
 
 
 @dataclasses.dataclass
