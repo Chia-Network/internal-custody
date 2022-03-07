@@ -1,0 +1,447 @@
+import dataclasses
+import pytest
+
+from blspy import G2Element
+from clvm.EvalError import EvalError
+from typing import Tuple, List
+
+from chia.clvm.spend_sim import SpendSim, SimClient
+from chia.types.blockchain_format.coin import Coin
+from chia.types.blockchain_format.program import Program, INFINITE_COST
+from chia.types.blockchain_format.sized_bytes import bytes32
+from chia.types.mempool_inclusion_status import MempoolInclusionStatus
+from chia.types.spend_bundle import SpendBundle
+from chia.types.coin_spend import CoinSpend
+from chia.util.errors import Err
+from chia.util.ints import uint32, uint64
+from chia.wallet.lineage_proof import LineageProof
+from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
+
+from cic.drivers.merkle_utils import build_merkle_tree
+from cic.drivers.prefarm import (
+    curry_rekey_puzzle,
+    curry_ach_puzzle,
+    solve_rekey_completion,
+    solve_rekey_clawback,
+    solve_ach_clawback,
+    solve_ach_completion,
+    calculate_ach_clawback_ph,
+    construct_payment_and_rekey_filter,
+    construct_rekey_filter,
+    solve_filter_for_payment,
+    solve_filter_for_rekey,
+    PrefarmInfo,
+)
+from cic.drivers.singleton import (
+    construct_singleton,
+    solve_singleton,
+    generate_launch_conditions_and_coin_spend,
+    construct_p2_singleton,
+)
+
+ACS = Program.to(1)
+ACS_PH = ACS.get_tree_hash()
+
+
+@dataclasses.dataclass
+class SetupInfo:
+    sim: SpendSim
+    sim_client: SimClient
+    rnp_coin: Coin
+    rko_coin: Coin
+    rnp_filter: Program
+    rko_filter: Program
+    rekey_timelock: uint64
+    starting_amount: uint64
+    prefarm_info: PrefarmInfo
+    merkle_root: bytes32
+
+
+@pytest.fixture(scope="function")
+async def setup_info():
+    sim = await SpendSim.create()
+    sim_client = SimClient(sim)
+    await sim.farm_block(ACS_PH)
+
+    # Find the coins
+    prefarm_coins = await sim_client.get_coin_records_by_puzzle_hashes([ACS_PH])
+
+    # Construct our prefarm info
+    REKEY_TIMELOCK = uint64(60)  # one minute
+    prefarm_info = PrefarmInfo(
+        bytes32([0] * 32),  # doesn't matter
+        uint64(0),  # doesn't matter
+        uint64(0),  # doesn't matter
+        uint64(0),  # doesn't matter
+        [ACS_PH],
+        uint64(0),  # doesn't matter
+    )
+
+    # Construct the two filters
+    rnp_filter = construct_payment_and_rekey_filter(prefarm_info, prefarm_info.puzzle_hash_list, REKEY_TIMELOCK)
+    rko_filter = construct_rekey_filter(prefarm_info, prefarm_info.puzzle_hash_list, REKEY_TIMELOCK)
+
+    # Send coins to both of these puzzles as filters
+    STARTING_AMOUNT = uint64(10000000000000000001)
+    initial_bundle = SpendBundle(
+        [
+            CoinSpend(prefarm_coins[0].coin, ACS, Program.to([[51, rnp_filter.get_tree_hash(), STARTING_AMOUNT]])),
+            CoinSpend(prefarm_coins[1].coin, ACS, Program.to([[51, rko_filter.get_tree_hash(), STARTING_AMOUNT]])),
+        ],
+        G2Element(),
+    )
+    await sim_client.push_tx(initial_bundle)
+    await sim.farm_block()
+
+    # Find the new coins
+    new_coins = await sim.all_non_reward_coins()
+    rnp_coin = next(coin for coin in new_coins if coin.puzzle_hash == rnp_filter.get_tree_hash())
+    rko_coin = next(coin for coin in new_coins if coin.puzzle_hash == rko_filter.get_tree_hash())
+
+    return SetupInfo(
+        sim,
+        sim_client,
+        rnp_coin,
+        rko_coin,
+        rnp_filter,
+        rko_filter,
+        REKEY_TIMELOCK,
+        STARTING_AMOUNT,
+        prefarm_info,
+        build_merkle_tree(prefarm_info.puzzle_hash_list)[0],
+    )
+
+
+def get_proof_of_inclusion(num_puzzles: int) -> Tuple[int, List[bytes32]]:
+    return build_merkle_tree([ACS_PH for i in range(0, num_puzzles)])[1][ACS_PH]
+
+
+@pytest.mark.asyncio
+async def test_random_create_coins_blocked(setup_info):
+    try:
+        rnp_bundle_even = SpendBundle(
+            [
+                CoinSpend(
+                    setup_info.rnp_coin,
+                    setup_info.rnp_filter,
+                    Program.to(  # Manually construct a malicious solution
+                        [
+                            ACS,
+                            get_proof_of_inclusion(1),
+                            [
+                                [[51, ACS_PH, 2]],
+                                (setup_info.merkle_root, ACS_PH),
+                            ],
+                        ],
+                    ),
+                )
+            ],
+            G2Element(),
+        )
+        rko_bundle_even = SpendBundle(
+            [
+                CoinSpend(
+                    setup_info.rko_coin,
+                    setup_info.rko_filter,
+                    Program.to(  # Manually construct a malicious solution
+                        [
+                            ACS,
+                            get_proof_of_inclusion(1),
+                            [
+                                [[51, ACS_PH, 2]],
+                                [setup_info.merkle_root, setup_info.merkle_root, uint64(0)],
+                            ],
+                        ],
+                    ),
+                )
+            ],
+            G2Element(),
+        )
+        rnp_bundle_zero = SpendBundle(
+            [
+                CoinSpend(
+                    setup_info.rnp_coin,
+                    setup_info.rnp_filter,
+                    Program.to(  # Manually construct a malicious solution
+                        [
+                            ACS,
+                            get_proof_of_inclusion(1),
+                            [
+                                [[51, ACS_PH, 0]],
+                                [setup_info.merkle_root, setup_info.merkle_root, uint64(0)],
+                            ],
+                        ],
+                    ),
+                )
+            ],
+            G2Element(),
+        )
+        rko_bundle_zero = SpendBundle(
+            [
+                CoinSpend(
+                    setup_info.rko_coin,
+                    setup_info.rko_filter,
+                    Program.to(  # Manually construct a malicious solution
+                        [
+                            ACS,
+                            get_proof_of_inclusion(1),
+                            [
+                                [[51, ACS_PH, 0]],
+                                [setup_info.merkle_root, setup_info.merkle_root, uint64(0)],
+                            ],
+                        ],
+                    ),
+                )
+            ],
+            G2Element(),
+        )
+        for bundle in [rnp_bundle_even, rnp_bundle_zero, rko_bundle_even, rko_bundle_zero]:
+            result = await setup_info.sim_client.push_tx(bundle)
+            assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
+            with pytest.raises(EvalError, match="clvm raise"):
+                bundle.coin_spends[0].puzzle_reveal.run_with_cost(INFINITE_COST, bundle.coin_spends[0].solution)
+    finally:
+        await setup_info.sim.close()
+
+
+@pytest.mark.asyncio
+async def test_honest_payments(setup_info):
+    try:
+        REWIND_HEIGHT = setup_info.sim.block_height
+        # Try initiating a payment
+        payment_bundle = SpendBundle(
+            [
+                CoinSpend(
+                    setup_info.rnp_coin,
+                    setup_info.rnp_filter,
+                    solve_filter_for_payment(
+                        ACS,
+                        get_proof_of_inclusion(1),
+                        Program.to([[51, curry_ach_puzzle(setup_info.prefarm_info, ACS_PH).get_tree_hash(), 2]]),
+                        setup_info.prefarm_info.puzzle_hash_list,
+                        ACS_PH,  # irrelevant
+                    ),
+                )
+            ],
+            G2Element(),
+        )
+        # Process the spend
+        result = await setup_info.sim_client.push_tx(payment_bundle)
+        assert result[0] == MempoolInclusionStatus.SUCCESS
+        await setup_info.sim.farm_block()
+        await setup_info.sim.rewind(REWIND_HEIGHT)
+
+        # Try clawing back a payment
+        clawback_bundle = SpendBundle(
+            [
+                CoinSpend(
+                    setup_info.rnp_coin,
+                    setup_info.rnp_filter,
+                    solve_filter_for_payment(
+                        ACS,
+                        get_proof_of_inclusion(1),
+                        Program.to([[51, calculate_ach_clawback_ph(setup_info.prefarm_info), 2]]),
+                        setup_info.prefarm_info.puzzle_hash_list,
+                        bytes32([0] * 32),  # irrelevant
+                    ),
+                )
+            ],
+            G2Element(),
+        )
+        # Process the spend
+        result = await setup_info.sim_client.push_tx(clawback_bundle)
+        assert result[0] == MempoolInclusionStatus.SUCCESS
+        await setup_info.sim.farm_block()
+    finally:
+        await setup_info.sim.close()
+
+
+@pytest.mark.parametrize(
+    "honest",
+    [True, False],
+)
+@pytest.mark.asyncio
+async def test_rekeys(setup_info, honest):
+    try:
+        REWIND_HEIGHT = setup_info.sim.block_height
+        if honest:
+            REKEY_TIMELOCK: uint64 = setup_info.rekey_timelock
+        else:
+            REKEY_TIMELOCK = uint64(setup_info.rekey_timelock - 1)
+        # Try initiating a rekey with the rnp filter
+        rnp_bundle = SpendBundle(
+            [
+                CoinSpend(
+                    setup_info.rnp_coin,
+                    setup_info.rnp_filter,
+                    solve_filter_for_rekey(
+                        ACS,
+                        get_proof_of_inclusion(1),
+                        Program.to(
+                            [
+                                [
+                                    51,
+                                    curry_rekey_puzzle(
+                                        REKEY_TIMELOCK, setup_info.prefarm_info, setup_info.prefarm_info
+                                    ).get_tree_hash(),
+                                    0,
+                                ]
+                            ]
+                        ),
+                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_hash_list,
+                        REKEY_TIMELOCK,
+                    ),
+                )
+            ],
+            G2Element(),
+        )
+        # Process the spend
+        if honest:
+            result = await setup_info.sim_client.push_tx(rnp_bundle)
+            assert result[0] == MempoolInclusionStatus.SUCCESS
+            await setup_info.sim.farm_block()
+            await setup_info.sim.rewind(REWIND_HEIGHT)
+        else:
+            result = await setup_info.sim_client.push_tx(rnp_bundle)
+            assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
+            with pytest.raises(EvalError, match="clvm raise"):
+                rnp_bundle.coin_spends[0].puzzle_reveal.run_with_cost(INFINITE_COST, rnp_bundle.coin_spends[0].solution)
+
+        # Try initiating a rekey with the rko filter
+        rko_bundle = SpendBundle(
+            [
+                CoinSpend(
+                    setup_info.rko_coin,
+                    setup_info.rko_filter,
+                    solve_filter_for_rekey(
+                        ACS,
+                        get_proof_of_inclusion(1),
+                        Program.to(
+                            [
+                                [
+                                    51,
+                                    curry_rekey_puzzle(
+                                        REKEY_TIMELOCK, setup_info.prefarm_info, setup_info.prefarm_info
+                                    ).get_tree_hash(),
+                                    0,
+                                ]
+                            ]
+                        ),
+                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_hash_list,
+                        REKEY_TIMELOCK,
+                    ),
+                )
+            ],
+            G2Element(),
+        )
+        # Process the spend
+        if honest:
+            result = await setup_info.sim_client.push_tx(rko_bundle)
+            assert result[0] == MempoolInclusionStatus.SUCCESS
+            await setup_info.sim.farm_block()
+        else:
+            result = await setup_info.sim_client.push_tx(rko_bundle)
+            assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
+            with pytest.raises(EvalError, match="clvm raise"):
+                rko_bundle.coin_spends[0].puzzle_reveal.run_with_cost(INFINITE_COST, rko_bundle.coin_spends[0].solution)
+    finally:
+        await setup_info.sim.close()
+
+
+@pytest.mark.asyncio
+async def test_wrong_amount_types(setup_info):
+    try:
+        # Try initiating a payment of 0
+        bad_payment_bundle = SpendBundle(
+            [
+                CoinSpend(
+                    setup_info.rnp_coin,
+                    setup_info.rnp_filter,
+                    solve_filter_for_payment(
+                        ACS,
+                        get_proof_of_inclusion(1),
+                        Program.to([[51, curry_ach_puzzle(setup_info.prefarm_info, ACS_PH).get_tree_hash(), 0]]),
+                        setup_info.prefarm_info.puzzle_hash_list,
+                        ACS_PH,  # irrelevant
+                    ),
+                )
+            ],
+            G2Element(),
+        )
+        # Process the spend
+        result = await setup_info.sim_client.push_tx(bad_payment_bundle)
+        assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
+        with pytest.raises(EvalError, match="clvm raise"):
+            bad_payment_bundle.coin_spends[0].puzzle_reveal.run_with_cost(INFINITE_COST, bad_payment_bundle.coin_spends[0].solution)
+
+        # Try initiating a rekey with amount > 0 using RNP filter
+        bad_rnp_rekey_bundle = SpendBundle(
+            [
+                CoinSpend(
+                    setup_info.rnp_coin,
+                    setup_info.rnp_filter,
+                    solve_filter_for_rekey(
+                        ACS,
+                        get_proof_of_inclusion(1),
+                        Program.to(
+                            [
+                                [
+                                    51,
+                                    curry_rekey_puzzle(
+                                        setup_info.rekey_timelock, setup_info.prefarm_info, setup_info.prefarm_info
+                                    ).get_tree_hash(),
+                                    2,
+                                ]
+                            ]
+                        ),
+                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.rekey_timelock,
+                    ),
+                )
+            ],
+            G2Element(),
+        )
+        # Process the spend
+        result = await setup_info.sim_client.push_tx(bad_rnp_rekey_bundle)
+        assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
+        with pytest.raises(EvalError, match="clvm raise"):
+            bad_rnp_rekey_bundle.coin_spends[0].puzzle_reveal.run_with_cost(INFINITE_COST, bad_rnp_rekey_bundle.coin_spends[0].solution)
+
+        # Try initiating a rekey with amount > 0 with RKO filter
+        bad_rko_rekey_bundle = SpendBundle(
+            [
+                CoinSpend(
+                    setup_info.rko_coin,
+                    setup_info.rko_filter,
+                    solve_filter_for_rekey(
+                        ACS,
+                        get_proof_of_inclusion(1),
+                        Program.to(
+                            [
+                                [
+                                    51,
+                                    curry_rekey_puzzle(
+                                        setup_info.rekey_timelock, setup_info.prefarm_info, setup_info.prefarm_info
+                                    ).get_tree_hash(),
+                                    2,
+                                ]
+                            ]
+                        ),
+                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.rekey_timelock,
+                    ),
+                )
+            ],
+            G2Element(),
+        )
+        # Process the spend
+        result = await setup_info.sim_client.push_tx(bad_rko_rekey_bundle)
+        assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
+        with pytest.raises(EvalError, match="clvm raise"):
+            bad_rko_rekey_bundle.coin_spends[0].puzzle_reveal.run_with_cost(INFINITE_COST, bad_rko_rekey_bundle.coin_spends[0].solution)
+    finally:
+        await setup_info.sim.close()
