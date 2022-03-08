@@ -24,9 +24,9 @@ from cic.drivers.prefarm import (
     curry_ach_puzzle,
     solve_prefarm_inner,
     solve_rekey_completion,
-    PrefarmInfo,
     SpendType,
 )
+from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.singleton import (
     construct_singleton,
     solve_singleton,

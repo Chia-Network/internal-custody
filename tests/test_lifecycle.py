@@ -13,7 +13,8 @@ from chia.util.ints import uint64
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import pay_to_singleton_puzzle, SINGLETON_LAUNCHER_HASH
 
-from cic.drivers.prefarm import construct_singleton_inner_puzzle, PrefarmInfo
+from cic.drivers.prefarm import construct_singleton_inner_puzzle
+from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.singleton import generate_launch_conditions_and_coin_spend
 
 ACS = Program.to(1)
