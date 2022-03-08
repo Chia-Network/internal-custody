@@ -4,6 +4,7 @@ from typing import List
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.util.ints import uint64
 
+
 @dataclass
 class PrefarmInfo:
     launcher_id: bytes32
