@@ -1,6 +1,6 @@
 (mod
   (
-    (NEW_ROOT PUZZLE_ROOT _)
+    (_ PUZZLE_ROOT _)
     puzzle_reveal
     merkle_proof
     puzzle_solution
@@ -12,21 +12,23 @@
   (include merkle_utils.clib)
   (include utility_macros.clib)
 
+  (defconstant REKEY_KW 'rekey')
+
   (defun-inline opcode (condition) (f condition))
   (defun-inline puzhash (condition) (f (r condition)))
   (defun-inline amount (condition) (f (r (r condition))))
 
-  (defun check_for_rekey_announcement (conditions NEW_ROOT)
+  (defun check_for_rekey_announcement (conditions)
     (if conditions
         (assert
           (not
             (and
               (= (opcode (f conditions)) CREATE_PUZZLE_ANNOUNCEMENT)
-              (= (f (r (f conditions))) NEW_ROOT)
+              (= (f (r (f conditions))) REKEY_KW)
             )
           )
           ; then
-          (c (f conditions) (check_for_rekey_announcement (r conditions) NEW_ROOT))
+          (c (f conditions) (check_for_rekey_announcement (r conditions)))
         )
         ()
     )
@@ -70,7 +72,6 @@
         0
         ()
       )
-      NEW_ROOT
     )
     )
   )

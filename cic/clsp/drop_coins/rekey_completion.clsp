@@ -2,13 +2,15 @@
   (
     SINGLETON_STRUCT
     FINISHING_TIMELOCK
-    (NEW_ROOT _ _)
+    (_ _ _)
     (parent_parent parent_inner_puz parent_amount)  ; lineage proof
   )
 
   (include condition_codes.clib)
   (include curry_and_treehash.clib)
   (include sha256tree.clib)
+
+  (defconstant REKEY_KW 'rekey')
 
   ;; return the full puzzlehash for a singleton with the innerpuzzle curried in
   ; puzzle-hash-of-curried-function is imported from curry-and-treehash.clinc
@@ -19,14 +21,14 @@
      )
   )
 
-  (defun main (SINGLETON_STRUCT NEW_ROOT TIMELOCK parent_parent parent_puzzle parent_amount)
+  (defun main (SINGLETON_STRUCT TIMELOCK parent_parent parent_puzzle parent_amount)
     (list
         (list ASSERT_SECONDS_RELATIVE TIMELOCK)
         (list ASSERT_MY_PARENT_ID (sha256 parent_parent parent_puzzle parent_amount))
-        (list ASSERT_PUZZLE_ANNOUNCEMENT (sha256 parent_puzzle 'rekey'))
-        (list CREATE_PUZZLE_ANNOUNCEMENT NEW_ROOT)
+        (list ASSERT_PUZZLE_ANNOUNCEMENT (sha256 parent_puzzle REKEY_KW))
+        (list CREATE_PUZZLE_ANNOUNCEMENT REKEY_KW)
     )
   )
 
-  (main SINGLETON_STRUCT NEW_ROOT FINISHING_TIMELOCK parent_parent (calculate_full_puzzle_hash SINGLETON_STRUCT parent_inner_puz) parent_amount)
+  (main SINGLETON_STRUCT FINISHING_TIMELOCK parent_parent (calculate_full_puzzle_hash SINGLETON_STRUCT parent_inner_puz) parent_amount)
 )

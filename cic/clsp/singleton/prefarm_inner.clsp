@@ -18,6 +18,8 @@
   (include utility_macros.clib)
   (include merkle_utils.clib)
 
+  (defconstant REKEY_KW 'rekey')
+
   ; STATE is a list with the following elements in order
   ; - REKEY_MOD_HASH
   ; - ACH_MOD_HASH
@@ -97,7 +99,7 @@
           (not
             (and
               (= (opcode (f conditions)) CREATE_PUZZLE_ANNOUNCEMENT)
-              (= (f (r (f conditions))) 'rekey')
+              (= (f (r (f conditions))) REKEY_KW)
             )
           )
           ; then
@@ -116,10 +118,10 @@
       (list ASSERT_PUZZLE_ANNOUNCEMENT
             (sha256
               (calculate_rekey_ph (REKEY_MOD_HASH STATE) ROOT timelock new_root)
-              new_root
+              REKEY_KW
             )
       )
-      (list CREATE_PUZZLE_ANNOUNCEMENT 'rekey')
+      (list CREATE_PUZZLE_ANNOUNCEMENT REKEY_KW)
       (list CREATE_COIN
             (calculate_our_ph THIS_MOD_HASH new_root STATE)
             my_amount

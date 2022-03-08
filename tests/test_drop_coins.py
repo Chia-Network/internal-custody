@@ -259,7 +259,7 @@ async def test_rekey(setup_info):
                         Program.to(
                             [
                                 [51, rekey_puzzle.get_tree_hash(), 0],
-                                [62, build_merkle_tree(new_prefarm_info.puzzle_hash_list)[0]],
+                                [62, 'rekey'],
                             ]
                         ),
                     ),
