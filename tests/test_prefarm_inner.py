@@ -17,13 +17,15 @@ from chia.util.ints import uint64
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
 
+from cic.drivers.drop_coins import (
+    curry_rekey_puzzle,
+    curry_ach_puzzle,
+    solve_rekey_completion,
+)
 from cic.drivers.merkle_utils import build_merkle_tree
 from cic.drivers.prefarm import (
     construct_prefarm_inner_puzzle,
-    curry_rekey_puzzle,
-    curry_ach_puzzle,
     solve_prefarm_inner,
-    solve_rekey_completion,
     SpendType,
 )
 from cic.drivers.prefarm_info import PrefarmInfo

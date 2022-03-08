@@ -8,7 +8,7 @@ from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.util.ints import uint64
 from chia.wallet.lineage_proof import LineageProof
 
-from cic.driver.drop_coins import construct_rekey_puzzle, construct_ach_puzzle
+from cic.drivers.drop_coins import construct_rekey_puzzle, construct_ach_puzzle
 from cic.drivers.merkle_utils import build_merkle_tree
 from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.singleton import SINGLETON_MOD, SINGLETON_LAUNCHER_HASH, construct_singleton, construct_p2_singleton
