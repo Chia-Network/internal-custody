@@ -1,9 +1,8 @@
-from typing import List, Tuple, Dict
+from typing import List
 
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.util.ints import uint64
-from chia.wallet.lineage_proof import LineageProof
 
 from cic.drivers.drop_coins import (
     P2_MERKLE_MOD,
@@ -13,11 +12,11 @@ from cic.drivers.drop_coins import (
 )
 from cic.drivers.merkle_utils import build_merkle_tree
 from cic.drivers.prefarm_info import PrefarmInfo
-from cic.drivers.singleton import SINGLETON_MOD, SINGLETON_LAUNCHER_HASH, construct_p2_singleton
 from cic.load_clvm import load_clvm
 
 FILTER_ONLY_REKEY_MOD = load_clvm("only_rekey.clsp", package_or_requirement="cic.clsp.filters")
 FILTER_REKEY_AND_PAYMENT_MOD = load_clvm("rekey_and_payment.clsp", package_or_requirement="cic.clsp.filters")
+
 
 def construct_payment_and_rekey_filter(
     prefarm_info: PrefarmInfo,

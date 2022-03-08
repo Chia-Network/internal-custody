@@ -13,17 +13,11 @@ from chia.types.mempool_inclusion_status import MempoolInclusionStatus
 from chia.types.spend_bundle import SpendBundle
 from chia.types.coin_spend import CoinSpend
 from chia.util.errors import Err
-from chia.util.ints import uint32, uint64
-from chia.wallet.lineage_proof import LineageProof
-from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
+from chia.util.ints import uint64
 
 from cic.drivers.drop_coins import (
     curry_rekey_puzzle,
     curry_ach_puzzle,
-    solve_rekey_completion,
-    solve_rekey_clawback,
-    solve_ach_completion,
-    solve_ach_clawback,
     calculate_ach_clawback_ph,
 )
 from cic.drivers.filters import (
@@ -34,12 +28,7 @@ from cic.drivers.filters import (
 )
 from cic.drivers.merkle_utils import build_merkle_tree
 from cic.drivers.prefarm import PrefarmInfo
-from cic.drivers.singleton import (
-    construct_singleton,
-    solve_singleton,
-    generate_launch_conditions_and_coin_spend,
-    construct_p2_singleton,
-)
+
 
 ACS = Program.to(1)
 ACS_PH = ACS.get_tree_hash()
@@ -376,7 +365,9 @@ async def test_wrong_amount_types(setup_info):
         result = await setup_info.sim_client.push_tx(bad_payment_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
         with pytest.raises(EvalError, match="clvm raise"):
-            bad_payment_bundle.coin_spends[0].puzzle_reveal.run_with_cost(INFINITE_COST, bad_payment_bundle.coin_spends[0].solution)
+            bad_payment_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
+                INFINITE_COST, bad_payment_bundle.coin_spends[0].solution
+            )
 
         # Try initiating a rekey with amount > 0 using RNP filter
         bad_rnp_rekey_bundle = SpendBundle(
@@ -410,7 +401,9 @@ async def test_wrong_amount_types(setup_info):
         result = await setup_info.sim_client.push_tx(bad_rnp_rekey_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
         with pytest.raises(EvalError, match="clvm raise"):
-            bad_rnp_rekey_bundle.coin_spends[0].puzzle_reveal.run_with_cost(INFINITE_COST, bad_rnp_rekey_bundle.coin_spends[0].solution)
+            bad_rnp_rekey_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
+                INFINITE_COST, bad_rnp_rekey_bundle.coin_spends[0].solution
+            )
 
         # Try initiating a rekey with amount > 0 with RKO filter
         bad_rko_rekey_bundle = SpendBundle(
@@ -444,6 +437,8 @@ async def test_wrong_amount_types(setup_info):
         result = await setup_info.sim_client.push_tx(bad_rko_rekey_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
         with pytest.raises(EvalError, match="clvm raise"):
-            bad_rko_rekey_bundle.coin_spends[0].puzzle_reveal.run_with_cost(INFINITE_COST, bad_rko_rekey_bundle.coin_spends[0].solution)
+            bad_rko_rekey_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
+                INFINITE_COST, bad_rko_rekey_bundle.coin_spends[0].solution
+            )
     finally:
         await setup_info.sim.close()
