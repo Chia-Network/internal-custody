@@ -42,6 +42,7 @@ async def setup_info():
     START_DATE = uint64(sim.timestamp)
     DRAIN_RATE = 1  # 1 mojo per second
     PUZZLE_HASHES = [ACS_PH]
+    WITHDRAWAL_TIMELOCK = uint64(2592000)  # 30 days
     CLAWBACK_PERIOD = uint64(7776000)
 
     # Identify the prefarm coins
@@ -58,6 +59,7 @@ async def setup_info():
         starting_amount,  # starting_amount: uint64
         DRAIN_RATE,  # mojos_per_second: uint64
         PUZZLE_HASHES,  # puzzle_hash_list: List[bytes32]
+        WITHDRAWAL_TIMELOCK, # withdrawal_timelock: uint64
         CLAWBACK_PERIOD,  # clawback_period: uint64
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(

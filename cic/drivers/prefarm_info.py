@@ -12,4 +12,5 @@ class PrefarmInfo:
     starting_amount: uint64
     mojos_per_second: uint64
     puzzle_hash_list: List[bytes32]
+    withdrawal_timelock: uint64
     clawback_period: uint64

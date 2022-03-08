@@ -63,6 +63,7 @@ async def setup_info():
     START_DATE = uint64(0)  # pointless for this test
     DRAIN_RATE = uint64(0)  # pointless for this test
     CLAWBACK_PERIOD = uint64(0)  # pointless for this test
+    WITHDRAWAL_TIMELOCK = uint64(60)
     PUZZLE_HASHES = [ACS_PH]
 
     # Identify the prefarm coins
@@ -79,6 +80,7 @@ async def setup_info():
         starting_amount,  # starting_amount: uint64
         DRAIN_RATE,  # mojos_per_second: uint64
         PUZZLE_HASHES,  # puzzle_hash_list: List[bytes32]
+        WITHDRAWAL_TIMELOCK, # withdrawal_timelock: uint64
         CLAWBACK_PERIOD,  # clawback_period: uint64
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
@@ -262,7 +264,6 @@ async def test_rekey(setup_info):
 @pytest.mark.asyncio
 async def test_payments(setup_info):
     try:
-        THIRTY_DAYS = uint64(2592000)
         WITHDRAWAL_AMOUNT = uint64(500)
         prefarm_inner_puzzle: Program = construct_prefarm_inner_puzzle(setup_info.prefarm_info)
         withdrawal_spend = SpendBundle(
@@ -304,7 +305,7 @@ async def test_payments(setup_info):
         # Process results
         result = await setup_info.sim_client.push_tx(withdrawal_spend)
         assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
-        setup_info.sim.pass_time(THIRTY_DAYS)
+        setup_info.sim.pass_time(setup_info.prefarm_info.withdrawal_timelock)
         await setup_info.sim.farm_block()
 
         result = await setup_info.sim_client.push_tx(withdrawal_spend)
@@ -364,7 +365,7 @@ async def test_payments(setup_info):
         # Process results
         result = await setup_info.sim_client.push_tx(accept_spend)
         assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
-        setup_info.sim.pass_time(THIRTY_DAYS)
+        setup_info.sim.pass_time(setup_info.prefarm_info.withdrawal_timelock)
         await setup_info.sim.farm_block()
 
         result = await setup_info.sim_client.push_tx(accept_spend)

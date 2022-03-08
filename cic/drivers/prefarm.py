@@ -28,6 +28,7 @@ def construct_prefarm_inner_puzzle(prefarm_info: PrefarmInfo) -> Program:
         [
             construct_rekey_puzzle(prefarm_info).get_tree_hash(),
             construct_ach_puzzle(prefarm_info).get_tree_hash(),
+            prefarm_info.withdrawal_timelock,
         ],
     )
 

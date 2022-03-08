@@ -25,6 +25,7 @@
   ; - ACH_MOD_HASH
   (defun-inline REKEY_MOD_HASH (STATE) (f STATE))
   (defun-inline ACH_MOD_HASH (STATE) (f (r STATE)))
+  (defun-inline ACH_TIMELOCK (STATE) (f (r (r STATE))))
 
   ;;; utility functions ;;;
   (defun calculate_our_ph (THIS_MOD_HASH ROOT STATE)
@@ -151,7 +152,7 @@
   ))
     (assert (not (logand payment_amount 1))
       ; then
-      (c (list ASSERT_SECONDS_RELATIVE 2592000)  ; 30 days
+      (c (list ASSERT_SECONDS_RELATIVE (ACH_TIMELOCK STATE))
         (check_singleton_and_even conditions
           (c (calculate_our_ph THIS_MOD_HASH ROOT STATE) (- my_amount payment_amount))       ; singleton info
           (c (calculate_ach_payment (ACH_MOD_HASH STATE) ROOT p2_ph) payment_amount)         ; drop coin info
