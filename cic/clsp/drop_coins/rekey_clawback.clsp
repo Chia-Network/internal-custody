@@ -1,6 +1,6 @@
 (mod
   (
-    (_ PUZZLE_ROOT _)
+    (_ PUZZLE_ROOT TIMELOCK)
     puzzle_reveal
     merkle_proof
     puzzle_solution
@@ -62,17 +62,20 @@
     )
   )
 
-  (assert (= PUZZLE_ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) merkle_proof))
+  (assert (> TIMELOCK 0)
     ; then
-    (c (list ASSERT_MY_PUZZLEHASH my_puzzle_hash)
-    (check_for_rekey_announcement
-      (check_for_and_filter_clawback
-        (a puzzle_reveal puzzle_solution)
-        my_puzzle_hash
-        0
-        ()
+    (assert (= PUZZLE_ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) merkle_proof))
+      ; then
+      (c (list ASSERT_MY_PUZZLEHASH my_puzzle_hash)
+      (check_for_rekey_announcement
+        (check_for_and_filter_clawback
+          (a puzzle_reveal puzzle_solution)
+          my_puzzle_hash
+          0
+          ()
+        )
       )
-    )
+      )
     )
   )
 )
