@@ -76,7 +76,7 @@ async def setup_info():
         START_DATE,  # start_date: uint64
         starting_amount,  # starting_amount: uint64
         DRAIN_RATE,  # mojos_per_second: uint64
-        PUZZLE_HASHES,  # puzzle_hash_list: List[bytes32]
+        build_merkle_tree(PUZZLE_HASHES)[0],  # merkle_root: bytes32
         WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
         CLAWBACK_PERIOD,  # clawback_period: uint64
     )
@@ -213,7 +213,9 @@ async def test_ach(setup_info):
 async def test_rekey(setup_info):
     try:
         REKEY_TIMELOCK = uint64(60)
-        new_prefarm_info: PrefarmInfo = dataclasses.replace(setup_info.prefarm_info, puzzle_hash_list=[ACS_PH, ACS_PH])
+        new_prefarm_info: PrefarmInfo = dataclasses.replace(
+            setup_info.prefarm_info, puzzle_root=build_merkle_tree([ACS_PH, ACS_PH])[0]
+        )
         rekey_puzzle: Program = curry_rekey_puzzle(REKEY_TIMELOCK, setup_info.prefarm_info, new_prefarm_info)
         create_rekey_bundle = SpendBundle(
             [

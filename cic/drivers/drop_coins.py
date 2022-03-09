@@ -48,8 +48,8 @@ def construct_rekey_puzzle(prefarm_info: PrefarmInfo) -> Program:
 def curry_rekey_puzzle(timelock: uint64, old_prefarm_info: PrefarmInfo, new_prefarm_info: PrefarmInfo) -> Program:
     return construct_rekey_puzzle(old_prefarm_info).curry(
         [
-            build_merkle_tree(new_prefarm_info.puzzle_hash_list)[0],
-            build_merkle_tree(old_prefarm_info.puzzle_hash_list)[0],
+            new_prefarm_info.puzzle_root,
+            old_prefarm_info.puzzle_root,
             timelock,
         ]
     )
@@ -127,7 +127,7 @@ def construct_ach_puzzle(prefarm_info: PrefarmInfo) -> Program:
 def curry_ach_puzzle(prefarm_info: PrefarmInfo, p2_puzzle_hash: bytes32) -> Program:
     return construct_ach_puzzle(prefarm_info).curry(
         (
-            build_merkle_tree(prefarm_info.puzzle_hash_list)[0],
+            prefarm_info.puzzle_root,
             p2_puzzle_hash,
         )
     )

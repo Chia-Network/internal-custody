@@ -45,7 +45,6 @@ class SetupInfo:
     rekey_timelock: uint64
     starting_amount: uint64
     prefarm_info: PrefarmInfo
-    merkle_root: bytes32
 
 
 @pytest.fixture(scope="function")
@@ -64,14 +63,14 @@ async def setup_info():
         uint64(0),  # doesn't matter
         uint64(0),  # doesn't matter
         uint64(0),  # doesn't matter
-        [ACS_PH],
+        build_merkle_tree([ACS_PH])[0],
         uint64(0),  # doesn't matter
         uint64(0),  # doesn't matter
     )
 
     # Construct the two filters
-    rnp_filter = construct_payment_and_rekey_filter(prefarm_info, prefarm_info.puzzle_hash_list, REKEY_TIMELOCK)
-    rko_filter = construct_rekey_filter(prefarm_info, prefarm_info.puzzle_hash_list, REKEY_TIMELOCK)
+    rnp_filter = construct_payment_and_rekey_filter(prefarm_info, prefarm_info.puzzle_root, REKEY_TIMELOCK)
+    rko_filter = construct_rekey_filter(prefarm_info, prefarm_info.puzzle_root, REKEY_TIMELOCK)
 
     # Send coins to both of these puzzles as filters
     STARTING_AMOUNT = uint64(10000000000000000001)
@@ -100,7 +99,6 @@ async def setup_info():
         REKEY_TIMELOCK,
         STARTING_AMOUNT,
         prefarm_info,
-        build_merkle_tree(prefarm_info.puzzle_hash_list)[0],
     )
 
 
@@ -122,7 +120,7 @@ async def test_random_create_coins_blocked(setup_info):
                             get_proof_of_inclusion(1),
                             [
                                 [[51, ACS_PH, 2]],
-                                (setup_info.merkle_root, ACS_PH),
+                                (setup_info.prefarm_info.puzzle_root, ACS_PH),
                             ],
                         ],
                     ),
@@ -141,7 +139,7 @@ async def test_random_create_coins_blocked(setup_info):
                             get_proof_of_inclusion(1),
                             [
                                 [[51, ACS_PH, 2]],
-                                [setup_info.merkle_root, setup_info.merkle_root, uint64(0)],
+                                [setup_info.prefarm_info.puzzle_root, setup_info.prefarm_info.puzzle_root, uint64(0)],
                             ],
                         ],
                     ),
@@ -160,7 +158,7 @@ async def test_random_create_coins_blocked(setup_info):
                             get_proof_of_inclusion(1),
                             [
                                 [[51, ACS_PH, 0]],
-                                [setup_info.merkle_root, setup_info.merkle_root, uint64(0)],
+                                [setup_info.prefarm_info.puzzle_root, setup_info.prefarm_info.puzzle_root, uint64(0)],
                             ],
                         ],
                     ),
@@ -179,7 +177,7 @@ async def test_random_create_coins_blocked(setup_info):
                             get_proof_of_inclusion(1),
                             [
                                 [[51, ACS_PH, 0]],
-                                [setup_info.merkle_root, setup_info.merkle_root, uint64(0)],
+                                [setup_info.prefarm_info.puzzle_root, setup_info.prefarm_info.puzzle_root, uint64(0)],
                             ],
                         ],
                     ),
@@ -210,7 +208,7 @@ async def test_honest_payments(setup_info):
                         ACS,
                         get_proof_of_inclusion(1),
                         Program.to([[51, curry_ach_puzzle(setup_info.prefarm_info, ACS_PH).get_tree_hash(), 2]]),
-                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_root,
                         ACS_PH,  # irrelevant
                     ),
                 )
@@ -233,7 +231,7 @@ async def test_honest_payments(setup_info):
                         ACS,
                         get_proof_of_inclusion(1),
                         Program.to([[51, calculate_ach_clawback_ph(setup_info.prefarm_info), 2]]),
-                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_root,
                         bytes32([0] * 32),  # irrelevant
                     ),
                 )
@@ -280,8 +278,8 @@ async def test_rekeys(setup_info, honest):
                                 ]
                             ]
                         ),
-                        setup_info.prefarm_info.puzzle_hash_list,
-                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_root,
+                        setup_info.prefarm_info.puzzle_root,
                         REKEY_TIMELOCK,
                     ),
                 )
@@ -320,8 +318,8 @@ async def test_rekeys(setup_info, honest):
                                 ]
                             ]
                         ),
-                        setup_info.prefarm_info.puzzle_hash_list,
-                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_root,
+                        setup_info.prefarm_info.puzzle_root,
                         REKEY_TIMELOCK,
                     ),
                 )
@@ -355,7 +353,7 @@ async def test_wrong_amount_types(setup_info):
                         ACS,
                         get_proof_of_inclusion(1),
                         Program.to([[51, curry_ach_puzzle(setup_info.prefarm_info, ACS_PH).get_tree_hash(), 0]]),
-                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_root,
                         ACS_PH,  # irrelevant
                     ),
                 )
@@ -390,8 +388,8 @@ async def test_wrong_amount_types(setup_info):
                                 ]
                             ]
                         ),
-                        setup_info.prefarm_info.puzzle_hash_list,
-                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_root,
+                        setup_info.prefarm_info.puzzle_root,
                         setup_info.rekey_timelock,
                     ),
                 )
@@ -426,8 +424,8 @@ async def test_wrong_amount_types(setup_info):
                                 ]
                             ]
                         ),
-                        setup_info.prefarm_info.puzzle_hash_list,
-                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_root,
+                        setup_info.prefarm_info.puzzle_root,
                         setup_info.rekey_timelock,
                     ),
                 )

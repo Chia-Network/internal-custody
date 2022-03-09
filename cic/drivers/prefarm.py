@@ -5,7 +5,6 @@ from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.util.ints import uint64
 
 from cic.drivers.drop_coins import construct_rekey_puzzle, construct_ach_puzzle
-from cic.drivers.merkle_utils import build_merkle_tree
 from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.singleton import construct_singleton
 from cic.drivers.rate_limiting import construct_rate_limiting_puzzle
@@ -24,7 +23,7 @@ class SpendType(int, enum.Enum):
 def construct_prefarm_inner_puzzle(prefarm_info: PrefarmInfo) -> Program:
     return PREFARM_INNER.curry(
         PREFARM_INNER.get_tree_hash(),
-        build_merkle_tree(prefarm_info.puzzle_hash_list)[0],
+        prefarm_info.puzzle_root,
         [
             construct_rekey_puzzle(prefarm_info).get_tree_hash(),
             construct_ach_puzzle(prefarm_info).get_tree_hash(),
@@ -39,7 +38,7 @@ def solve_prefarm_inner(spend_type: SpendType, prefarm_amount: uint64, **kwargs)
         spend_solution = Program.to(
             [
                 kwargs["timelock"],
-                build_merkle_tree(kwargs["puzzle_hash_list"])[0],
+                kwargs["puzzle_root"],
             ]
         )
     elif spend_type == SpendType.HANDLE_PAYMENT:

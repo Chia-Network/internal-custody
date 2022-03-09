@@ -79,7 +79,7 @@ async def setup_info():
         START_DATE,  # start_date: uint64
         starting_amount,  # starting_amount: uint64
         DRAIN_RATE,  # mojos_per_second: uint64
-        PUZZLE_HASHES,  # puzzle_hash_list: List[bytes32]
+        build_merkle_tree(PUZZLE_HASHES)[0],  # merkle_root: bytes32
         WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
         CLAWBACK_PERIOD,  # clawback_period: uint64
     )
@@ -133,7 +133,7 @@ async def test_rekey(setup_info):
         TIMELOCK = uint64(60)  # one minute
         new_prefarm_info: PrefarmInfo = dataclasses.replace(
             setup_info.prefarm_info,
-            puzzle_hash_list=[ACS_PH, ACS_PH],
+            puzzle_root=build_merkle_tree([ACS_PH, ACS_PH])[0],
         )
 
         rekey_puzzle: Program = curry_rekey_puzzle(TIMELOCK, setup_info.prefarm_info, new_prefarm_info)
@@ -163,7 +163,7 @@ async def test_rekey(setup_info):
                                 timelock=TIMELOCK,
                                 puzzle_reveal=ACS,
                                 proof_of_inclusion=get_proof_of_inclusion(1),
-                                puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
+                                puzzle_root=new_prefarm_info.puzzle_root,
                                 puzzle_solution=[
                                     [
                                         51,
@@ -230,7 +230,7 @@ async def test_rekey(setup_info):
                             SpendType.FINISH_REKEY,
                             setup_info.singleton.amount,
                             timelock=TIMELOCK,
-                            puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
+                            puzzle_root=new_prefarm_info.puzzle_root,
                         ),
                     ),
                 ),

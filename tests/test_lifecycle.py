@@ -13,6 +13,7 @@ from chia.util.ints import uint64
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import pay_to_singleton_puzzle, SINGLETON_LAUNCHER_HASH
 
+from cic.drivers.merkle_utils import build_merkle_tree
 from cic.drivers.prefarm import construct_singleton_inner_puzzle
 from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.singleton import generate_launch_conditions_and_coin_spend
@@ -58,7 +59,7 @@ async def setup_info():
         START_DATE,  # start_date: uint64
         starting_amount,  # starting_amount: uint64
         DRAIN_RATE,  # mojos_per_second: uint64
-        PUZZLE_HASHES,  # puzzle_hash_list: List[bytes32]
+        build_merkle_tree(PUZZLE_HASHES)[0],  # merkle_root: bytes32
         WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
         CLAWBACK_PERIOD,  # clawback_period: uint64
     )
