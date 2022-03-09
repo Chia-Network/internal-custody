@@ -63,8 +63,8 @@ async def setup_info():
     START_DATE = uint64(0)  # pointless for this test
     DRAIN_RATE = uint64(0)  # pointless for this test
     CLAWBACK_PERIOD = uint64(0)  # pointless for this test
-    DEFAULT_REKEY_TIMELOCK = uint64(0) # pointless for this test
-    SLOWER_REKEY_TIME_PENALTY = uint64(0) # pointless for this test
+    DEFAULT_REKEY_TIMELOCK = uint64(0)  # pointless for this test
+    SLOWER_REKEY_TIME_PENALTY = uint64(0)  # pointless for this test
     WITHDRAWAL_TIMELOCK = uint64(60)
     PUZZLE_HASHES = [ACS_PH]
 
@@ -84,8 +84,8 @@ async def setup_info():
         build_merkle_tree(PUZZLE_HASHES)[0],  # puzzle_root: bytes32
         WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
         CLAWBACK_PERIOD,  # clawback_period: uint64
-        DEFAULT_REKEY_TIMELOCK, # default_rekey_timelock: uint64
-        SLOWER_REKEY_TIME_PENALTY, # slower_rekey_time_penalty: uint64
+        DEFAULT_REKEY_TIMELOCK,  # default_rekey_timelock: uint64
+        SLOWER_REKEY_TIME_PENALTY,  # slower_rekey_time_penalty: uint64
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
         big_coin, construct_prefarm_inner_puzzle(prefarm_info), starting_amount

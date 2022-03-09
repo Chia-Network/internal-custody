@@ -1,0 +1,23 @@
+(mod
+  (
+      REKEY_MOD_HASH
+      PUBKEY
+      NEW_PUZZLE_ROOT
+      old_puzzle_root
+  )
+
+  (include condition_codes.clib)
+  (include curry_and_treehash.clib)
+
+  (list
+    (list CREATE_COIN
+      (puzzle_hash_of_curried_function REKEY_MOD_HASH
+        (sha256 1 NEW_PUZZLE_ROOT)
+        (sha256 1 old_puzzle_root)
+        (sha256 1 0)
+      )
+      0
+    )
+    (list AGG_SIG_ME PUBKEY '$')
+  )
+)
