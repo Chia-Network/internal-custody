@@ -12,6 +12,7 @@ class PrefarmInfo:
     mojos_per_second: uint64
     puzzle_root: bytes32
     withdrawal_timelock: uint64
-    clawback_period: uint64
+    payment_clawback_period: uint64
+    rekey_clawback_period: uint64
     slow_rekey_timelock: uint64
     rekey_increments: uint64

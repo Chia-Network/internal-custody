@@ -24,7 +24,7 @@ ACH_CLAWBACK_MOD = load_clvm("ach_clawback.clsp", package_or_requirement="cic.cl
 def construct_rekey_completion(prefarm_info: PrefarmInfo) -> Program:
     return REKEY_COMPLETION_MOD.curry(
         (SINGLETON_MOD.get_tree_hash(), (prefarm_info.launcher_id, SINGLETON_LAUNCHER_HASH)),  # SINGLETON_STRUCT
-        prefarm_info.clawback_period,
+        prefarm_info.rekey_clawback_period,
     )
 
 
@@ -100,7 +100,7 @@ def solve_rekey_clawback(
 # ACH #
 #######
 def construct_ach_completion(prefarm_info: PrefarmInfo) -> Program:
-    return ACH_COMPLETION_MOD.curry(prefarm_info.clawback_period)
+    return ACH_COMPLETION_MOD.curry(prefarm_info.payment_clawback_period)
 
 
 def calculate_ach_clawback_ph(prefarm_info: PrefarmInfo) -> bytes32:

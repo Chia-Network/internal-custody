@@ -62,7 +62,8 @@ async def setup_info():
     # Define constants
     START_DATE = uint64(0)  # pointless for this test
     DRAIN_RATE = uint64(0)  # pointless for this test
-    CLAWBACK_PERIOD = uint64(0)  # pointless for this test
+    PAYMENT_CLAWBACK_PERIOD = uint64(0) # pointless for this test
+    REKEY_CLAWBACK_PERIOD = uint64(0) # pointless for this test
     SLOW_REKEY_TIMELOCK = uint64(0)  # pointless for this test
     REKEY_INCREMENTS = uint64(0)  # pointless for this test
     WITHDRAWAL_TIMELOCK = uint64(60)
@@ -83,7 +84,8 @@ async def setup_info():
         DRAIN_RATE,  # mojos_per_second: uint64
         build_merkle_tree(PUZZLE_HASHES)[0],  # puzzle_root: bytes32
         WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
-        CLAWBACK_PERIOD,  # clawback_period: uint64
+        PAYMENT_CLAWBACK_PERIOD,  # payment_clawback_period: uint64
+        REKEY_CLAWBACK_PERIOD,  # rekey_clawback_period: uint64
         SLOW_REKEY_TIMELOCK,  # slow_rekey_timelock: uint64
         REKEY_INCREMENTS,  # rekey_increments: uint64
     )

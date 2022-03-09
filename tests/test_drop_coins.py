@@ -62,7 +62,8 @@ async def setup_info():
     WITHDRAWAL_TIMELOCK = uint64(0)  # pointless for this test
     SLOW_REKEY_TIMELOCK = uint64(0)  # pointless for this test
     REKEY_INCREMENTS = uint64(0)  # pointless for this test
-    CLAWBACK_PERIOD = uint64(60)
+    PAYMENT_CLAWBACK_PERIOD = uint64(90)
+    REKEY_CLAWBACK_PERIOD = uint64(60)
     PUZZLE_HASHES = [ACS_PH]
 
     # Identify the prefarm coins
@@ -80,7 +81,8 @@ async def setup_info():
         DRAIN_RATE,  # mojos_per_second: uint64
         build_merkle_tree(PUZZLE_HASHES)[0],  # puzzle_root: bytes32
         WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
-        CLAWBACK_PERIOD,  # clawback_period: uint64
+        PAYMENT_CLAWBACK_PERIOD,  # payment_clawback_period: uint64
+        REKEY_CLAWBACK_PERIOD,  # rekey_clawback_period: uint64
         SLOW_REKEY_TIMELOCK,  # slow_rekey_timelock: uint64
         REKEY_INCREMENTS,  # rekey_increments: uint64
     )
@@ -202,7 +204,7 @@ async def test_ach(setup_info):
         # Process spend
         result = await setup_info.sim_client.push_tx(forward_ach_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
-        setup_info.sim.pass_time(setup_info.prefarm_info.clawback_period)
+        setup_info.sim.pass_time(setup_info.prefarm_info.payment_clawback_period)
         await setup_info.sim.farm_block()
 
         result = await setup_info.sim_client.push_tx(forward_ach_bundle)

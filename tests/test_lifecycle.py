@@ -60,7 +60,8 @@ async def setup_info():
     DRAIN_RATE = 1  # 1 mojo per second
     PUBKEY_LIST = [secret_key_for_index(i).get_g1() for i in range(0, 5)]
     WITHDRAWAL_TIMELOCK = uint64(2592000)  # 30 days
-    CLAWBACK_PERIOD = uint64(7776000)
+    PAYMENT_CLAWBACK_PERIOD = uint64(90)
+    REKEY_CLAWBACK_PERIOD = uint64(60)
     SLOW_REKEY_TIMELOCK = uint64(0)
     REKEY_INCREMENTS = uint64(0)
 
@@ -80,7 +81,8 @@ async def setup_info():
             DRAIN_RATE,  # mojos_per_second: uint64
             bytes32([0] * 32),  # puzzle_root: bytes32  # gets set in set_puzzle_root
             WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
-            CLAWBACK_PERIOD,  # clawback_period: uint64
+            PAYMENT_CLAWBACK_PERIOD,  # payment_clawback_period: uint64
+            REKEY_CLAWBACK_PERIOD,  # rekey_clawback_period: uint64
             SLOW_REKEY_TIMELOCK,  # slow_rekey_timelock: uint64
             REKEY_INCREMENTS,  # rekey_increments: uint64
         ),
