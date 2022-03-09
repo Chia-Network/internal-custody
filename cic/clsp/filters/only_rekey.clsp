@@ -1,0 +1,63 @@
+(mod
+  (
+    CURRIED_ARGS
+    PUZZLE_REVEAL
+    (
+      solution
+      curried_args_to_coin  ; These are the args that are curried into the even coin that we see
+    )
+  )
+
+  (include condition_codes.clib)
+  (include curry_and_treehash.clib)
+  (include sha256tree.clib)
+  (include utility_macros.clib)
+
+  ; CURRIED_ARGS is a list of these 4 things:
+  ;
+  ; - REKEY_MOD_HASH          ; The rekey module without its rekey specific curried arguments
+  ; - ALLOWED_REKEY_TIMELOCK  ; The timelock that is allowed for these rekeys
+
+  (defun-inline REKEY_MOD_HASH (CURRIED_ARGS) (f CURRIED_ARGS))
+  (defun-inline ALLOWED_REKEY_TIMELOCK (CURRIED_ARGS) (f (r CURRIED_ARGS)))
+
+  (defun-inline opcode (condition) (f condition))
+  (defun-inline puzhash (condition) (f (r condition)))
+  (defun-inline amount (condition) (f (r (r condition))))
+
+  (defun check_zero_coin (conditions curried_args_to_coin CURRIED_ARGS)
+    (if conditions
+        (c (f conditions)
+          (assert
+            (if (and  ; if this is an even CREATE_COIN
+                  (= CREATE_COIN (opcode (f conditions)))
+                  (not (logand (amount (f conditions)) 1))
+                )
+                (assert
+                  ; it's a rekey coin
+                  (= 0 (amount (f conditions)))
+                  (=
+                    (puzhash (f conditions))
+                    (puzzle_hash_of_curried_function (REKEY_MOD_HASH CURRIED_ARGS) (sha256tree curried_args_to_coin))
+                  )
+                  ; with the correct timelock
+                  (not (> (ALLOWED_REKEY_TIMELOCK CURRIED_ARGS) (f (r (r curried_args_to_coin)))))
+                  ; then
+                  1
+                )
+                1
+            )
+            ; then
+            (check_zero_coin
+              (r conditions)
+              curried_args_to_coin
+              CURRIED_ARGS
+            )
+          )
+        )
+        ()
+    )
+  )
+
+  (check_zero_coin (a PUZZLE_REVEAL solution) curried_args_to_coin CURRIED_ARGS ())
+)

@@ -30,5 +30,11 @@
     )
   )
 
-  (main SINGLETON_STRUCT FINISHING_TIMELOCK parent_parent (calculate_full_puzzle_hash SINGLETON_STRUCT parent_inner_puz) parent_amount)
+  (main
+    SINGLETON_STRUCT
+    FINISHING_TIMELOCK
+    parent_parent
+    (calculate_full_puzzle_hash SINGLETON_STRUCT parent_inner_puz)
+    parent_amount
+  )
 )

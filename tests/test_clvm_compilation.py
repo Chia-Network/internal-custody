@@ -15,6 +15,8 @@ program_files = set(
         "cic/clsp/drop_coins/p2_merkle_tree.clsp",
         "cic/clsp/drop_coins/rekey_clawback.clsp",
         "cic/clsp/drop_coins/rekey_completion.clsp",
+        "cic/clsp/filters/only_rekey.clsp",
+        "cic/clsp/filters/rekey_and_payment.clsp",
     ]
 )
 

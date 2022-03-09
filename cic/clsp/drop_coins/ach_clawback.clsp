@@ -40,6 +40,7 @@
     )
   )
 
+  ; main
   (assert (= PUZZLE_ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) merkle_proof))
     ; then
     (c (list ASSERT_MY_AMOUNT my_amount)
