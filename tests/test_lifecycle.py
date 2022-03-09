@@ -13,7 +13,8 @@ from chia.util.ints import uint64
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import pay_to_singleton_puzzle, SINGLETON_LAUNCHER_HASH
 
-from cic.drivers.prefarm import construct_singleton_inner_puzzle, PrefarmInfo
+from cic.drivers.prefarm import construct_singleton_inner_puzzle
+from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.singleton import generate_launch_conditions_and_coin_spend
 
 ACS = Program.to(1)
@@ -41,6 +42,8 @@ async def setup_info():
     START_DATE = uint64(sim.timestamp)
     DRAIN_RATE = 1  # 1 mojo per second
     PUZZLE_HASHES = [ACS_PH]
+    WITHDRAWAL_TIMELOCK = uint64(2592000)  # 30 days
+    CLAWBACK_PERIOD = uint64(7776000)
 
     # Identify the prefarm coins
     prefarm_coins = await sim_client.get_coin_records_by_puzzle_hashes([ACS_PH])
@@ -51,11 +54,13 @@ async def setup_info():
     starting_amount = 18374999999999999999
     launcher_coin = Coin(big_coin.name(), SINGLETON_LAUNCHER_HASH, starting_amount)
     prefarm_info = PrefarmInfo(
-        launcher_coin.name(),  # launcher_id
+        launcher_coin.name(),  # launcher_id: bytes32
         START_DATE,  # start_date: uint64
         starting_amount,  # starting_amount: uint64
         DRAIN_RATE,  # mojos_per_second: uint64
         PUZZLE_HASHES,  # puzzle_hash_list: List[bytes32]
+        WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
+        CLAWBACK_PERIOD,  # clawback_period: uint64
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
         big_coin, construct_singleton_inner_puzzle(prefarm_info), starting_amount

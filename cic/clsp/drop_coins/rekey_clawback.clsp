@@ -1,0 +1,78 @@
+(mod
+  (
+    (_ PUZZLE_ROOT _)
+    puzzle_reveal
+    merkle_proof
+    puzzle_solution
+    my_puzzle_hash
+  )
+
+  (include condition_codes.clib)
+  (include sha256tree.clib)
+  (include merkle_utils.clib)
+  (include utility_macros.clib)
+
+  (defconstant REKEY_KW 'rekey')
+
+  (defun-inline opcode (condition) (f condition))
+  (defun-inline puzhash (condition) (f (r condition)))
+  (defun-inline amount (condition) (f (r (r condition))))
+
+  (defun check_for_rekey_announcement (conditions)
+    (if conditions
+        (assert
+          (not
+            (and
+              (= (opcode (f conditions)) CREATE_PUZZLE_ANNOUNCEMENT)
+              (= (f (r (f conditions))) REKEY_KW)
+            )
+          )
+          ; then
+          (c (f conditions) (check_for_rekey_announcement (r conditions)))
+        )
+        ()
+    )
+  )
+
+  (defun check_for_and_filter_clawback (conditions CLAWBACK_PH amount seen)
+    (if conditions
+      (if (= CREATE_COIN (opcode (f conditions)))
+          (assert
+            (not seen)  ; not seen
+            (= CLAWBACK_PH (puzhash (f conditions)))
+            (= amount (amount (f conditions)))
+            ; then
+            (check_for_and_filter_clawback
+              (r conditions)
+              CLAWBACK_PH
+              amount
+              1
+            )
+          )
+          (c (f conditions)
+            (check_for_and_filter_clawback
+              (r conditions)
+              CLAWBACK_PH
+              amount
+              seen
+            )
+          )
+      )
+      (assert seen ())
+    )
+  )
+
+  (assert (= PUZZLE_ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) merkle_proof))
+    ; then
+    (c (list ASSERT_MY_PUZZLEHASH my_puzzle_hash)
+    (check_for_rekey_announcement
+      (check_for_and_filter_clawback
+        (a puzzle_reveal puzzle_solution)
+        my_puzzle_hash
+        0
+        ()
+      )
+    )
+    )
+  )
+)

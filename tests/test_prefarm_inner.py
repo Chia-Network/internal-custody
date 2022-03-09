@@ -2,11 +2,12 @@ import dataclasses
 import pytest
 
 from blspy import G2Element
+from clvm.EvalError import EvalError
 from typing import Tuple, List
 
 from chia.clvm.spend_sim import SpendSim, SimClient
 from chia.types.blockchain_format.coin import Coin
-from chia.types.blockchain_format.program import Program
+from chia.types.blockchain_format.program import Program, INFINITE_COST
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.mempool_inclusion_status import MempoolInclusionStatus
 from chia.types.spend_bundle import SpendBundle
@@ -16,16 +17,18 @@ from chia.util.ints import uint64
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
 
+from cic.drivers.drop_coins import (
+    curry_rekey_puzzle,
+    curry_ach_puzzle,
+    solve_rekey_completion,
+)
 from cic.drivers.merkle_utils import build_merkle_tree
 from cic.drivers.prefarm import (
     construct_prefarm_inner_puzzle,
-    curry_rekey_puzzle,
-    curry_ach_puzzle,
     solve_prefarm_inner,
-    solve_rekey_completion,
-    PrefarmInfo,
     SpendType,
 )
+from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.singleton import (
     construct_singleton,
     solve_singleton,
@@ -59,6 +62,8 @@ async def setup_info():
     # Define constants
     START_DATE = uint64(0)  # pointless for this test
     DRAIN_RATE = uint64(0)  # pointless for this test
+    CLAWBACK_PERIOD = uint64(0)  # pointless for this test
+    WITHDRAWAL_TIMELOCK = uint64(60)
     PUZZLE_HASHES = [ACS_PH]
 
     # Identify the prefarm coins
@@ -70,11 +75,13 @@ async def setup_info():
     starting_amount = 18374999999999999999
     launcher_coin = Coin(big_coin.name(), SINGLETON_LAUNCHER_HASH, starting_amount)
     prefarm_info = PrefarmInfo(
-        launcher_coin.name(),  # launcher_id
+        launcher_coin.name(),  # launcher_id: bytes32
         START_DATE,  # start_date: uint64
         starting_amount,  # starting_amount: uint64
         DRAIN_RATE,  # mojos_per_second: uint64
         PUZZLE_HASHES,  # puzzle_hash_list: List[bytes32]
+        WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
+        CLAWBACK_PERIOD,  # clawback_period: uint64
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
         big_coin, construct_prefarm_inner_puzzle(prefarm_info), starting_amount
@@ -132,45 +139,63 @@ async def test_rekey(setup_info):
         rekey_puzzle: Program = curry_rekey_puzzle(TIMELOCK, setup_info.prefarm_info, new_prefarm_info)
 
         prefarm_inner_puzzle: Program = construct_prefarm_inner_puzzle(setup_info.prefarm_info)
-        start_rekey_spend = SpendBundle(
-            [
-                CoinSpend(
-                    setup_info.singleton,
-                    construct_singleton(
-                        setup_info.launcher_id,
-                        prefarm_inner_puzzle,
-                    ),
-                    solve_singleton(
-                        setup_info.first_lineage_proof,
-                        setup_info.singleton.amount,
-                        solve_prefarm_inner(
-                            SpendType.START_REKEY,
-                            setup_info.singleton.amount,
-                            timelock=TIMELOCK,
-                            puzzle_reveal=ACS,
-                            proof_of_inclusion=get_proof_of_inclusion(1),
-                            puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
-                            puzzle_solution=[
-                                [
-                                    51,
-                                    prefarm_inner_puzzle.get_tree_hash(),
-                                    setup_info.singleton.amount,
-                                ],
-                                [51, rekey_puzzle.get_tree_hash(), 0],
-                            ],
+
+        # Parameterize this spend and test that it can't make the malicious announcement
+        def start_rekey_spend(malicious: bool) -> SpendBundle:
+            if malicious:
+                malicious_condition = [[62, "rekey"]]
+            else:
+                malicious_condition = []
+            return SpendBundle(
+                [
+                    CoinSpend(
+                        setup_info.singleton,
+                        construct_singleton(
+                            setup_info.launcher_id,
+                            prefarm_inner_puzzle,
                         ),
-                    ),
-                )
-            ],
-            G2Element(),
-        )
+                        solve_singleton(
+                            setup_info.first_lineage_proof,
+                            setup_info.singleton.amount,
+                            solve_prefarm_inner(
+                                SpendType.START_REKEY,
+                                setup_info.singleton.amount,
+                                timelock=TIMELOCK,
+                                puzzle_reveal=ACS,
+                                proof_of_inclusion=get_proof_of_inclusion(1),
+                                puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
+                                puzzle_solution=[
+                                    [
+                                        51,
+                                        prefarm_inner_puzzle.get_tree_hash(),
+                                        setup_info.singleton.amount,
+                                    ],
+                                    [51, rekey_puzzle.get_tree_hash(), 0],
+                                    *malicious_condition,
+                                ],
+                            ),
+                        ),
+                    )
+                ],
+                G2Element(),
+            )
+
+        # Test the malicious spend fails first
+        malicious_rekey_spend: SpendBundle = start_rekey_spend(True)
+        result = await setup_info.sim_client.push_tx(malicious_rekey_spend)
+        assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
+        with pytest.raises(EvalError, match="clvm raise"):
+            malicious_rekey_spend.coin_spends[0].puzzle_reveal.run_with_cost(
+                INFINITE_COST, malicious_rekey_spend.coin_spends[0].solution
+            )
         # Process results
-        result = await setup_info.sim_client.push_tx(start_rekey_spend)
+        honest_rekey_spend: SpendBundle = start_rekey_spend(False)
+        result = await setup_info.sim_client.push_tx(honest_rekey_spend)
         assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
         setup_info.sim.pass_time(TIMELOCK)
         await setup_info.sim.farm_block()
 
-        result = await setup_info.sim_client.push_tx(start_rekey_spend)
+        result = await setup_info.sim_client.push_tx(honest_rekey_spend)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
 
@@ -185,6 +210,11 @@ async def test_rekey(setup_info):
         )[0].coin
 
         # Finish the rekey
+        new_singleton_lineage_proof = LineageProof(
+            setup_info.singleton.parent_coin_info,
+            prefarm_inner_puzzle.get_tree_hash(),
+            setup_info.singleton.amount,
+        )
         finish_rekey_spend = SpendBundle(
             [
                 CoinSpend(
@@ -194,11 +224,7 @@ async def test_rekey(setup_info):
                         prefarm_inner_puzzle,
                     ),
                     solve_singleton(
-                        LineageProof(
-                            setup_info.singleton.parent_coin_info,
-                            prefarm_inner_puzzle.get_tree_hash(),
-                            setup_info.singleton.amount,
-                        ),
+                        new_singleton_lineage_proof,
                         setup_info.singleton.amount,
                         solve_prefarm_inner(
                             SpendType.FINISH_REKEY,
@@ -211,12 +237,14 @@ async def test_rekey(setup_info):
                 CoinSpend(
                     rekey_coin,
                     rekey_puzzle,
-                    solve_rekey_completion(new_prefarm_info),
+                    solve_rekey_completion(setup_info.prefarm_info, new_singleton_lineage_proof),
                 ),
             ],
             G2Element(),
         )
         # Process results
+        setup_info.sim.pass_time(TIMELOCK)
+        await setup_info.sim.farm_block()
         result = await setup_info.sim_client.push_tx(finish_rekey_spend)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
@@ -236,7 +264,6 @@ async def test_rekey(setup_info):
 @pytest.mark.asyncio
 async def test_payments(setup_info):
     try:
-        THIRTY_DAYS = uint64(2592000)
         WITHDRAWAL_AMOUNT = uint64(500)
         prefarm_inner_puzzle: Program = construct_prefarm_inner_puzzle(setup_info.prefarm_info)
         withdrawal_spend = SpendBundle(
@@ -278,7 +305,7 @@ async def test_payments(setup_info):
         # Process results
         result = await setup_info.sim_client.push_tx(withdrawal_spend)
         assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
-        setup_info.sim.pass_time(THIRTY_DAYS)
+        setup_info.sim.pass_time(setup_info.prefarm_info.withdrawal_timelock)
         await setup_info.sim.farm_block()
 
         result = await setup_info.sim_client.push_tx(withdrawal_spend)
@@ -338,7 +365,7 @@ async def test_payments(setup_info):
         # Process results
         result = await setup_info.sim_client.push_tx(accept_spend)
         assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
-        setup_info.sim.pass_time(THIRTY_DAYS)
+        setup_info.sim.pass_time(setup_info.prefarm_info.withdrawal_timelock)
         await setup_info.sim.farm_block()
 
         result = await setup_info.sim_client.push_tx(accept_spend)

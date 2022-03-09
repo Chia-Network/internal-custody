@@ -21,11 +21,17 @@
    )
  )
 
- (defun calculate_merkle_root_for_merkle_proof (LEAF_REVEAL proof_of_inclusion)
-   (calculate_merkle_root
-     (f proof_of_inclusion)
-     LEAF_REVEAL
-     (r proof_of_inclusion)
-   )
+ (defun simplify_merkle_proof (leaf_hash (bitpath . hashes_path))
+        (if hashes_path
+            (simplify_merkle_proof
+
+                (if (logand 1 bitpath)
+                    (sha256 (f hashes_path) leaf_hash)
+                    (sha256 leaf_hash (f hashes_path))
+                )
+                (c (lsh bitpath -1) (r hashes_path))
+            )
+            leaf_hash
+         )
  )
 )
