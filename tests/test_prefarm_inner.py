@@ -80,7 +80,7 @@ async def setup_info():
         starting_amount,  # starting_amount: uint64
         DRAIN_RATE,  # mojos_per_second: uint64
         PUZZLE_HASHES,  # puzzle_hash_list: List[bytes32]
-        WITHDRAWAL_TIMELOCK, # withdrawal_timelock: uint64
+        WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
         CLAWBACK_PERIOD,  # clawback_period: uint64
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
