@@ -45,6 +45,8 @@ async def setup_info():
     PUZZLE_HASHES = [ACS_PH]
     WITHDRAWAL_TIMELOCK = uint64(2592000)  # 30 days
     CLAWBACK_PERIOD = uint64(7776000)
+    DEFAULT_REKEY_TIMELOCK = uint64(0)
+    SLOWER_REKEY_TIME_PENALTY = uint64(0)
 
     # Identify the prefarm coins
     prefarm_coins = await sim_client.get_coin_records_by_puzzle_hashes([ACS_PH])
@@ -62,6 +64,8 @@ async def setup_info():
         build_merkle_tree(PUZZLE_HASHES)[0],  # merkle_root: bytes32
         WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
         CLAWBACK_PERIOD,  # clawback_period: uint64
+        DEFAULT_REKEY_TIMELOCK, # default_rekey_timelock: uint64
+        SLOWER_REKEY_TIME_PENALTY, # slower_rekey_time_penalty: uint64
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
         big_coin, construct_singleton_inner_puzzle(prefarm_info), starting_amount

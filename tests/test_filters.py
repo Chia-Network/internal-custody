@@ -66,6 +66,8 @@ async def setup_info():
         build_merkle_tree([ACS_PH])[0],
         uint64(0),  # doesn't matter
         uint64(0),  # doesn't matter
+        uint64(0),  # doesn't matter
+        uint64(0),  # doesn't matter
     )
 
     # Construct the two filters

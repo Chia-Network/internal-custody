@@ -13,3 +13,5 @@ class PrefarmInfo:
     puzzle_root: bytes32
     withdrawal_timelock: uint64
     clawback_period: uint64
+    default_rekey_timelock: uint64
+    slower_rekey_time_penalty: uint64
