@@ -2,13 +2,13 @@
   (
     INNER_PUZZLE
     MERKLE_ROOT
-    curried_args
+    CURRIED_ARGS
     parameters
     merkle_proof
     solution
   )
   ; This puzzle takes a merkle root.
-  ; The merkle root contains a tree of puzzles that can be executed with the passed in curried_args and solution
+  ; The merkle root contains a tree of puzzles that can be executed with the passed in CURRIED_ARGS and solution
 
   (include sha256tree.clib)
   (include merkle_utils.clib)
@@ -16,6 +16,6 @@
 
   (assert (= MERKLE_ROOT (simplify_merkle_proof (sha256tree parameters) merkle_proof))
     ; then
-    (a INNER_PUZZLE (list parameters (if curried_args (c curried_args solution) solution)))
+    (a INNER_PUZZLE (list parameters (if CURRIED_ARGS (c CURRIED_ARGS solution) solution)))
   )
 )
