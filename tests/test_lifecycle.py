@@ -57,13 +57,13 @@ async def setup_info():
 
     # Define constants
     START_DATE = uint64(sim.timestamp)
-    DRAIN_RATE = 1  # 1 mojo per second
+    DRAIN_RATE = 77777777777  # mojos per second
     PUBKEY_LIST = [secret_key_for_index(i).get_g1() for i in range(0, 5)]
     WITHDRAWAL_TIMELOCK = uint64(2592000)  # 30 days
     PAYMENT_CLAWBACK_PERIOD = uint64(90)
     REKEY_CLAWBACK_PERIOD = uint64(60)
-    SLOW_REKEY_TIMELOCK = uint64(0)
-    REKEY_INCREMENTS = uint64(0)
+    SLOW_REKEY_TIMELOCK = uint64(45)
+    REKEY_INCREMENTS = uint64(15)
 
     # Identify the prefarm coins
     prefarm_coins = await sim_client.get_coin_records_by_puzzle_hashes([ACS_PH])
@@ -149,7 +149,7 @@ async def test_puzzle_root_derivation(setup_info):
             assert root == calculate_puzzle_root(setup_info.prefarm_info, subset, m, n, 1).prefarm_info.puzzle_root
 
         for agg_pk in get_all_aggregate_pubkey_combinations(pubkeys, m):
-            for lock in (True, False):
+            for lock in (True, True):
                 filter_proof, _ = derivation.get_proofs_of_inclusion(agg_pk, lock=lock)
                 hash, proof = list(filter_proof.items())[0]
                 assert root == simplify_merkle_proof(hash, proof)

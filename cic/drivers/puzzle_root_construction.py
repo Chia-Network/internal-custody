@@ -59,12 +59,23 @@ class RootDerivation:
         if filter_hash in self.filter_proofs:
             return {filter_hash: self.filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
 
-        # Then we're going to try the rekey filters
-        filter_hash = construct_rekey_filter(
-            self.prefarm_info, innermost_tree_root, self.prefarm_info.rekey_increments
-        ).get_tree_hash()
+        # Then, we're going to try the lock filter
+        filter_hash = construct_rekey_filter(self.prefarm_info, innermost_tree_root, uint64(0)).get_tree_hash()
         if filter_hash in self.filter_proofs:
             return {filter_hash: self.filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
+
+        # Then, we're going to try the rekey filters
+        for i in range(self.minimum_pubkeys, self.required_pubkeys):
+            filter_hash = construct_rekey_filter(
+                self.prefarm_info,
+                innermost_tree_root,
+                uint64(
+                    self.prefarm_info.slow_rekey_timelock
+                    + (self.prefarm_info.rekey_increments * (self.required_pubkeys - i))
+                ),
+            ).get_tree_hash()
+            if filter_hash in self.filter_proofs:
+                return {filter_hash: self.filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
 
         raise ValueError("Could not find a valid filter for the calculated root")
 
@@ -126,9 +137,7 @@ def calculate_puzzle_root(
             construct_lock_puzzle(pk, prefarm_info, next_puzzle_root).get_tree_hash() for pk in standard_pk_list
         ]
         lock_root, lock_proofs = build_merkle_tree(all_lock_phs)
-        lock_filter: bytes32 = construct_rekey_filter(
-            prefarm_info, lock_root, prefarm_info.rekey_increments
-        ).get_tree_hash()
+        lock_filter: bytes32 = construct_rekey_filter(prefarm_info, lock_root, uint64(0)).get_tree_hash()
         all_filters.append(lock_filter)
         all_inner_proofs = all_inner_proofs | lock_proofs
 
