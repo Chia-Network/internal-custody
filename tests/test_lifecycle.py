@@ -61,8 +61,8 @@ async def setup_info():
     PUBKEY_LIST = [secret_key_for_index(i).get_g1() for i in range(0, 5)]
     WITHDRAWAL_TIMELOCK = uint64(2592000)  # 30 days
     CLAWBACK_PERIOD = uint64(7776000)
-    DEFAULT_REKEY_TIMELOCK = uint64(0)
-    SLOWER_REKEY_TIME_PENALTY = uint64(0)
+    SLOW_REKEY_TIMELOCK = uint64(0)
+    REKEY_INCREMENTS = uint64(0)
 
     # Identify the prefarm coins
     prefarm_coins = await sim_client.get_coin_records_by_puzzle_hashes([ACS_PH])
@@ -81,8 +81,8 @@ async def setup_info():
             bytes32([0] * 32),  # puzzle_root: bytes32  # gets set in set_puzzle_root
             WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
             CLAWBACK_PERIOD,  # clawback_period: uint64
-            DEFAULT_REKEY_TIMELOCK,  # default_rekey_timelock: uint64
-            SLOWER_REKEY_TIME_PENALTY,  # slower_rekey_time_penalty: uint64
+            SLOW_REKEY_TIMELOCK,  # slow_rekey_timelock: uint64
+            REKEY_INCREMENTS,  # rekey_increments: uint64
         ),
         PUBKEY_LIST,
         uint32(3),

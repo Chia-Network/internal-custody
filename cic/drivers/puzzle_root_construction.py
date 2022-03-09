@@ -54,14 +54,14 @@ class RootDerivation:
 
         # First, we're going to try to use the rnp filter
         filter_hash: bytes32 = construct_payment_and_rekey_filter(
-            self.prefarm_info, innermost_tree_root, self.prefarm_info.default_rekey_timelock
+            self.prefarm_info, innermost_tree_root, self.prefarm_info.rekey_increments
         ).get_tree_hash()
         if filter_hash in self.filter_proofs:
             return {filter_hash: self.filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
 
         # Then we're going to try the rekey filters
         filter_hash = construct_rekey_filter(
-            self.prefarm_info, innermost_tree_root, self.prefarm_info.default_rekey_timelock
+            self.prefarm_info, innermost_tree_root, self.prefarm_info.rekey_increments
         ).get_tree_hash()
         if filter_hash in self.filter_proofs:
             return {filter_hash: self.filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
@@ -115,7 +115,7 @@ def calculate_puzzle_root(
     all_standard_phs: List[bytes32] = [puzzle_for_pk(pk).get_tree_hash() for pk in standard_pk_list]
     rnp_root, rnp_proofs = build_merkle_tree(all_standard_phs)
     rnp_filter: bytes32 = construct_payment_and_rekey_filter(
-        prefarm_info, rnp_root, prefarm_info.default_rekey_timelock
+        prefarm_info, rnp_root, prefarm_info.rekey_increments
     ).get_tree_hash()
     all_filters.append(rnp_filter)
     all_inner_proofs = all_inner_proofs | rnp_proofs
@@ -127,7 +127,7 @@ def calculate_puzzle_root(
         ]
         lock_root, lock_proofs = build_merkle_tree(all_lock_phs)
         lock_filter: bytes32 = construct_rekey_filter(
-            prefarm_info, lock_root, prefarm_info.default_rekey_timelock
+            prefarm_info, lock_root, prefarm_info.rekey_increments
         ).get_tree_hash()
         all_filters.append(lock_filter)
         all_inner_proofs = all_inner_proofs | lock_proofs
@@ -141,10 +141,7 @@ def calculate_puzzle_root(
             construct_rekey_filter(
                 prefarm_info,
                 slower_root,
-                uint64(
-                    prefarm_info.default_rekey_timelock
-                    + (prefarm_info.slower_rekey_time_penalty * (required_pubkeys - i))
-                ),
+                uint64(prefarm_info.slow_rekey_timelock + (prefarm_info.rekey_increments * (required_pubkeys - i))),
             ).get_tree_hash()
         )
         all_inner_proofs = all_inner_proofs | slower_proofs
