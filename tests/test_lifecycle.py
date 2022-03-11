@@ -1,4 +1,6 @@
+import dataclasses
 import itertools
+import math
 import pytest
 
 from blspy import AugSchemeMPL, BasicSchemeMPL, G1Element, G2Element, PrivateKey
@@ -279,8 +281,8 @@ async def test_payments(setup_info):
             curry_ach_puzzle(setup_info.prefarm_info, ACS_PH).get_tree_hash(),
             WITHDRAWAL_AMOUNT,
         )
-        assert setup_info.sim_client.get_coin_record_by_name(new_singleton.name()) is not None
-        assert setup_info.sim_client.get_coin_record_by_name(ach_coin.name()) is not None
+        assert await setup_info.sim_client.get_coin_record_by_name(new_singleton.name()) is not None
+        assert await setup_info.sim_client.get_coin_record_by_name(ach_coin.name()) is not None
 
         # Try to claw forward the ach immediately and make sure it fails
         too_fast_clawforward: SpendBundle = get_ach_clawforward_spend_bundle(
@@ -375,7 +377,11 @@ async def test_payments(setup_info):
             new_singleton,
             THREE_PUBKEYS,
             setup_info.derivation,
-            LineageProof(setup_info.singleton.parent_coin_info, construct_singleton_inner_puzzle(setup_info.prefarm_info).get_tree_hash(), setup_info.singleton.amount),
+            LineageProof(
+                setup_info.singleton.parent_coin_info,
+                construct_singleton_inner_puzzle(setup_info.prefarm_info).get_tree_hash(),
+                setup_info.singleton.amount,
+            ),
             current_time,
             WITHDRAWAL_AMOUNT,
             ACS_PH,
@@ -410,5 +416,102 @@ async def test_payments(setup_info):
         result = await setup_info.sim_client.push_tx(honest_clawforward)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+    finally:
+        await setup_info.sim.close()
+
+
+@pytest.mark.asyncio
+async def test_rate_limiting(setup_info):
+    try:
+        THREE_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 3)]
+        AGG_THREE = G1Element()
+        for pk in THREE_PUBKEYS:
+            AGG_THREE += pk
+        # Pass time to get past the withdrawal_timelock
+        setup_info.sim.pass_time(setup_info.prefarm_info.withdrawal_timelock)
+        await setup_info.sim.farm_block()
+        current_time: uint64 = setup_info.sim.timestamp
+
+        # First, we'll try a withdrawal immediately of an amount that shouldn't work
+        WITHDRAWAL_AMOUNT: uint64 = (
+            setup_info.prefarm_info.withdrawal_timelock * setup_info.prefarm_info.mojos_per_second
+        )
+        WITHDRAWAL_AMOUNT = WITHDRAWAL_AMOUNT + (WITHDRAWAL_AMOUNT % 2)  # force even-ness
+        early_withdrawal_bundle, data_to_sign = get_withdrawal_spend_info(
+            setup_info.singleton,
+            THREE_PUBKEYS,
+            setup_info.derivation,
+            setup_info.first_lineage_proof,
+            setup_info.sim.timestamp,
+            WITHDRAWAL_AMOUNT,
+            ACS_PH,
+        )
+        synth_pk: G1Element = get_synthetic_pubkey(AGG_THREE)
+        signature: G2Element = AugSchemeMPL.aggregate(
+            [
+                sign_message_with_offset(AGG_THREE, data_to_sign, synth_pk),
+                *[sign_message_at_index(i, data_to_sign, synth_pk) for i in range(0, 3)],
+            ]
+        )
+        aggregate_bundle = SpendBundle.aggregate([early_withdrawal_bundle, SpendBundle([], signature)])
+        result = await setup_info.sim_client.push_tx(aggregate_bundle)
+        assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
+        with pytest.raises(EvalError, match="clvm raise"):
+            early_withdrawal_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
+                INFINITE_COST, early_withdrawal_bundle.coin_spends[0].solution
+            )
+
+        # Let's even maliciously modify the passed in time and make sure the timelock stops it
+        _, new_solution = (
+            # (mod (new_timestamp . (lp amt (withdraw_time . rest))) (list lp amt (c new_timestamp rest)))
+            Program.fromhex("ff04ff05ffff04ff0bffff04ffff04ff02ff3780ff80808080")
+            .to_serialized_program()
+            .run_with_cost(
+                INFINITE_COST, Program.to((current_time + 1, aggregate_bundle.coin_spends[0].solution.to_program()))
+            )
+        )
+        time_passed_withdrawal_bundle = dataclasses.replace(
+            aggregate_bundle,
+            coin_spends=[dataclasses.replace(aggregate_bundle.coin_spends[0], solution=new_solution)],
+        )
+        result = await setup_info.sim_client.push_tx(time_passed_withdrawal_bundle)
+        assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_ABSOLUTE_FAILED)
+
+        # Now let's fast forward 1 seconds and make sure it works
+        setup_info.sim.pass_time(uint64(1))
+        await setup_info.sim.farm_block()
+        REWIND_HERE: uint32 = setup_info.sim.block_height
+        result = await setup_info.sim_client.push_tx(time_passed_withdrawal_bundle)
+        assert result[0] == MempoolInclusionStatus.SUCCESS
+        await setup_info.sim.farm_block()
+
+        # Make sure we can withdraw the whole prefarm after the appropriate date
+        await setup_info.sim.rewind(REWIND_HERE)
+        SECONDS_REQUIRED: uint64 = math.ceil(setup_info.singleton.amount / setup_info.prefarm_info.mojos_per_second)
+        time_to_pass: uint64 = uint64(
+            (SECONDS_REQUIRED + setup_info.prefarm_info.start_date) - setup_info.sim.timestamp
+        )
+        setup_info.sim.pass_time(time_to_pass)
+        await setup_info.sim.farm_block()
+
+        full_withdrawal_bundle, data_to_sign = get_withdrawal_spend_info(
+            setup_info.singleton,
+            THREE_PUBKEYS,
+            setup_info.derivation,
+            setup_info.first_lineage_proof,
+            setup_info.sim.timestamp,
+            uint64(setup_info.singleton.amount - 1),  # minus 1 because we're not melting
+            ACS_PH,
+        )
+        synth_pk: G1Element = get_synthetic_pubkey(AGG_THREE)
+        signature: G2Element = AugSchemeMPL.aggregate(
+            [
+                sign_message_with_offset(AGG_THREE, data_to_sign, synth_pk),
+                *[sign_message_at_index(i, data_to_sign, synth_pk) for i in range(0, 3)],
+            ]
+        )
+        aggregate_bundle = SpendBundle.aggregate([full_withdrawal_bundle, SpendBundle([], signature)])
+        result = await setup_info.sim_client.push_tx(aggregate_bundle)
+        assert result[0] == MempoolInclusionStatus.SUCCESS
     finally:
         await setup_info.sim.close()

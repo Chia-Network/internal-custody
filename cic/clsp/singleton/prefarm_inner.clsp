@@ -152,7 +152,7 @@
     in_amount
     clawforward_ph
   ))
-    (assert (not (logand payment_amount 1))
+    (assert (not (logand (- out_amount in_amount) 1))
       ; then
       (c (list ASSERT_SECONDS_RELATIVE (ACH_TIMELOCK STATE))
         (check_singleton_and_even conditions
