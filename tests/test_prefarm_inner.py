@@ -288,7 +288,8 @@ async def test_payments(setup_info):
                             setup_info.singleton.amount,
                             puzzle_reveal=ACS,
                             proof_of_inclusion=get_proof_of_inclusion(1),
-                            payment_amount=WITHDRAWAL_AMOUNT,
+                            out_amount=WITHDRAWAL_AMOUNT,
+                            in_amount=uint64(0),
                             p2_ph=ACS_PH,
                             puzzle_solution=[
                                 [
@@ -346,7 +347,8 @@ async def test_payments(setup_info):
                             setup_info.singleton.amount - WITHDRAWAL_AMOUNT,
                             puzzle_reveal=ACS,
                             proof_of_inclusion=get_proof_of_inclusion(1),
-                            payment_amount=setup_info.p2_singleton.amount * -1,
+                            out_amount=uint64(0),
+                            in_amount=setup_info.p2_singleton.amount,
                             p2_ph=ACS_PH,
                             # create a puzzle announcement for the p2_singleton to assert
                             puzzle_solution=[

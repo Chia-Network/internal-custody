@@ -1,23 +1,40 @@
 import itertools
 import pytest
 
-from blspy import BasicSchemeMPL, G1Element, G2Element, PrivateKey
+from blspy import AugSchemeMPL, BasicSchemeMPL, G1Element, G2Element, PrivateKey
+from clvm.EvalError import EvalError
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from chia.clvm.spend_sim import SpendSim, SimClient
 from chia.types.blockchain_format.coin import Coin
-from chia.types.blockchain_format.program import Program
+from chia.types.blockchain_format.program import Program, INFINITE_COST
 from chia.types.blockchain_format.sized_bytes import bytes32
+from chia.types.mempool_inclusion_status import MempoolInclusionStatus
 from chia.types.spend_bundle import SpendBundle
 from chia.types.coin_spend import CoinSpend
+from chia.util.errors import Err
 from chia.util.hash import std_hash
 from chia.util.ints import uint32, uint64
 from chia.wallet.lineage_proof import LineageProof
+from chia.wallet.puzzles.p2_conditions import puzzle_for_conditions
+from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
+    calculate_synthetic_offset,
+    DEFAULT_HIDDEN_PUZZLE_HASH,
+    puzzle_for_pk,
+    solution_for_delegated_puzzle,
+)
 from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
 
+from cic.drivers.drop_coins import curry_ach_puzzle, solve_ach_clawback
+from cic.drivers.filters import construct_rekey_filter, solve_filter_for_payment
 from cic.drivers.merkle_utils import simplify_merkle_proof
-from cic.drivers.prefarm import construct_singleton_inner_puzzle
+from cic.drivers.prefarm import (
+    construct_singleton_inner_puzzle,
+    get_withdrawal_spend_info,
+    get_ach_clawforward_spend_bundle,
+    get_ach_clawback_spend_info,
+)
 from cic.drivers.puzzle_root_construction import (
     calculate_puzzle_root,
     RootDerivation,
@@ -42,11 +59,35 @@ class SetupInfo:
     derivation: RootDerivation
 
 
+# Key functions
 def secret_key_for_index(index: int) -> PrivateKey:
     blob = index.to_bytes(32, "big")
     hashed_blob = BasicSchemeMPL.key_gen(std_hash(b"foo" + blob))
     secret_exponent = int.from_bytes(hashed_blob, "big")
     return PrivateKey.from_bytes(secret_exponent.to_bytes(32, "big"))
+
+
+def get_synthetic_pubkey(pk: G1Element) -> G1Element:
+    secret_exponent = calculate_synthetic_offset(pk, DEFAULT_HIDDEN_PUZZLE_HASH)
+    sk = PrivateKey.from_bytes(secret_exponent.to_bytes(32, "big"))
+    return sk.get_g1() + pk
+
+
+def sign_message_at_index(index: int, msg: bytes, agg_pk: Optional[G1Element] = None) -> G2Element:
+    sk: PrivateKey = secret_key_for_index(index)
+    if agg_pk is not None:
+        return AugSchemeMPL.sign(sk, msg, agg_pk)
+    else:
+        return AugSchemeMPL.sign(sk, msg)
+
+
+def sign_message_with_offset(pk: G1Element, msg: bytes, agg_pk: Optional[G1Element] = None) -> G2Element:
+    secret_exponent = calculate_synthetic_offset(pk, DEFAULT_HIDDEN_PUZZLE_HASH)
+    sk = PrivateKey.from_bytes(secret_exponent.to_bytes(32, "big"))
+    if agg_pk is not None:
+        return AugSchemeMPL.sign(sk, msg, agg_pk)
+    else:
+        return AugSchemeMPL.sign(sk, msg)
 
 
 @pytest.fixture(scope="function")
@@ -167,5 +208,207 @@ async def test_puzzle_root_derivation(setup_info):
 async def test_setup(setup_info):
     try:
         pass
+    finally:
+        await setup_info.sim.close()
+
+
+@pytest.mark.asyncio
+async def test_payments(setup_info):
+    try:
+        TWO_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 2)]
+        THREE_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 3)]
+        AGG_THREE = G1Element()
+        AGG_TWO = G1Element()
+        for pk in THREE_PUBKEYS:
+            AGG_THREE += pk
+        for pk in TWO_PUBKEYS:
+            AGG_TWO += pk
+        # Just pass a silly number of seconds to bypass the RL
+        setup_info.sim.pass_time(uint64(1000000000000000))
+        await setup_info.sim.farm_block()
+        current_time = setup_info.sim.timestamp
+
+        # First, we're going to try to withdraw using less pubkeys than necessary
+        WITHDRAWAL_AMOUNT = uint64(10)
+        too_few_bundle, _ = get_withdrawal_spend_info(
+            setup_info.singleton,
+            TWO_PUBKEYS,
+            setup_info.derivation,
+            setup_info.first_lineage_proof,
+            current_time,
+            WITHDRAWAL_AMOUNT,
+            ACS_PH,
+        )
+        result = await setup_info.sim_client.push_tx(too_few_bundle)
+        assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
+        with pytest.raises(EvalError, match="clvm raise"):
+            too_few_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
+                INFINITE_COST, too_few_bundle.coin_spends[0].solution
+            )
+
+        # Next, we'll actually make sure a withdrawal works
+        withdrawal_bundle, data_to_sign = get_withdrawal_spend_info(
+            setup_info.singleton,
+            THREE_PUBKEYS,
+            setup_info.derivation,
+            setup_info.first_lineage_proof,
+            current_time,
+            WITHDRAWAL_AMOUNT,
+            ACS_PH,
+        )
+        synth_pk: G1Element = get_synthetic_pubkey(AGG_THREE)
+        signature: G2Element = AugSchemeMPL.aggregate(
+            [
+                sign_message_with_offset(AGG_THREE, data_to_sign, synth_pk),
+                *[sign_message_at_index(i, data_to_sign, synth_pk) for i in range(0, 3)],
+            ]
+        )
+        aggregated_bundle = SpendBundle.aggregate([withdrawal_bundle, SpendBundle([], signature)])
+        result = await setup_info.sim_client.push_tx(aggregated_bundle)
+        assert result[0] == MempoolInclusionStatus.SUCCESS
+        await setup_info.sim.farm_block()
+
+        # Now let's make sure the clawback coin was created and that the singleton was recreated properly
+        new_singleton = Coin(
+            setup_info.singleton.name(),
+            setup_info.singleton.puzzle_hash,
+            setup_info.singleton.amount - WITHDRAWAL_AMOUNT,
+        )
+        ach_coin = Coin(
+            setup_info.singleton.name(),
+            curry_ach_puzzle(setup_info.prefarm_info, ACS_PH).get_tree_hash(),
+            WITHDRAWAL_AMOUNT,
+        )
+        assert setup_info.sim_client.get_coin_record_by_name(new_singleton.name()) is not None
+        assert setup_info.sim_client.get_coin_record_by_name(ach_coin.name()) is not None
+
+        # Try to claw forward the ach immediately and make sure it fails
+        too_fast_clawforward: SpendBundle = get_ach_clawforward_spend_bundle(
+            ach_coin,
+            setup_info.derivation,
+            ACS_PH,
+        )
+        result = await setup_info.sim_client.push_tx(too_fast_clawforward)
+        assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
+
+        # Try to clawback the ach using a slower rekey filter (the filter should block it)
+        filter_proof, leaf_proof = (
+            list(proof.items())[0][1] for proof in setup_info.derivation.get_proofs_of_inclusion(AGG_TWO)
+        )
+        inner_puzzle: Program = puzzle_for_pk(AGG_TWO)
+        filter_puzzle: Program = construct_rekey_filter(
+            setup_info.prefarm_info,
+            simplify_merkle_proof(inner_puzzle.get_tree_hash(), leaf_proof),
+            setup_info.prefarm_info.rekey_increments,
+        )
+        delegated_puzzle: Program = puzzle_for_conditions(
+            [[51, construct_p2_singleton(setup_info.prefarm_info.launcher_id), ach_coin.amount]]
+        )
+        inner_solution: Program = solution_for_delegated_puzzle(delegated_puzzle, Program.to([]))
+        not_allowed_clawback = SpendBundle(
+            [
+                CoinSpend(
+                    ach_coin,
+                    curry_ach_puzzle(setup_info.prefarm_info, ACS_PH),
+                    solve_ach_clawback(
+                        setup_info.prefarm_info,
+                        ach_coin.amount,
+                        filter_puzzle,
+                        filter_proof,
+                        solve_filter_for_payment(
+                            inner_puzzle,
+                            leaf_proof,
+                            inner_solution,
+                            setup_info.prefarm_info.puzzle_root,
+                            ACS_PH,
+                        ),
+                    ),
+                ),
+            ],
+            G2Element(),
+        )
+        result = await setup_info.sim_client.push_tx(not_allowed_clawback)
+        assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
+        with pytest.raises(EvalError, match="clvm raise"):
+            not_allowed_clawback.coin_spends[0].puzzle_reveal.run_with_cost(
+                INFINITE_COST, not_allowed_clawback.coin_spends[0].solution
+            )
+
+        # Now perform an honest clawback before the timelock
+        REWIND_HERE: uint32 = setup_info.sim.block_height
+        honest_ach_clawback_before, data_to_sign = get_ach_clawback_spend_info(
+            ach_coin, THREE_PUBKEYS, setup_info.derivation, ACS_PH
+        )
+        synth_pk = get_synthetic_pubkey(AGG_THREE)
+        signature = AugSchemeMPL.aggregate(
+            [
+                sign_message_with_offset(AGG_THREE, data_to_sign, synth_pk),
+                *[sign_message_at_index(i, data_to_sign, synth_pk) for i in range(0, 3)],
+            ]
+        )
+        aggregated_bundle = SpendBundle.aggregate([honest_ach_clawback_before, SpendBundle([], signature)])
+        result = await setup_info.sim_client.push_tx(aggregated_bundle)
+        assert result[0] == MempoolInclusionStatus.SUCCESS
+        await setup_info.sim.farm_block()
+
+        # Then perform an honest clawback after the timelock
+        await setup_info.sim.rewind(REWIND_HERE)
+        setup_info.sim.pass_time(
+            max(setup_info.prefarm_info.payment_clawback_period, setup_info.prefarm_info.withdrawal_timelock)
+        )
+        await setup_info.sim.farm_block()
+        honest_ach_clawback_after, data_to_sign = get_ach_clawback_spend_info(
+            ach_coin, THREE_PUBKEYS, setup_info.derivation, ACS_PH
+        )
+        synth_pk = get_synthetic_pubkey(AGG_THREE)
+        signature = AugSchemeMPL.aggregate(
+            [
+                sign_message_with_offset(AGG_THREE, data_to_sign, synth_pk),
+                *[sign_message_at_index(i, data_to_sign, synth_pk) for i in range(0, 3)],
+            ]
+        )
+        aggregated_bundle_0 = SpendBundle.aggregate([honest_ach_clawback_after, SpendBundle([], signature)])
+        # defer checking success here to test ephemerality in the next test
+
+        # After the clawback, let's see if we can immediately claim back the funds and make another payment
+        p2_singleton_absorbtion, data_to_sign = get_withdrawal_spend_info(
+            new_singleton,
+            THREE_PUBKEYS,
+            setup_info.derivation,
+            LineageProof(setup_info.singleton.parent_coin_info, construct_singleton_inner_puzzle(setup_info.prefarm_info).get_tree_hash(), setup_info.singleton.amount),
+            current_time,
+            WITHDRAWAL_AMOUNT,
+            ACS_PH,
+            p2_singletons_to_claim=[
+                Coin(
+                    ach_coin.name(),
+                    construct_p2_singleton(setup_info.prefarm_info.launcher_id).get_tree_hash(),
+                    WITHDRAWAL_AMOUNT,
+                )
+            ],
+        )
+        synth_pk = get_synthetic_pubkey(AGG_THREE)
+        signature = AugSchemeMPL.aggregate(
+            [
+                sign_message_with_offset(AGG_THREE, data_to_sign, synth_pk),
+                *[sign_message_at_index(i, data_to_sign, synth_pk) for i in range(0, 3)],
+            ]
+        )
+        aggregated_bundle_1 = SpendBundle.aggregate([p2_singleton_absorbtion, SpendBundle([], signature)])
+        result = await setup_info.sim_client.push_tx(SpendBundle.aggregate([aggregated_bundle_0, aggregated_bundle_1]))
+        assert result[0] == MempoolInclusionStatus.SUCCESS
+        await setup_info.sim.farm_block()
+
+        # Finally, let's make sure an honest clawforward works
+        await setup_info.sim.rewind(REWIND_HERE)
+        setup_info.sim.pass_time(setup_info.prefarm_info.payment_clawback_period)
+        honest_clawforward: SpendBundle = get_ach_clawforward_spend_bundle(
+            ach_coin,
+            setup_info.derivation,
+            ACS_PH,
+        )
+        result = await setup_info.sim_client.push_tx(honest_clawforward)
+        assert result[0] == MempoolInclusionStatus.SUCCESS
+        await setup_info.sim.farm_block()
     finally:
         await setup_info.sim.close()
