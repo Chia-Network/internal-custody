@@ -2,7 +2,6 @@ import math
 import pytest
 
 from blspy import G2Element
-from clvm.EvalError import EvalError
 from dataclasses import dataclass
 
 from chia.clvm.spend_sim import SpendSim, SimClient

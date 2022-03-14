@@ -439,8 +439,8 @@ async def test_rate_limiting(setup_info):
 
         # First, we'll try a withdrawal immediately of an amount that shouldn't work
         WITHDRAWAL_AMOUNT: uint64 = (
-            (setup_info.prefarm_info.withdrawal_timelock * setup_info.prefarm_info.mojos_per_second) + 1
-        )
+            setup_info.prefarm_info.withdrawal_timelock * setup_info.prefarm_info.mojos_per_second
+        ) + 1
         WITHDRAWAL_AMOUNT = WITHDRAWAL_AMOUNT + (WITHDRAWAL_AMOUNT % 2)  # force even-ness
         early_withdrawal_bundle, data_to_sign = get_withdrawal_spend_info(
             setup_info.singleton,

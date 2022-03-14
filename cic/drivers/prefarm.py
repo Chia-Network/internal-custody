@@ -197,7 +197,7 @@ def get_withdrawal_spend_info(
                                 proof_of_inclusion=filter_proof,
                                 puzzle_solution=solve_filter_for_payment(
                                     inner_puzzle,
-                                    leaf_proof,
+                                    Program.to(leaf_proof),
                                     inner_solution,
                                     derivation.prefarm_info.puzzle_root,
                                     clawforward_ph,
@@ -255,10 +255,10 @@ def get_ach_clawback_spend_info(
                         derivation.prefarm_info,
                         ach_coin.amount,
                         filter_puzzle,
-                        filter_proof,
+                        Program.to(filter_proof),
                         solve_filter_for_payment(
                             inner_puzzle,
-                            leaf_proof,
+                            Program.to(leaf_proof),
                             inner_solution,
                             derivation.prefarm_info.puzzle_root,
                             clawforward_ph,
@@ -302,11 +302,12 @@ def calculate_rekey_args(
         agg_pk += pk
     # Proofs of inclusion
     filter_proof, leaf_proof = (
-        list(proof.items())[0][1] for proof in derivation.get_proofs_of_inclusion(agg_pk, lock=(new_derivation == None))
+        list(proof.items())[0][1] for proof in derivation.get_proofs_of_inclusion(agg_pk, lock=(new_derivation is None))
     )
 
     # A lot of information is conditional based on the filter we're in
     if new_derivation is None:
+        assert derivation.next_root is not None
         new_puzzle_root: bytes32 = derivation.next_root
         inner_puzzle: Program = construct_lock_puzzle(agg_pk, derivation.prefarm_info, new_puzzle_root)
     else:
@@ -370,7 +371,7 @@ def calculate_rekey_args(
 
     filter_solution = solve_filter_for_rekey(
         inner_puzzle,
-        leaf_proof,
+        Program.to(leaf_proof),
         inner_solution,
         derivation.prefarm_info.puzzle_root,
         new_puzzle_root,
