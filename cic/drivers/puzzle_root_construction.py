@@ -98,6 +98,10 @@ def construct_lock_puzzle(pubkey: G1Element, prefarm_info: PrefarmInfo, next_roo
     )
 
 
+def solve_lock_puzzle(old_puzzle_root: bytes32, singleton_inner: bytes32, singleton_amount: uint64) -> Program:
+    return Program.to([old_puzzle_root, (singleton_inner, singleton_amount)])
+
+
 def calculate_puzzle_root(
     prefarm_info: PrefarmInfo,
     pubkey_list: List[G1Element],

@@ -28,14 +28,19 @@ from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
 )
 from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
 
-from cic.drivers.drop_coins import curry_ach_puzzle, solve_ach_clawback
+from cic.drivers.drop_coins import curry_ach_puzzle, solve_ach_clawback, solve_rekey_clawback
 from cic.drivers.filters import construct_rekey_filter, solve_filter_for_payment
 from cic.drivers.merkle_utils import simplify_merkle_proof
 from cic.drivers.prefarm import (
+    construct_full_singleton,
     construct_singleton_inner_puzzle,
     get_withdrawal_spend_info,
     get_ach_clawforward_spend_bundle,
     get_ach_clawback_spend_info,
+    get_rekey_spend_info,
+    get_rekey_clawback_spend_bundle,
+    get_rekey_completion_spend,
+    calculate_rekey_args,
 )
 from cic.drivers.puzzle_root_construction import (
     calculate_puzzle_root,
@@ -122,7 +127,7 @@ async def setup_info():
             START_DATE,  # start_date: uint64
             starting_amount,  # starting_amount: uint64
             DRAIN_RATE,  # mojos_per_second: uint64
-            bytes32([0] * 32),  # puzzle_root: bytes32  # gets set in set_puzzle_root
+            bytes32([0] * 32),  # puzzle_root: bytes32  # gets set in calculate_puzzle_root
             WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
             PAYMENT_CLAWBACK_PERIOD,  # payment_clawback_period: uint64
             REKEY_CLAWBACK_PERIOD,  # rekey_clawback_period: uint64
@@ -513,5 +518,391 @@ async def test_rate_limiting(setup_info):
         aggregate_bundle = SpendBundle.aggregate([full_withdrawal_bundle, SpendBundle([], signature)])
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result[0] == MempoolInclusionStatus.SUCCESS
+    finally:
+        await setup_info.sim.close()
+
+
+@pytest.mark.asyncio
+async def test_rekeys(setup_info):
+    try:
+        # Pubkey setup
+        ONE_PUBKEY: G1Element = secret_key_for_index(0).get_g1()
+        TWO_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 2)]
+        THREE_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 3)]
+        FOUR_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 4)]
+        FIVE_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 5)]
+        NEW_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(5, 10)]
+        THREE_NEW_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(5, 8)]
+        AGG_TWO = G1Element()
+        AGG_THREE = G1Element()
+        AGG_THREE_NEW = G1Element()
+        AGG_FOUR = G1Element()
+        AGG_FIVE = G1Element()
+        for pk in TWO_PUBKEYS:
+            AGG_TWO += pk
+        for pk in THREE_PUBKEYS:
+            AGG_THREE += pk
+        for pk in THREE_NEW_PUBKEYS:
+            AGG_THREE_NEW += pk
+        for pk in FOUR_PUBKEYS:
+            AGG_FOUR += pk
+        for pk in FIVE_PUBKEYS:
+            AGG_FIVE += pk
+
+        # Let's try increasing the lock level all the way to the max
+        # Bump from 3 -> 4
+        three_to_four_bundle, data_to_sign = get_rekey_spend_info(
+            setup_info.singleton,
+            THREE_PUBKEYS,
+            setup_info.derivation,
+            setup_info.first_lineage_proof,
+        )
+        signature: G2Element = AugSchemeMPL.aggregate(
+            [sign_message_at_index(i, data_to_sign, AGG_THREE) for i in range(0, 3)]
+        )
+        aggregate_bundle = SpendBundle.aggregate([three_to_four_bundle, SpendBundle([], signature)])
+        # Before we actually perform a successful one, let's try to cancel it ephemerally and make sure that fails
+        lock_completion_spend: CoinSpend = [
+            cs
+            for cs in aggregate_bundle.coin_spends
+            if cs.coin.parent_coin_info == setup_info.singleton.name() and cs.coin.amount == 0
+        ][0]
+        singleton_spend: CoinSpend = [cs for cs in aggregate_bundle.coin_spends if cs.coin == setup_info.singleton][0]
+        _, new_puzzle_root, filter_puzzle, filter_proof, filter_solution, extra_data_to_sign = calculate_rekey_args(
+            lock_completion_spend.coin,
+            THREE_PUBKEYS,
+            setup_info.derivation,
+        )
+        cancellation_spend: CoinSpend = dataclasses.replace(
+            lock_completion_spend,
+            solution=solve_rekey_clawback(
+                setup_info.prefarm_info,
+                new_puzzle_root,
+                filter_puzzle,
+                filter_proof,
+                filter_solution,
+            ),
+        )
+        extra_signature: G2Element = AugSchemeMPL.aggregate(
+            [sign_message_at_index(i, data_to_sign, AGG_THREE) for i in range(0, 3)],
+        )
+        ephemeral_cancel_bundle = SpendBundle.aggregate(
+            [SpendBundle([singleton_spend, cancellation_spend], signature), SpendBundle([], extra_signature)]
+        )
+        result = await setup_info.sim_client.push_tx(ephemeral_cancel_bundle)
+        assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
+        with pytest.raises(EvalError, match="clvm raise"):
+            cancellation_spend.puzzle_reveal.run_with_cost(INFINITE_COST, cancellation_spend.solution)
+        # Now actually push the honest bundle
+        result = await setup_info.sim_client.push_tx(aggregate_bundle)
+        assert result[0] == MempoolInclusionStatus.SUCCESS
+        await setup_info.sim.farm_block()
+
+        # Then make sure there's no way to bump it with 3 again
+        new_derivation: RootDerivation = calculate_puzzle_root(
+            setup_info.prefarm_info,
+            setup_info.derivation.pubkey_list,
+            uint32(4),  # lock level 4
+            uint32(5),
+            uint32(1),
+        )
+        ephemeral_singleton = Coin(
+            setup_info.singleton.name(),
+            setup_info.singleton.puzzle_hash,
+            setup_info.singleton.amount,
+        )
+        new_singleton = Coin(
+            ephemeral_singleton.name(),
+            construct_full_singleton(new_derivation.prefarm_info).get_tree_hash(),
+            setup_info.singleton.amount,
+        )
+        new_lineage_proof = LineageProof(
+            ephemeral_singleton.parent_coin_info,
+            construct_singleton_inner_puzzle(setup_info.prefarm_info).get_tree_hash(),
+            ephemeral_singleton.amount,
+        )
+        with pytest.raises(ValueError, match="Could not find a puzzle matching the specified pubkey"):
+            _, _ = get_rekey_spend_info(
+                new_singleton,
+                THREE_PUBKEYS,
+                new_derivation,
+                new_lineage_proof,
+            )
+
+        # Then 4 -> 5
+        four_to_five_bundle, data_to_sign = get_rekey_spend_info(
+            new_singleton,
+            FOUR_PUBKEYS,
+            new_derivation,
+            new_lineage_proof,
+        )
+        signature: G2Element = AugSchemeMPL.aggregate(
+            [sign_message_at_index(i, data_to_sign, AGG_FOUR) for i in range(0, 4)]
+        )
+        aggregate_bundle = SpendBundle.aggregate([four_to_five_bundle, SpendBundle([], signature)])
+        result = await setup_info.sim_client.push_tx(aggregate_bundle)
+        assert result[0] == MempoolInclusionStatus.SUCCESS
+        await setup_info.sim.farm_block()
+
+        # Then make sure we can't increase any further
+        previous_prefarm_info: PrefarmInfo = new_derivation.prefarm_info
+        new_derivation = calculate_puzzle_root(
+            setup_info.prefarm_info,
+            setup_info.derivation.pubkey_list,
+            uint32(5),  # lock level 5
+            uint32(5),
+            uint32(1),
+        )
+        ephemeral_singleton = Coin(
+            new_singleton.name(),
+            new_singleton.puzzle_hash,
+            new_singleton.amount,
+        )
+        new_singleton = Coin(
+            ephemeral_singleton.name(),
+            construct_full_singleton(new_derivation.prefarm_info).get_tree_hash(),
+            setup_info.singleton.amount,
+        )
+        new_lineage_proof = LineageProof(
+            ephemeral_singleton.parent_coin_info,
+            construct_singleton_inner_puzzle(previous_prefarm_info).get_tree_hash(),
+            ephemeral_singleton.amount,
+        )
+        with pytest.raises(AssertionError):
+            _, _ = get_rekey_spend_info(
+                new_singleton,
+                THREE_PUBKEYS,
+                new_derivation,
+                new_lineage_proof,
+            )
+
+        # Now let's rekey down to a new 2/3 pubkey set
+        # Start with a slower rekey of 3 keys
+        re_derivation: RootDerivation = calculate_puzzle_root(
+            new_derivation.prefarm_info,
+            NEW_PUBKEYS,
+            uint64(3),
+            uint64(5),
+            uint64(1),
+        )
+        start_slow_rekey_bundle, data_to_sign = get_rekey_spend_info(
+            new_singleton,
+            THREE_PUBKEYS,
+            new_derivation,
+            new_lineage_proof,
+            re_derivation,
+        )
+        synth_pk: G1Element = get_synthetic_pubkey(AGG_THREE)
+        signature: G2Element = AugSchemeMPL.aggregate(
+            [
+                sign_message_with_offset(AGG_THREE, data_to_sign, synth_pk),
+                *[sign_message_at_index(i, data_to_sign, synth_pk) for i in range(0, 3)],
+            ]
+        )
+        aggregate_bundle = SpendBundle.aggregate([start_slow_rekey_bundle, SpendBundle([], signature)])
+        result = await setup_info.sim_client.push_tx(aggregate_bundle)
+        assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
+        timelock: uint64 = setup_info.prefarm_info.slow_rekey_timelock + setup_info.prefarm_info.rekey_increments * 2
+        setup_info.sim.pass_time(
+            setup_info.prefarm_info.slow_rekey_timelock + setup_info.prefarm_info.rekey_increments * 2
+        )
+        await setup_info.sim.farm_block()
+        result = await setup_info.sim_client.push_tx(aggregate_bundle)
+        assert result[0] == MempoolInclusionStatus.SUCCESS
+        await setup_info.sim.farm_block()
+
+        # Try to cancel with 1 key
+        rekey_coin: Coin = [c for c in start_slow_rekey_bundle.additions() if c.amount == 0][0]
+        rekey_lineage = LineageProof(
+            new_singleton.parent_coin_info,
+            construct_singleton_inner_puzzle(new_derivation.prefarm_info).get_tree_hash(),
+            new_singleton.amount,
+        )
+        too_few_cancel_bundle, data_to_sign = get_rekey_clawback_spend_bundle(
+            rekey_coin,
+            [ONE_PUBKEY],
+            new_derivation,
+            timelock,
+            re_derivation,
+        )
+        synth_pk: G1Element = get_synthetic_pubkey(ONE_PUBKEY)
+        signature: G2Element = AugSchemeMPL.aggregate(
+            [
+                sign_message_with_offset(ONE_PUBKEY, data_to_sign, synth_pk),
+                *[sign_message_at_index(i, data_to_sign, synth_pk) for i in range(0, 3)],
+            ]
+        )
+        aggregate_bundle = SpendBundle.aggregate([too_few_cancel_bundle, SpendBundle([], signature)])
+        result = await setup_info.sim_client.push_tx(aggregate_bundle)
+        assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
+        with pytest.raises(EvalError, match="clvm raise"):
+            aggregate_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
+                INFINITE_COST, aggregate_bundle.coin_spends[0].solution
+            )
+
+        # Cancel with the 3 keys
+        REWIND_HERE: uint32 = setup_info.sim.block_height
+        same_number_cancel_bundle, data_to_sign = get_rekey_clawback_spend_bundle(
+            rekey_coin,
+            THREE_PUBKEYS,
+            new_derivation,
+            timelock,
+            re_derivation,
+        )
+        synth_pk: G1Element = get_synthetic_pubkey(AGG_THREE)
+        signature: G2Element = AugSchemeMPL.aggregate(
+            [
+                sign_message_with_offset(AGG_THREE, data_to_sign, synth_pk),
+                *[sign_message_at_index(i, data_to_sign, synth_pk) for i in range(0, 3)],
+            ]
+        )
+        aggregate_bundle = SpendBundle.aggregate([same_number_cancel_bundle, SpendBundle([], signature)])
+        result = await setup_info.sim_client.push_tx(aggregate_bundle)
+        assert result[0] == MempoolInclusionStatus.SUCCESS
+        await setup_info.sim.farm_block()
+        # Check that no coins were created
+        assert len(aggregate_bundle.additions()) == 0
+
+        # Make sure completion works
+        await setup_info.sim.rewind(REWIND_HERE)
+        new_lineage_proof = LineageProof(
+            new_singleton.parent_coin_info,
+            construct_singleton_inner_puzzle(new_derivation.prefarm_info).get_tree_hash(),
+            new_singleton.amount,
+        )
+        new_singleton = Coin(
+            new_singleton.name(),
+            new_singleton.puzzle_hash,
+            new_singleton.amount,
+        )
+        finish_rekey_spend: SpendBundle = get_rekey_completion_spend(
+            new_singleton,
+            rekey_coin,
+            THREE_PUBKEYS,
+            new_derivation,
+            new_lineage_proof,
+            rekey_lineage,
+            re_derivation,
+        )
+        # Make sure it's only possible after the appropriate amount of time
+        result = await setup_info.sim_client.push_tx(finish_rekey_spend)
+        assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
+        setup_info.sim.pass_time(setup_info.prefarm_info.rekey_clawback_period)
+        await setup_info.sim.farm_block()
+        result = await setup_info.sim_client.push_tx(finish_rekey_spend)
+        assert result[0] == MempoolInclusionStatus.SUCCESS
+        await setup_info.sim.farm_block()
+
+        # Initiate a rekey with the new key set
+        new_derivation = re_derivation
+        new_lineage_proof = LineageProof(
+            new_singleton.parent_coin_info, new_lineage_proof.inner_puzzle_hash, new_singleton.amount
+        )
+        new_singleton = Coin(
+            new_singleton.name(),
+            construct_full_singleton(new_derivation.prefarm_info).get_tree_hash(),
+            new_singleton.amount,
+        )
+        start_fast_rekey_bundle, data_to_sign = get_rekey_spend_info(
+            new_singleton,
+            THREE_NEW_PUBKEYS,
+            new_derivation,
+            new_lineage_proof,
+            setup_info.derivation,  # Back to the original set of keys
+        )
+        synth_pk: G1Element = get_synthetic_pubkey(AGG_THREE_NEW)
+        signature: G2Element = AugSchemeMPL.aggregate(
+            [
+                sign_message_with_offset(AGG_THREE_NEW, data_to_sign, synth_pk),
+                *[sign_message_at_index(i, data_to_sign, synth_pk) for i in range(5, 8)],
+            ]
+        )
+        aggregate_bundle = SpendBundle.aggregate([start_fast_rekey_bundle, SpendBundle([], signature)])
+        result = await setup_info.sim_client.push_tx(aggregate_bundle)
+        assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
+        setup_info.sim.pass_time(setup_info.prefarm_info.rekey_increments)
+        await setup_info.sim.farm_block()
+        result = await setup_info.sim_client.push_tx(aggregate_bundle)
+        assert result[0] == MempoolInclusionStatus.SUCCESS
+        await setup_info.sim.farm_block()
+
+        # Try to maliciously rekey the singleton with an announcement
+        rekey_coin: Coin = [c for c in start_slow_rekey_bundle.additions() if c.amount == 0][0]
+        rekey_lineage = LineageProof(
+            new_singleton.parent_coin_info,
+            construct_singleton_inner_puzzle(new_derivation.prefarm_info).get_tree_hash(),
+            new_singleton.amount,
+        )
+        new_lineage_proof = LineageProof(
+            new_singleton.parent_coin_info, new_lineage_proof.inner_puzzle_hash, new_singleton.amount
+        )
+        new_singleton = Coin(
+            new_singleton.name(),
+            construct_full_singleton(new_derivation.prefarm_info).get_tree_hash(),
+            new_singleton.amount,
+        )
+
+        accidental_rekey_spend: SpendBundle = get_rekey_completion_spend(
+            new_singleton,
+            rekey_coin,
+            THREE_NEW_PUBKEYS,
+            new_derivation,
+            new_lineage_proof,
+            rekey_lineage,
+            setup_info.derivation,
+        )
+
+        malicious_rekey_clawback_bundle, data_to_sign = get_rekey_clawback_spend_bundle(
+            rekey_coin,
+            THREE_NEW_PUBKEYS,
+            new_derivation,
+            setup_info.prefarm_info.rekey_increments,
+            setup_info.derivation,
+            additional_conditions=[Program.to([62, "rekey"])],
+        )
+        synth_pk: G1Element = get_synthetic_pubkey(AGG_THREE_NEW)
+        signature: G2Element = AugSchemeMPL.aggregate(
+            [
+                sign_message_with_offset(AGG_THREE_NEW, data_to_sign, synth_pk),
+                *[sign_message_at_index(i, data_to_sign, synth_pk) for i in range(5, 8)],
+            ]
+        )
+        aggregate_bundle = SpendBundle.aggregate(
+            [accidental_rekey_spend, malicious_rekey_clawback_bundle, SpendBundle([], signature)]
+        )
+        result = await setup_info.sim_client.push_tx(aggregate_bundle)
+        assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
+        with pytest.raises(EvalError, match="clvm raise"):
+            malicious_rekey_clawback_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
+                INFINITE_COST, malicious_rekey_clawback_bundle.coin_spends[0].solution
+            )
+
+        # Try to include an announcement in a withdrawal to maliciously cancel the rekey
+        malicious_withdrawal_bundle, data_to_sign = get_withdrawal_spend_info(
+            new_singleton,
+            THREE_NEW_PUBKEYS,
+            new_derivation,
+            new_lineage_proof,
+            setup_info.sim.timestamp,
+            uint64(10),
+            ACS_PH,
+            additional_conditions=[Program.to([62, "rekey"])],
+        )
+        synth_pk: G1Element = get_synthetic_pubkey(AGG_THREE_NEW)
+        signature: G2Element = AugSchemeMPL.aggregate(
+            [
+                sign_message_with_offset(AGG_THREE_NEW, data_to_sign, synth_pk),
+                *[sign_message_at_index(i, data_to_sign, synth_pk) for i in range(5, 8)],
+            ]
+        )
+        aggregate_bundle = SpendBundle.aggregate(
+            [accidental_rekey_spend, malicious_withdrawal_bundle, SpendBundle([], signature)]
+        )
+        result = await setup_info.sim_client.push_tx(aggregate_bundle)
+        assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
+        with pytest.raises(EvalError, match="clvm raise"):
+            malicious_withdrawal_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
+                INFINITE_COST, malicious_withdrawal_bundle.coin_spends[0].solution
+            )
     finally:
         await setup_info.sim.close()

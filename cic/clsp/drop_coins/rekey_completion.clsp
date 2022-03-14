@@ -2,7 +2,7 @@
   (
     SINGLETON_STRUCT
     FINISHING_TIMELOCK
-    (_ _ _)
+    (_ _ TIMELOCK)
     (parent_parent parent_inner_puz parent_amount)  ; lineage proof
   )
 
@@ -32,7 +32,7 @@
 
   (main
     SINGLETON_STRUCT
-    FINISHING_TIMELOCK
+    (if TIMELOCK FINISHING_TIMELOCK 0)
     parent_parent
     (calculate_full_puzzle_hash SINGLETON_STRUCT parent_inner_puz)
     parent_amount

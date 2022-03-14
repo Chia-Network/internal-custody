@@ -67,14 +67,14 @@
     (assert (= PUZZLE_ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) merkle_proof))
       ; then
       (c (list ASSERT_MY_PUZZLEHASH my_puzzle_hash)
-      (check_for_rekey_announcement
-        (check_for_and_filter_clawback
-          (a puzzle_reveal puzzle_solution)
-          my_puzzle_hash
-          0
-          ()
+        (check_for_rekey_announcement
+          (check_for_and_filter_clawback
+            (a puzzle_reveal puzzle_solution)
+            my_puzzle_hash
+            0
+            ()
+          )
         )
-      )
       )
     )
   )
