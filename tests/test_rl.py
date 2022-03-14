@@ -12,6 +12,7 @@ from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.mempool_inclusion_status import MempoolInclusionStatus
 from chia.types.spend_bundle import SpendBundle
 from chia.types.coin_spend import CoinSpend
+from chia.util.errors import Err
 from chia.util.ints import uint64
 from chia.wallet.lineage_proof import LineageProof
 
@@ -212,13 +213,7 @@ async def test_cant_drain_more(setup_info):
 
         # Make sure it fails
         result = await setup_info.sim_client.push_tx(drain_spend)
-        assert result[0] == MempoolInclusionStatus.FAILED
-
-        # Make sure the failure is due to a raise
-        puzzle: Program = drain_spend.coin_spends[0].puzzle_reveal.to_program()
-        solution: Program = drain_spend.coin_spends[0].solution.to_program()
-        with pytest.raises(EvalError, match="clvm raise"):
-            puzzle.run(solution)
+        assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_ABSOLUTE_FAILED)
     finally:
         await setup_info.sim.close()
 
