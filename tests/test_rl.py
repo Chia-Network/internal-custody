@@ -18,8 +18,15 @@ from chia.wallet.lineage_proof import LineageProof
 from cic.drivers.rate_limiting import construct_rate_limiting_puzzle, solve_rate_limiting_puzzle
 from cic.drivers.singleton import construct_singleton, generate_launch_conditions_and_coin_spend, solve_singleton
 
+from tests.cost_logger import CostLogger
+
 ACS = Program.to(1)
 ACS_PH = ACS.get_tree_hash()
+
+
+@pytest.fixture(scope="module")
+def cost_logger():
+    return CostLogger()
 
 
 @dataclass
@@ -83,7 +90,7 @@ async def setup_info():
 
 
 @pytest.mark.asyncio
-async def test_draining(setup_info):
+async def test_draining(setup_info, cost_logger):
     try:
         # Setup the conditions to drain
         TO_DRAIN = uint64(10)
@@ -120,6 +127,7 @@ async def test_draining(setup_info):
         result = await setup_info.sim_client.push_tx(first_drain_spend)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Drain some", first_drain_spend)
 
         # Find the new coin
         new_coin: Coin = (await setup_info.sim_client.get_coin_records_by_parent_ids([setup_info.singleton.name()]))[
@@ -162,6 +170,7 @@ async def test_draining(setup_info):
         result = await setup_info.sim_client.push_tx(second_drain_spend)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Drain again", second_drain_spend)
 
         # Check the child's puzzle hash
         new_coin: Coin = (await setup_info.sim_client.get_coin_records_by_parent_ids([new_coin.name()]))[0].coin
@@ -177,7 +186,7 @@ async def test_draining(setup_info):
 
 
 @pytest.mark.asyncio
-async def test_cant_drain_more(setup_info):
+async def test_cant_drain_more(setup_info, cost_logger):
     try:
         # Setup the conditions to drain
         TO_DRAIN = uint64(10)
@@ -218,7 +227,7 @@ async def test_cant_drain_more(setup_info):
 
 
 @pytest.mark.asyncio
-async def test_refill_is_ignored(setup_info):
+async def test_refill_is_ignored(setup_info, cost_logger):
     try:
         # First let's farm ourselves some funds
         await setup_info.sim.farm_block(ACS_PH)
@@ -261,6 +270,7 @@ async def test_refill_is_ignored(setup_info):
         result = await setup_info.sim_client.push_tx(refill_spend)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Refill", refill_spend)
 
         # Check that the singleton is the same puzzle hash
         new_coin: Coin = (await setup_info.sim_client.get_coin_records_by_parent_ids([setup_info.singleton.name()]))[
@@ -269,3 +279,7 @@ async def test_refill_is_ignored(setup_info):
         assert new_coin.puzzle_hash == setup_info.singleton.puzzle_hash
     finally:
         await setup_info.sim.close()
+
+
+def test_cost(cost_logger):
+    cost_logger.log_cost_statistics()

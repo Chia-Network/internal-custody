@@ -50,8 +50,15 @@ from cic.drivers.puzzle_root_construction import (
 from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.singleton import generate_launch_conditions_and_coin_spend, construct_p2_singleton
 
+from tests.cost_logger import CostLogger
+
 ACS = Program.to(1)
 ACS_PH = ACS.get_tree_hash()
+
+
+@pytest.fixture(scope="module")
+def cost_logger():
+    return CostLogger()
 
 
 @dataclass
@@ -212,15 +219,7 @@ async def test_puzzle_root_derivation(setup_info):
 
 
 @pytest.mark.asyncio
-async def test_setup(setup_info):
-    try:
-        pass
-    finally:
-        await setup_info.sim.close()
-
-
-@pytest.mark.asyncio
-async def test_payments(setup_info):
+async def test_payments(setup_info, cost_logger):
     try:
         TWO_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 2)]
         THREE_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 3)]
@@ -274,6 +273,7 @@ async def test_payments(setup_info):
         result = await setup_info.sim_client.push_tx(aggregated_bundle)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Withdrawal", aggregated_bundle)
 
         # Now let's make sure the clawback coin was created and that the singleton was recreated properly
         new_singleton = Coin(
@@ -357,6 +357,7 @@ async def test_payments(setup_info):
         result = await setup_info.sim_client.push_tx(aggregated_bundle)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("ACH Clawback Pre-Timelock", aggregated_bundle)
 
         # Then perform an honest clawback after the timelock
         await setup_info.sim.rewind(REWIND_HERE)
@@ -406,9 +407,11 @@ async def test_payments(setup_info):
             ]
         )
         aggregated_bundle_1 = SpendBundle.aggregate([p2_singleton_absorbtion, SpendBundle([], signature)])
-        result = await setup_info.sim_client.push_tx(SpendBundle.aggregate([aggregated_bundle_0, aggregated_bundle_1]))
+        aggregated_bundle = SpendBundle.aggregate([aggregated_bundle_0, aggregated_bundle_1])
+        result = await setup_info.sim_client.push_tx(aggregated_bundle)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("ACH Clawback/Claim/Re-Pay", aggregated_bundle)
 
         # Finally, let's make sure an honest clawforward works
         await setup_info.sim.rewind(REWIND_HERE)
@@ -421,12 +424,13 @@ async def test_payments(setup_info):
         result = await setup_info.sim_client.push_tx(honest_clawforward)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("ACH Clawforward", honest_clawforward)
     finally:
         await setup_info.sim.close()
 
 
 @pytest.mark.asyncio
-async def test_rate_limiting(setup_info):
+async def test_rate_limiting(setup_info, cost_logger):
     try:
         THREE_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 3)]
         AGG_THREE = G1Element()
@@ -518,12 +522,13 @@ async def test_rate_limiting(setup_info):
         aggregate_bundle = SpendBundle.aggregate([full_withdrawal_bundle, SpendBundle([], signature)])
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result[0] == MempoolInclusionStatus.SUCCESS
+        cost_logger.add_cost("Withdraw the whole prefarm", aggregate_bundle)
     finally:
         await setup_info.sim.close()
 
 
 @pytest.mark.asyncio
-async def test_rekeys(setup_info):
+async def test_rekeys(setup_info, cost_logger):
     try:
         # Pubkey setup
         ONE_PUBKEY: G1Element = secret_key_for_index(0).get_g1()
@@ -597,6 +602,7 @@ async def test_rekeys(setup_info):
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Lock Level 3 -> 4", aggregate_bundle)
 
         # Then make sure there's no way to bump it with 3 again
         new_derivation: RootDerivation = calculate_puzzle_root(
@@ -643,6 +649,7 @@ async def test_rekeys(setup_info):
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Lock Level 4 -> 5", aggregate_bundle)
 
         # Then make sure we can't increase any further
         previous_prefarm_info: PrefarmInfo = new_derivation.prefarm_info
@@ -710,6 +717,7 @@ async def test_rekeys(setup_info):
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Start Slow Rekey", aggregate_bundle)
 
         # Try to cancel with 1 key
         rekey_coin: Coin = [c for c in start_slow_rekey_bundle.additions() if c.amount == 0][0]
@@ -760,6 +768,7 @@ async def test_rekeys(setup_info):
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Cancel Slow Rekey", aggregate_bundle)
         # Check that no coins were created
         assert len(aggregate_bundle.additions()) == 0
 
@@ -792,6 +801,7 @@ async def test_rekeys(setup_info):
         result = await setup_info.sim_client.push_tx(finish_rekey_spend)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Finish Slow Rekey", aggregate_bundle)
 
         # Initiate a rekey with the new key set
         new_derivation = re_derivation
@@ -825,6 +835,7 @@ async def test_rekeys(setup_info):
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Start Rekey", aggregate_bundle)
 
         # Try to maliciously rekey the singleton with an announcement
         rekey_coin: Coin = [c for c in start_slow_rekey_bundle.additions() if c.amount == 0][0]
@@ -906,3 +917,7 @@ async def test_rekeys(setup_info):
             )
     finally:
         await setup_info.sim.close()
+
+
+def test_cost(cost_logger):
+    cost_logger.log_cost_statistics()
