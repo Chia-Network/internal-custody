@@ -29,9 +29,15 @@ from cic.drivers.filters import (
 from cic.drivers.merkle_utils import build_merkle_tree
 from cic.drivers.prefarm import PrefarmInfo
 
+from tests.cost_logger import CostLogger
 
 ACS = Program.to(1)
 ACS_PH = ACS.get_tree_hash()
+
+
+@pytest.fixture(scope="module")
+def cost_logger():
+    return CostLogger()
 
 
 @dataclasses.dataclass
@@ -45,7 +51,6 @@ class SetupInfo:
     rekey_timelock: uint64
     starting_amount: uint64
     prefarm_info: PrefarmInfo
-    merkle_root: bytes32
 
 
 @pytest.fixture(scope="function")
@@ -64,14 +69,17 @@ async def setup_info():
         uint64(0),  # doesn't matter
         uint64(0),  # doesn't matter
         uint64(0),  # doesn't matter
-        [ACS_PH],
+        build_merkle_tree([ACS_PH])[0],
+        uint64(0),  # doesn't matter
+        uint64(0),  # doesn't matter
+        uint64(0),  # doesn't matter
         uint64(0),  # doesn't matter
         uint64(0),  # doesn't matter
     )
 
     # Construct the two filters
-    rnp_filter = construct_payment_and_rekey_filter(prefarm_info, prefarm_info.puzzle_hash_list, REKEY_TIMELOCK)
-    rko_filter = construct_rekey_filter(prefarm_info, prefarm_info.puzzle_hash_list, REKEY_TIMELOCK)
+    rnp_filter = construct_payment_and_rekey_filter(prefarm_info, prefarm_info.puzzle_root, REKEY_TIMELOCK)
+    rko_filter = construct_rekey_filter(prefarm_info, prefarm_info.puzzle_root, REKEY_TIMELOCK)
 
     # Send coins to both of these puzzles as filters
     STARTING_AMOUNT = uint64(10000000000000000001)
@@ -100,7 +108,6 @@ async def setup_info():
         REKEY_TIMELOCK,
         STARTING_AMOUNT,
         prefarm_info,
-        build_merkle_tree(prefarm_info.puzzle_hash_list)[0],
     )
 
 
@@ -109,7 +116,7 @@ def get_proof_of_inclusion(num_puzzles: int) -> Tuple[int, List[bytes32]]:
 
 
 @pytest.mark.asyncio
-async def test_random_create_coins_blocked(setup_info):
+async def test_random_create_coins_blocked(setup_info, cost_logger):
     try:
         rnp_bundle_even = SpendBundle(
             [
@@ -122,7 +129,7 @@ async def test_random_create_coins_blocked(setup_info):
                             get_proof_of_inclusion(1),
                             [
                                 [[51, ACS_PH, 2]],
-                                (setup_info.merkle_root, ACS_PH),
+                                (setup_info.prefarm_info.puzzle_root, ACS_PH),
                             ],
                         ],
                     ),
@@ -141,7 +148,7 @@ async def test_random_create_coins_blocked(setup_info):
                             get_proof_of_inclusion(1),
                             [
                                 [[51, ACS_PH, 2]],
-                                [setup_info.merkle_root, setup_info.merkle_root, uint64(0)],
+                                [setup_info.prefarm_info.puzzle_root, setup_info.prefarm_info.puzzle_root, uint64(0)],
                             ],
                         ],
                     ),
@@ -160,7 +167,7 @@ async def test_random_create_coins_blocked(setup_info):
                             get_proof_of_inclusion(1),
                             [
                                 [[51, ACS_PH, 0]],
-                                [setup_info.merkle_root, setup_info.merkle_root, uint64(0)],
+                                [setup_info.prefarm_info.puzzle_root, setup_info.prefarm_info.puzzle_root, uint64(0)],
                             ],
                         ],
                     ),
@@ -179,7 +186,7 @@ async def test_random_create_coins_blocked(setup_info):
                             get_proof_of_inclusion(1),
                             [
                                 [[51, ACS_PH, 0]],
-                                [setup_info.merkle_root, setup_info.merkle_root, uint64(0)],
+                                [setup_info.prefarm_info.puzzle_root, setup_info.prefarm_info.puzzle_root, uint64(0)],
                             ],
                         ],
                     ),
@@ -197,7 +204,7 @@ async def test_random_create_coins_blocked(setup_info):
 
 
 @pytest.mark.asyncio
-async def test_honest_payments(setup_info):
+async def test_honest_payments(setup_info, cost_logger):
     try:
         REWIND_HEIGHT = setup_info.sim.block_height
         # Try initiating a payment
@@ -210,7 +217,7 @@ async def test_honest_payments(setup_info):
                         ACS,
                         get_proof_of_inclusion(1),
                         Program.to([[51, curry_ach_puzzle(setup_info.prefarm_info, ACS_PH).get_tree_hash(), 2]]),
-                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_root,
                         ACS_PH,  # irrelevant
                     ),
                 )
@@ -222,6 +229,7 @@ async def test_honest_payments(setup_info):
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
         await setup_info.sim.rewind(REWIND_HEIGHT)
+        cost_logger.add_cost("RNP Payment", payment_bundle)
 
         # Try clawing back a payment
         clawback_bundle = SpendBundle(
@@ -233,7 +241,7 @@ async def test_honest_payments(setup_info):
                         ACS,
                         get_proof_of_inclusion(1),
                         Program.to([[51, calculate_ach_clawback_ph(setup_info.prefarm_info), 2]]),
-                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_root,
                         bytes32([0] * 32),  # irrelevant
                     ),
                 )
@@ -244,6 +252,7 @@ async def test_honest_payments(setup_info):
         result = await setup_info.sim_client.push_tx(clawback_bundle)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("RNP ACH Clawback", clawback_bundle)
     finally:
         await setup_info.sim.close()
 
@@ -253,7 +262,7 @@ async def test_honest_payments(setup_info):
     [True, False],
 )
 @pytest.mark.asyncio
-async def test_rekeys(setup_info, honest):
+async def test_rekeys(setup_info, honest, cost_logger):
     try:
         REWIND_HEIGHT = setup_info.sim.block_height
         if honest:
@@ -280,8 +289,8 @@ async def test_rekeys(setup_info, honest):
                                 ]
                             ]
                         ),
-                        setup_info.prefarm_info.puzzle_hash_list,
-                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_root,
+                        setup_info.prefarm_info.puzzle_root,
                         REKEY_TIMELOCK,
                     ),
                 )
@@ -294,6 +303,7 @@ async def test_rekeys(setup_info, honest):
             assert result[0] == MempoolInclusionStatus.SUCCESS
             await setup_info.sim.farm_block()
             await setup_info.sim.rewind(REWIND_HEIGHT)
+            cost_logger.add_cost("RNP Start Rekey", rnp_bundle)
         else:
             result = await setup_info.sim_client.push_tx(rnp_bundle)
             assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
@@ -320,8 +330,8 @@ async def test_rekeys(setup_info, honest):
                                 ]
                             ]
                         ),
-                        setup_info.prefarm_info.puzzle_hash_list,
-                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_root,
+                        setup_info.prefarm_info.puzzle_root,
                         REKEY_TIMELOCK,
                     ),
                 )
@@ -333,6 +343,7 @@ async def test_rekeys(setup_info, honest):
             result = await setup_info.sim_client.push_tx(rko_bundle)
             assert result[0] == MempoolInclusionStatus.SUCCESS
             await setup_info.sim.farm_block()
+            cost_logger.add_cost("RKO Start Rekey", rko_bundle)
         else:
             result = await setup_info.sim_client.push_tx(rko_bundle)
             assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
@@ -343,7 +354,7 @@ async def test_rekeys(setup_info, honest):
 
 
 @pytest.mark.asyncio
-async def test_wrong_amount_types(setup_info):
+async def test_wrong_amount_types(setup_info, cost_logger):
     try:
         # Try initiating a payment of 0
         bad_payment_bundle = SpendBundle(
@@ -355,7 +366,7 @@ async def test_wrong_amount_types(setup_info):
                         ACS,
                         get_proof_of_inclusion(1),
                         Program.to([[51, curry_ach_puzzle(setup_info.prefarm_info, ACS_PH).get_tree_hash(), 0]]),
-                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_root,
                         ACS_PH,  # irrelevant
                     ),
                 )
@@ -390,8 +401,8 @@ async def test_wrong_amount_types(setup_info):
                                 ]
                             ]
                         ),
-                        setup_info.prefarm_info.puzzle_hash_list,
-                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_root,
+                        setup_info.prefarm_info.puzzle_root,
                         setup_info.rekey_timelock,
                     ),
                 )
@@ -426,8 +437,8 @@ async def test_wrong_amount_types(setup_info):
                                 ]
                             ]
                         ),
-                        setup_info.prefarm_info.puzzle_hash_list,
-                        setup_info.prefarm_info.puzzle_hash_list,
+                        setup_info.prefarm_info.puzzle_root,
+                        setup_info.prefarm_info.puzzle_root,
                         setup_info.rekey_timelock,
                     ),
                 )
@@ -443,3 +454,7 @@ async def test_wrong_amount_types(setup_info):
             )
     finally:
         await setup_info.sim.close()
+
+
+def test_cost(cost_logger):
+    cost_logger.log_cost_statistics()

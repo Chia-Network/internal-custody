@@ -52,7 +52,7 @@
 
   (defun-inline assert_rate (withdrawn_amount possible_withdrawn_amount current_time)
     (assert
-      (> possible_withdrawn_amount withdrawn_amount)
+      (not (> withdrawn_amount possible_withdrawn_amount))  ; withdrawn_amount <= possible_withdrawn_amount
       (list ASSERT_SECONDS_ABSOLUTE current_time)
     )
   )
@@ -86,7 +86,7 @@
   )
 
   (defun-inline calculate_possible_withdrawal (START_DATE RATE current_time)
-    (* RATE (- current_time START_DATE))
+    (* RATE (max 0 (- current_time START_DATE)))
   )
 
   (defun found_singleton

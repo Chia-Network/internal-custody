@@ -24,7 +24,7 @@ ACH_CLAWBACK_MOD = load_clvm("ach_clawback.clsp", package_or_requirement="cic.cl
 def construct_rekey_completion(prefarm_info: PrefarmInfo) -> Program:
     return REKEY_COMPLETION_MOD.curry(
         (SINGLETON_MOD.get_tree_hash(), (prefarm_info.launcher_id, SINGLETON_LAUNCHER_HASH)),  # SINGLETON_STRUCT
-        prefarm_info.clawback_period,
+        prefarm_info.rekey_clawback_period,
     )
 
 
@@ -48,8 +48,8 @@ def construct_rekey_puzzle(prefarm_info: PrefarmInfo) -> Program:
 def curry_rekey_puzzle(timelock: uint64, old_prefarm_info: PrefarmInfo, new_prefarm_info: PrefarmInfo) -> Program:
     return construct_rekey_puzzle(old_prefarm_info).curry(
         [
-            build_merkle_tree(new_prefarm_info.puzzle_hash_list)[0],
-            build_merkle_tree(old_prefarm_info.puzzle_hash_list)[0],
+            new_prefarm_info.puzzle_root,
+            old_prefarm_info.puzzle_root,
             timelock,
         ]
     )
@@ -100,7 +100,7 @@ def solve_rekey_clawback(
 # ACH #
 #######
 def construct_ach_completion(prefarm_info: PrefarmInfo) -> Program:
-    return ACH_COMPLETION_MOD.curry(prefarm_info.clawback_period)
+    return ACH_COMPLETION_MOD.curry(prefarm_info.payment_clawback_period)
 
 
 def calculate_ach_clawback_ph(prefarm_info: PrefarmInfo) -> bytes32:
@@ -127,7 +127,7 @@ def construct_ach_puzzle(prefarm_info: PrefarmInfo) -> Program:
 def curry_ach_puzzle(prefarm_info: PrefarmInfo, p2_puzzle_hash: bytes32) -> Program:
     return construct_ach_puzzle(prefarm_info).curry(
         (
-            build_merkle_tree(prefarm_info.puzzle_hash_list)[0],
+            prefarm_info.puzzle_root,
             p2_puzzle_hash,
         )
     )

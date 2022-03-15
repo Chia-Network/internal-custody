@@ -37,9 +37,16 @@ from cic.drivers.singleton import (
     solve_p2_singleton,
 )
 
+from tests.cost_logger import CostLogger
+
 ACS = Program.to(1)
 ACS_PH = ACS.get_tree_hash()
 SECONDS_IN_A_DAY = 86400
+
+
+@pytest.fixture(scope="module")
+def cost_logger():
+    return CostLogger()
 
 
 @dataclasses.dataclass
@@ -62,7 +69,10 @@ async def setup_info():
     # Define constants
     START_DATE = uint64(0)  # pointless for this test
     DRAIN_RATE = uint64(0)  # pointless for this test
-    CLAWBACK_PERIOD = uint64(0)  # pointless for this test
+    PAYMENT_CLAWBACK_PERIOD = uint64(0)  # pointless for this test
+    REKEY_CLAWBACK_PERIOD = uint64(0)  # pointless for this test
+    SLOW_REKEY_TIMELOCK = uint64(0)  # pointless for this test
+    REKEY_INCREMENTS = uint64(0)  # pointless for this test
     WITHDRAWAL_TIMELOCK = uint64(60)
     PUZZLE_HASHES = [ACS_PH]
 
@@ -79,9 +89,12 @@ async def setup_info():
         START_DATE,  # start_date: uint64
         starting_amount,  # starting_amount: uint64
         DRAIN_RATE,  # mojos_per_second: uint64
-        PUZZLE_HASHES,  # puzzle_hash_list: List[bytes32]
+        build_merkle_tree(PUZZLE_HASHES)[0],  # puzzle_root: bytes32
         WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
-        CLAWBACK_PERIOD,  # clawback_period: uint64
+        PAYMENT_CLAWBACK_PERIOD,  # payment_clawback_period: uint64
+        REKEY_CLAWBACK_PERIOD,  # rekey_clawback_period: uint64
+        SLOW_REKEY_TIMELOCK,  # slow_rekey_timelock: uint64
+        REKEY_INCREMENTS,  # rekey_increments: uint64
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
         big_coin, construct_prefarm_inner_puzzle(prefarm_info), starting_amount
@@ -128,12 +141,12 @@ def get_proof_of_inclusion(num_puzzles: int) -> Tuple[int, List[bytes32]]:
 
 
 @pytest.mark.asyncio
-async def test_rekey(setup_info):
+async def test_rekey(setup_info, cost_logger):
     try:
         TIMELOCK = uint64(60)  # one minute
         new_prefarm_info: PrefarmInfo = dataclasses.replace(
             setup_info.prefarm_info,
-            puzzle_hash_list=[ACS_PH, ACS_PH],
+            puzzle_root=build_merkle_tree([ACS_PH, ACS_PH])[0],
         )
 
         rekey_puzzle: Program = curry_rekey_puzzle(TIMELOCK, setup_info.prefarm_info, new_prefarm_info)
@@ -163,7 +176,7 @@ async def test_rekey(setup_info):
                                 timelock=TIMELOCK,
                                 puzzle_reveal=ACS,
                                 proof_of_inclusion=get_proof_of_inclusion(1),
-                                puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
+                                puzzle_root=new_prefarm_info.puzzle_root,
                                 puzzle_solution=[
                                     [
                                         51,
@@ -198,6 +211,7 @@ async def test_rekey(setup_info):
         result = await setup_info.sim_client.push_tx(honest_rekey_spend)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Start Rekey", honest_rekey_spend)
 
         # Find the rekey coin and the new singleton
         rekey_coin: Coin = (
@@ -230,7 +244,7 @@ async def test_rekey(setup_info):
                             SpendType.FINISH_REKEY,
                             setup_info.singleton.amount,
                             timelock=TIMELOCK,
-                            puzzle_hash_list=new_prefarm_info.puzzle_hash_list,
+                            puzzle_root=new_prefarm_info.puzzle_root,
                         ),
                     ),
                 ),
@@ -248,6 +262,7 @@ async def test_rekey(setup_info):
         result = await setup_info.sim_client.push_tx(finish_rekey_spend)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Finish Rekey", finish_rekey_spend)
 
         # Check the singleton is at the new state
         new_singleton_puzzle: Program = construct_singleton(
@@ -262,7 +277,7 @@ async def test_rekey(setup_info):
 
 
 @pytest.mark.asyncio
-async def test_payments(setup_info):
+async def test_payments(setup_info, cost_logger):
     try:
         WITHDRAWAL_AMOUNT = uint64(500)
         prefarm_inner_puzzle: Program = construct_prefarm_inner_puzzle(setup_info.prefarm_info)
@@ -282,7 +297,8 @@ async def test_payments(setup_info):
                             setup_info.singleton.amount,
                             puzzle_reveal=ACS,
                             proof_of_inclusion=get_proof_of_inclusion(1),
-                            payment_amount=WITHDRAWAL_AMOUNT,
+                            out_amount=WITHDRAWAL_AMOUNT,
+                            in_amount=uint64(0),
                             p2_ph=ACS_PH,
                             puzzle_solution=[
                                 [
@@ -311,6 +327,7 @@ async def test_payments(setup_info):
         result = await setup_info.sim_client.push_tx(withdrawal_spend)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Withdrawal", withdrawal_spend)
 
         # Find the new singleton
         new_singleton: Coin = (
@@ -340,7 +357,8 @@ async def test_payments(setup_info):
                             setup_info.singleton.amount - WITHDRAWAL_AMOUNT,
                             puzzle_reveal=ACS,
                             proof_of_inclusion=get_proof_of_inclusion(1),
-                            payment_amount=setup_info.p2_singleton.amount * -1,
+                            out_amount=uint64(0),
+                            in_amount=setup_info.p2_singleton.amount,
                             p2_ph=ACS_PH,
                             # create a puzzle announcement for the p2_singleton to assert
                             puzzle_solution=[
@@ -371,6 +389,7 @@ async def test_payments(setup_info):
         result = await setup_info.sim_client.push_tx(accept_spend)
         assert result[0] == MempoolInclusionStatus.SUCCESS
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Accept Payment", accept_spend)
 
         # Find the new singleton and assert it's amount
         final_singleton: Coin = (
@@ -383,3 +402,7 @@ async def test_payments(setup_info):
         )
     finally:
         await setup_info.sim.close()
+
+
+def test_cost(cost_logger):
+    cost_logger.log_cost_statistics()

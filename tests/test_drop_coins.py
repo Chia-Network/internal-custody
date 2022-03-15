@@ -35,8 +35,15 @@ from cic.drivers.singleton import (
     construct_p2_singleton,
 )
 
+from tests.cost_logger import CostLogger
+
 ACS = Program.to(1)
 ACS_PH = ACS.get_tree_hash()
+
+
+@pytest.fixture(scope="module")
+def cost_logger():
+    return CostLogger()
 
 
 @dataclasses.dataclass
@@ -60,7 +67,10 @@ async def setup_info():
     START_DATE = uint64(0)  # pointless for this test
     DRAIN_RATE = uint64(0)  # pointless for this test
     WITHDRAWAL_TIMELOCK = uint64(0)  # pointless for this test
-    CLAWBACK_PERIOD = uint64(60)
+    SLOW_REKEY_TIMELOCK = uint64(0)  # pointless for this test
+    REKEY_INCREMENTS = uint64(0)  # pointless for this test
+    PAYMENT_CLAWBACK_PERIOD = uint64(90)
+    REKEY_CLAWBACK_PERIOD = uint64(60)
     PUZZLE_HASHES = [ACS_PH]
 
     # Identify the prefarm coins
@@ -76,9 +86,12 @@ async def setup_info():
         START_DATE,  # start_date: uint64
         starting_amount,  # starting_amount: uint64
         DRAIN_RATE,  # mojos_per_second: uint64
-        PUZZLE_HASHES,  # puzzle_hash_list: List[bytes32]
+        build_merkle_tree(PUZZLE_HASHES)[0],  # puzzle_root: bytes32
         WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
-        CLAWBACK_PERIOD,  # clawback_period: uint64
+        PAYMENT_CLAWBACK_PERIOD,  # payment_clawback_period: uint64
+        REKEY_CLAWBACK_PERIOD,  # rekey_clawback_period: uint64
+        SLOW_REKEY_TIMELOCK,  # slow_rekey_timelock: uint64
+        REKEY_INCREMENTS,  # rekey_increments: uint64
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(big_coin, ACS, starting_amount)
     creation_bundle = SpendBundle(
@@ -123,7 +136,7 @@ def get_proof_of_inclusion(num_puzzles: int) -> Tuple[int, List[bytes32]]:
 
 
 @pytest.mark.asyncio
-async def test_ach(setup_info):
+async def test_ach(setup_info, cost_logger):
     try:
         PAYMENT_AMOUNT = uint64(1024)
         ach_puzzle: Program = curry_ach_puzzle(setup_info.prefarm_info, ACS_PH)
@@ -179,6 +192,7 @@ async def test_ach(setup_info):
         assert result[0] == MempoolInclusionStatus.SUCCESS
         rewind_here: uint32 = setup_info.sim.block_height
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Clawback ACH", clawback_ach_bundle)
 
         # Rewind and try to claw it forward
         await setup_info.sim.rewind(rewind_here)
@@ -198,8 +212,9 @@ async def test_ach(setup_info):
         # Process spend
         result = await setup_info.sim_client.push_tx(forward_ach_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
-        setup_info.sim.pass_time(setup_info.prefarm_info.clawback_period)
+        setup_info.sim.pass_time(setup_info.prefarm_info.payment_clawback_period)
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Finish ACH", forward_ach_bundle)
 
         result = await setup_info.sim_client.push_tx(forward_ach_bundle)
         assert result[0] == MempoolInclusionStatus.SUCCESS
@@ -210,10 +225,12 @@ async def test_ach(setup_info):
 
 
 @pytest.mark.asyncio
-async def test_rekey(setup_info):
+async def test_rekey(setup_info, cost_logger):
     try:
         REKEY_TIMELOCK = uint64(60)
-        new_prefarm_info: PrefarmInfo = dataclasses.replace(setup_info.prefarm_info, puzzle_hash_list=[ACS_PH, ACS_PH])
+        new_prefarm_info: PrefarmInfo = dataclasses.replace(
+            setup_info.prefarm_info, puzzle_root=build_merkle_tree([ACS_PH, ACS_PH])[0]
+        )
         rekey_puzzle: Program = curry_rekey_puzzle(REKEY_TIMELOCK, setup_info.prefarm_info, new_prefarm_info)
         create_rekey_bundle = SpendBundle(
             [
@@ -297,6 +314,7 @@ async def test_rekey(setup_info):
         assert result[0] == MempoolInclusionStatus.SUCCESS
         rewind_here: uint32 = setup_info.sim.block_height
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Clawback Rekey", clawback_rekey_bundle)
 
         # Rewind and try to claw it forward
         await setup_info.sim.rewind(rewind_here)
@@ -335,6 +353,7 @@ async def test_rekey(setup_info):
         assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
         setup_info.sim.pass_time(REKEY_TIMELOCK)
         await setup_info.sim.farm_block()
+        cost_logger.add_cost("Finish Rekey Coin", forward_rekey_bundle)
 
         result = await setup_info.sim_client.push_tx(forward_rekey_bundle)
         assert result[0] == MempoolInclusionStatus.SUCCESS
@@ -342,3 +361,7 @@ async def test_rekey(setup_info):
 
     finally:
         await setup_info.sim.close()
+
+
+def test_cost(cost_logger):
+    cost_logger.log_cost_statistics()
