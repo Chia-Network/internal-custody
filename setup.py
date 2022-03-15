@@ -25,7 +25,7 @@ setup(
     packages=find_packages(exclude=("tests",)),
     author="Quexington",
     entry_points={
-        "console_scripts": ["cic = cli.main:main"],
+        "console_scripts": ["cic = cic.cli.main:main"],
     },
     package_data={
         "": ["*.clvm.hex", "*.clsp.hex"],
