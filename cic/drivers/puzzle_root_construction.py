@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Tuple
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.util.ints import uint32, uint64
+from chia.util.streamable import Streamable, streamable
 from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import puzzle_for_pk
 
 from cic.drivers.drop_coins import construct_rekey_puzzle
@@ -17,11 +18,12 @@ from cic.load_clvm import load_clvm
 
 P2_NEW_LOCK_LEVEL = load_clvm("p2_new_lock_level.clsp", package_or_requirement="cic.clsp.drop_coins")
 
-ProofType = Dict[bytes32, Tuple[int, List[bytes32]]]
+ProofType = List[Tuple[bytes32, Tuple[uint32, List[bytes32]]]]
 
 
-@dataclasses.dataclass
-class RootDerivation:
+@dataclasses.dataclass(frozen=True)
+@streamable
+class RootDerivation(Streamable):
     prefarm_info: PrefarmInfo
     pubkey_list: List[G1Element]
     required_pubkeys: uint32
@@ -36,6 +38,12 @@ class RootDerivation:
         aggregate_pubkey: G1Element,
         lock: bool = False,
     ) -> Tuple[ProofType, ProofType]:
+        filter_proofs: Dict[bytes32, Tuple[int, List[bytes32]]] = {}
+        leaf_proofs: Dict[bytes32, Tuple[int, List[bytes32]]] = {}
+        for k, v in self.filter_proofs:
+            filter_proofs[k] = v
+        for k, v in self.leaf_proofs:
+            leaf_proofs[k] = v
         if lock:
             assert self.next_root is not None
             puzzle_hash: bytes32 = construct_lock_puzzle(
@@ -46,23 +54,23 @@ class RootDerivation:
         else:
             puzzle_hash = puzzle_for_pk(aggregate_pubkey).get_tree_hash()
 
-        if puzzle_hash not in self.leaf_proofs:
+        if puzzle_hash not in leaf_proofs:
             raise ValueError("Could not find a puzzle matching the specified pubkey")
 
-        leaf_proof: Tuple[int, List[bytes32]] = self.leaf_proofs[puzzle_hash]
+        leaf_proof: Tuple[int, List[bytes32]] = leaf_proofs[puzzle_hash]
         innermost_tree_root: bytes32 = simplify_merkle_proof(puzzle_hash, leaf_proof)
 
         # First, we're going to try to use the rnp filter
         filter_hash: bytes32 = construct_payment_and_rekey_filter(
             self.prefarm_info, innermost_tree_root, self.prefarm_info.rekey_increments
         ).get_tree_hash()
-        if filter_hash in self.filter_proofs:
-            return {filter_hash: self.filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
+        if filter_hash in filter_proofs:
+            return {filter_hash: filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
 
         # Then, we're going to try the lock filter
         filter_hash = construct_rekey_filter(self.prefarm_info, innermost_tree_root, uint64(0)).get_tree_hash()
-        if filter_hash in self.filter_proofs:
-            return {filter_hash: self.filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
+        if filter_hash in filter_proofs:
+            return {filter_hash: filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
 
         # Then, we're going to try the rekey filters
         for i in range(self.minimum_pubkeys, self.required_pubkeys):
@@ -74,8 +82,8 @@ class RootDerivation:
                     + (self.prefarm_info.rekey_increments * (self.required_pubkeys - i))
                 ),
             ).get_tree_hash()
-            if filter_hash in self.filter_proofs:
-                return {filter_hash: self.filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
+            if filter_hash in filter_proofs:
+                return {filter_hash: filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
 
         raise ValueError("Could not find a valid filter for the calculated root")
 
@@ -167,6 +175,6 @@ def calculate_puzzle_root(
         maximum_pubkeys,
         minimum_pubkeys,
         next_puzzle_root,
-        filter_proofs,
-        all_inner_proofs,
+        list(filter_proofs.items()),
+        list(all_inner_proofs.items()),
     )
