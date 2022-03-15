@@ -2,10 +2,12 @@ from dataclasses import dataclass
 
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.util.ints import uint64
+from chia.util.streamable import Streamable, streamable
 
 
-@dataclass
-class PrefarmInfo:
+@dataclass(frozen=True)
+@streamable
+class PrefarmInfo(Streamable):
     launcher_id: bytes32
     start_date: uint64
     starting_amount: uint64
