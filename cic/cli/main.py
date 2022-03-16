@@ -1,12 +1,17 @@
 import click
+import dataclasses
+import os
 
+from blspy import G1Element
 from pathlib import Path
+from typing import Optional
 
 from chia.types.blockchain_format.sized_bytes import bytes32
-from chia.util.ints import uint64
+from chia.util.ints import uint32, uint64
 
 from cic import __version__
 from cic.drivers.prefarm_info import PrefarmInfo
+from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
@@ -81,10 +86,64 @@ def init_cmd(
 
     path = Path(filepath)
     if path.is_dir():
-        path = path.joinpath("Public Info (needs derivation).txt")
+        path = path.joinpath("Configuration (needs derivation).txt")
 
     with open(path, "wb") as file:
         file.write(bytes(prefarm_info))
+
+
+@cli.command("derive_root", short_help="Take an existing configuration and pubkey set to derive a puzzle root")
+@click.option(
+    "-c",
+    "--configuration",
+    help="The configuration file with which to derive the root",
+    default="./Configuration (needs derivation).txt",
+    required=True,
+)
+@click.option("-pks", "--pubkeys", help="A comma separated list of pubkeys to derive a puzzle for", required=True)
+@click.option(
+    "-m",
+    "--initial-lock-level",
+    help="The initial number of pubkeys required to do a withdrawal or standard rekey",
+    required=True,
+)
+@click.option(
+    "-n",
+    "--maximum-lock-level",
+    help="The maximum number of pubkeys required to do a withdrawal or standard rekey",
+    required=False,
+)
+@click.option(
+    "-min",
+    "--minimum-pks",
+    help="The minimum number of pubkeys required to initiate a slow rekey",
+    default=1,
+    required=True,
+)
+def derive_cmd(
+    configuration: str,
+    pubkeys: str,
+    initial_lock_level: int,
+    minimum_pks: int,
+    maximum_lock_level: Optional[int] = None,
+):
+    with open(Path(configuration), "rb") as file:
+        prefarm_info = PrefarmInfo.from_bytes(file.read())
+    pubkeys: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
+
+    derivation: RootDerivation = calculate_puzzle_root(
+        prefarm_info,
+        pubkeys,
+        uint32(initial_lock_level),
+        uint32(len(pubkeys) if maximum_lock_level is None else maximum_lock_level),
+        uint32(minimum_pks),
+    )
+
+    with open(Path(configuration), "wb") as file:
+        file.write(bytes(derivation))
+    if "needs derivation" in configuration:
+        os.rename(Path(configuration), Path("awaiting launch".join(configuration.split("needs derivation"))))
+
 
 def main() -> None:
     cli()  # pylint: disable=no-value-for-parameter
