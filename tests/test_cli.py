@@ -1,8 +1,13 @@
+import asyncio
+import dataclasses
 import os
 
 from blspy import G1Element
 from click.testing import CliRunner, Result
+from pathlib import Path
 
+from chia.clvm.spend_sim import SpendSim, SimClient
+from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.util.ints import uint32, uint64
 
@@ -99,3 +104,39 @@ def test_init():
 
         with open("./infos/Configuration (awaiting launch).txt", "rb") as file:
             assert RootDerivation.from_bytes(file.read()) == derivation
+
+        # Launch the singleton using the configuration
+        result = runner.invoke(
+            cli,
+            [
+                "launch_singleton",
+                "--configuration",
+                ".\infos\Configuration (awaiting launch).txt",
+                "--fee",
+                100,
+            ],
+        )
+
+        with open(next(Path("./infos/").glob("Configuration (*).txt")), "rb") as file:
+            new_derivation = RootDerivation.from_bytes(file.read())
+            assert new_derivation.prefarm_info.launcher_id != bytes32([0] * 32)
+            assert new_derivation == dataclasses.replace(
+                derivation,
+                prefarm_info=dataclasses.replace(
+                    derivation.prefarm_info, launcher_id=new_derivation.prefarm_info.launcher_id
+                ),
+            )
+            derivation = new_derivation
+
+        # The sim should be initialized now
+        async def check_for_launcher():
+            try:
+                sim = await SpendSim.create(db_path="./sim.db")
+                sim_client = SimClient(sim)
+                assert (
+                    len(await sim_client.get_coin_records_by_parent_ids([new_derivation.prefarm_info.launcher_id])) > 0
+                )
+            finally:
+                await sim.close()
+
+        asyncio.get_event_loop().run_until_complete(check_for_launcher())
