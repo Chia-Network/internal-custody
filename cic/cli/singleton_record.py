@@ -10,6 +10,7 @@ from chia.wallet.lineage_proof import LineageProof
 
 from cic.drivers.prefarm import SpendType
 
+
 @dataclass(frozen=True)
 class SingletonRecord:
     coin: Coin

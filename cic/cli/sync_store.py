@@ -5,6 +5,7 @@ from chia.util.db_wrapper import DBWrapper
 
 from cic.cli.singleton_record import SingletonRecord
 
+
 class SyncStore:
     db_connection: aiosqlite.Connection
     db_wrapper: DBWrapper
