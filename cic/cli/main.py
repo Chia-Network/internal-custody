@@ -13,12 +13,15 @@ from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.announcement import Announcement
 from chia.types.spend_bundle import SpendBundle
 from chia.util.ints import uint32, uint64
+from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
 
 from cic import __version__
 from cic.cli.clients import get_wallet_and_node_clients
+from cic.cli.singleton_record import SingletonRecord
+from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm_info import PrefarmInfo
-from cic.drivers.prefarm import construct_singleton_inner_puzzle
+from cic.drivers.prefarm import construct_full_singleton, construct_singleton_inner_puzzle
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
 from cic.drivers.singleton import generate_launch_conditions_and_coin_spend
 
@@ -163,6 +166,13 @@ def derive_cmd(
     required=True,
 )
 @click.option(
+    "-db",
+    "--db-path",
+    help="The file path to initialize the sync database at",
+    default="./",
+    required=True,
+)
+@click.option(
     "-wp",
     "--wallet-rpc-port",
     help="Set the port where the Wallet is hosting the RPC interface. See the rpc_port under wallet in config.yaml",
@@ -180,6 +190,7 @@ def derive_cmd(
 @click.option("-m", "--fee", help="Fee to use for the launch transaction (in mojos)", default=0)
 def launch_cmd(
     configuration: str,
+    db_path: str,
     wallet_rpc_port: Optional[int],
     fingerprint: Optional[int],
     node_rpc_port: Optional[int],
@@ -197,7 +208,7 @@ def launch_cmd(
                 derivation, prefarm_info=dataclasses.replace(derivation.prefarm_info, launcher_id=launcher_coin.name())
             )
             _, launch_spend = generate_launch_conditions_and_coin_spend(
-                fund_coin, construct_singleton_inner_puzzle(derivation.prefarm_info), uint64(1)
+                fund_coin, construct_singleton_inner_puzzle(new_derivation.prefarm_info), uint64(1)
             )
             creation_bundle = SpendBundle([launch_spend], G2Element())
             announcement = Announcement(launcher_coin.name(), launch_spend.solution.to_program().get_tree_hash())
@@ -213,6 +224,25 @@ def launch_cmd(
             result = await node_client.push_tx(SpendBundle.aggregate([creation_bundle, fund_bundle]))
             if not result["success"]:
                 raise ValueError(result["error"])
+
+            path = Path(db_path)
+            if path.is_dir():
+                path = path.joinpath(f"sync ({launcher_coin.name()[0:3].hex()}).sqlite")
+            sync_store = await SyncStore.create(path)
+            try:
+                await sync_store.add_singleton_record(SingletonRecord(
+                    Coin(launcher_coin.name(), construct_full_singleton(new_derivation.prefarm_info).get_tree_hash(), uint64(1)),
+                    new_derivation.prefarm_info.puzzle_root,
+                    LineageProof(parent_name=launcher_coin.parent_coin_info, amount=uint64(1)),
+                    uint32(0),
+                    None,
+                    None,
+                    None,
+                    None,
+                ))
+                await sync_store.db_connection.commit()
+            finally:
+                await sync_store.db_connection.close()
 
             with open(Path(configuration), "wb") as file:
                 file.write(bytes(new_derivation))
