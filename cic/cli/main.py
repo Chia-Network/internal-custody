@@ -13,6 +13,7 @@ from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.announcement import Announcement
 from chia.types.coin_record import CoinRecord
 from chia.types.spend_bundle import SpendBundle
+from chia.util.bech32m import encode_puzzle_hash
 from chia.util.ints import uint32, uint64
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
@@ -28,9 +29,25 @@ from cic.drivers.prefarm import (
     get_new_puzzle_root_from_solution,
 )
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
-from cic.drivers.singleton import generate_launch_conditions_and_coin_spend
+from cic.drivers.singleton import generate_launch_conditions_and_coin_spend, construct_p2_singleton
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
+
+
+def load_prefarm_info(configuration: str) -> PrefarmInfo:
+    if configuration is None:
+        path: Path = next(Path("./").glob("Configuration (*).txt"))
+    else:
+        path = Path(configuration)
+    with open(Path(configuration), "rb") as file:
+        file_bytes = file.read()
+        try:
+            return PrefarmInfo.from_bytes(file_bytes)
+        except AssertionError:
+            try:
+                return RootDerivation.from_bytes(file_bytes).prefarm_info
+            except AssertionError:
+                raise ValueError("The configuration specified is not a recognizable format")
 
 
 @click.group(
@@ -304,21 +321,7 @@ def sync_cmd(
     node_rpc_port: Optional[int],
 ):
     # Load the configuration (can be either public or private config)
-    if configuration is None:
-        path: Path = next(Path("./").glob("Configuration (*).txt"))
-    else:
-        path = Path(configuration)
-    with open(Path(configuration), "rb") as file:
-        file_bytes = file.read()
-        try:
-            prefarm_info = PrefarmInfo.from_bytes(file_bytes)
-        except AssertionError:
-            try:
-                prefarm_info = RootDerivation.from_bytes(file_bytes).prefarm_info
-                if auto_update_config:
-                    raise ValueError("Cannot automatically update the config for non-observers")
-            except AssertionError:
-                raise ValueError("The configuration specified is not a recognizable format")
+    prefarm_info: PrefarmInfo = load_prefarm_info(configuration)
 
     # Start sync
     async def do_sync():
@@ -404,6 +407,26 @@ def sync_cmd(
         await sync_store.db_connection.close()
 
     asyncio.get_event_loop().run_until_complete(do_sync())
+
+
+@cli.command("p2_address", short_help="Print the address to pay to the singleton")
+@click.option(
+    "-c",
+    "--configuration",
+    help="The configuration file for the singleton to pay (default: ./Configuration (******).txt)",
+    default=None,
+    required=True,
+)
+@click.option(
+    "-p",
+    "--prefix",
+    help="The prefix to use when encoding the address",
+    default="xch",
+    show_default=True,
+)
+def address_cmd(configuration: str, prefix: str):
+    prefarm_info = load_prefarm_info(configuration)
+    print(encode_puzzle_hash(construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash(), prefix))
 
 
 def main() -> None:

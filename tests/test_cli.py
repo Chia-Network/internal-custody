@@ -9,6 +9,7 @@ from pathlib import Path
 from chia.clvm.spend_sim import SpendSim, SimClient
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
+from chia.util.bech32m import encode_puzzle_hash
 from chia.util.ints import uint32, uint64
 
 from cic.cli.main import cli
@@ -16,6 +17,7 @@ from cic.cli.singleton_record import SingletonRecord
 from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
+from cic.drivers.singleton import construct_p2_singleton
 
 
 def test_help():
@@ -169,3 +171,16 @@ def test_init():
                 await sync_store.db_connection.close()
 
         asyncio.get_event_loop().run_until_complete(check_for_singleton_record())
+
+        result = runner.invoke(
+            cli,
+            [
+                "p2_address",
+                "--configuration",
+                config_path,
+                "--prefix",
+                "test",
+            ],
+        )
+
+        assert encode_puzzle_hash(construct_p2_singleton(new_derivation.prefarm_info.launcher_id).get_tree_hash(), "test") in result.output
