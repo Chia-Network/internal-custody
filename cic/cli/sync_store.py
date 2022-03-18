@@ -1,7 +1,13 @@
 import aiosqlite
 
+from blspy import G1Element
 from pathlib import Path
+
+from chia.types.blockchain_format.coin import Coin
+from chia.types.blockchain_format.program import SerializedProgram
 from chia.util.db_wrapper import DBWrapper
+from chia.util.ints import uint32, uint64
+from chia.wallet.lineage_proof import LineageProof
 
 from cic.cli.singleton_record import SingletonRecord
 
@@ -54,3 +60,22 @@ class SyncStore:
             ),
         )
         await cursor.close()
+
+    async def get_latest_singleton(self):
+        cursor = await self.db_connection.execute("SELECT * from singletons ORDER BY generation DESC LIMIT 1")
+        record = await cursor.fetchone()
+        await cursor.close()
+        return SingletonRecord(
+            Coin(
+                record[1],
+                record[2],
+                uint64(record[3]),
+            ),
+            record[4],
+            LineageProof.from_bytes(record[5]),
+            uint32(record[6]),
+            None if record[7] == bytes([0]) else SerializedProgram.from_bytes(record[7]),
+            None if record[8] == bytes([0]) else SerializedProgram.from_bytes(record[8]),
+            None if record[9] == 0 else SpendType(record[9]),
+            None if record[10] == bytes([0]) else G1Element.from_bytes(record[10]),
+        ) if record is not None else None

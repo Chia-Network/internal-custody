@@ -11,6 +11,7 @@ from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.announcement import Announcement
+from chia.types.coin_record import CoinRecord
 from chia.types.spend_bundle import SpendBundle
 from chia.util.ints import uint32, uint64
 from chia.wallet.lineage_proof import LineageProof
@@ -21,7 +22,11 @@ from cic.cli.clients import get_wallet_and_node_clients
 from cic.cli.singleton_record import SingletonRecord
 from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm_info import PrefarmInfo
-from cic.drivers.prefarm import construct_full_singleton, construct_singleton_inner_puzzle
+from cic.drivers.prefarm import (
+    construct_full_singleton,
+    construct_singleton_inner_puzzle,
+    get_new_puzzle_root_from_solution,
+)
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
 from cic.drivers.singleton import generate_launch_conditions_and_coin_spend
 
@@ -230,16 +235,22 @@ def launch_cmd(
                 path = path.joinpath(f"sync ({launcher_coin.name()[0:3].hex()}).sqlite")
             sync_store = await SyncStore.create(path)
             try:
-                await sync_store.add_singleton_record(SingletonRecord(
-                    Coin(launcher_coin.name(), construct_full_singleton(new_derivation.prefarm_info).get_tree_hash(), uint64(1)),
-                    new_derivation.prefarm_info.puzzle_root,
-                    LineageProof(parent_name=launcher_coin.parent_coin_info, amount=uint64(1)),
-                    uint32(0),
-                    None,
-                    None,
-                    None,
-                    None,
-                ))
+                await sync_store.add_singleton_record(
+                    SingletonRecord(
+                        Coin(
+                            launcher_coin.name(),
+                            construct_full_singleton(new_derivation.prefarm_info).get_tree_hash(),
+                            uint64(1),
+                        ),
+                        new_derivation.prefarm_info.puzzle_root,
+                        LineageProof(parent_name=launcher_coin.parent_coin_info, amount=uint64(1)),
+                        uint32(0),
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                )
                 await sync_store.db_connection.commit()
             finally:
                 await sync_store.db_connection.close()
@@ -256,6 +267,143 @@ def launch_cmd(
             await node_client.await_closed()
 
     asyncio.get_event_loop().run_until_complete(do_command())
+
+
+@cli.command("sync", short_help="Sync a singleton from an existing configuration")
+@click.option(
+    "-c",
+    "--configuration",
+    help="The configuration file for the singleton to sync (default: ./Configuration (******).txt)",
+    default=None,
+    required=True,
+)
+@click.option(
+    "-db",
+    "--db-path",
+    help="The file path to initialize the sync database at (default: ./sync (******).sqlite)",
+    default="./",
+    required=True,
+)
+@click.option(
+    "-u",
+    "--auto-update-config",
+    help="Automatically update the synced config with the synced information (only works for observers)",
+    is_flag=True,
+)
+@click.option(
+    "-np",
+    "--node-rpc-port",
+    help="Set the port where the Node is hosting the RPC interface. See the rpc_port under full_node in config.yaml",
+    type=int,
+    default=None,
+)
+def sync_cmd(
+    configuration: Optional[str],
+    db_path: str,
+    auto_update_config: bool,
+    node_rpc_port: Optional[int],
+):
+    # Load the configuration (can be either public or private config)
+    if configuration is None:
+        path: Path = next(Path("./").glob("Configuration (*).txt"))
+    else:
+        path = Path(configuration)
+    with open(Path(configuration), "rb") as file:
+        file_bytes = file.read()
+        try:
+            prefarm_info = PrefarmInfo.from_bytes(file_bytes)
+        except AssertionError:
+            try:
+                prefarm_info = RootDerivation.from_bytes(file_bytes).prefarm_info
+                if auto_update_config:
+                    raise ValueError("Cannot automatically update the config for non-observers")
+            except AssertionError:
+                raise ValueError("The configuration specified is not a recognizable format")
+
+    # Start sync
+    async def do_sync():
+        node_client, wallet_client = await get_wallet_and_node_clients(node_rpc_port, None, None)
+
+        path = Path(db_path)
+        if path.is_dir():
+            path = path.joinpath(f"sync ({prefarm_info.launcher_id[0:3].hex()}).sqlite")
+        sync_store = await SyncStore.create(path)
+        await sync_store.db_wrapper.begin_transaction()
+
+        try:
+            current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
+            current_coin_record: Optional[CoinRecord] = None
+            if current_singleton is None:
+                current_coin_record = await node_client.get_coin_record_by_name(prefarm_info.launcher_id)
+                if construct_full_singleton(prefarm_info).get_tree_hash() != current_coin_record.coin.puzzle_hash:
+                    raise ValueError("The specified config has the incorrect puzzle root")
+                current_singleton = SingletonRecord(
+                    current_coin_record.coin,
+                    prefarm_info.puzzle_root,
+                    LineageProof(
+                        parent_name=current_coin_record.coin.parent_coin_info, amount=current_coin_record.coin.amount
+                    ),
+                    uint32(0),
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                await sync_store.add_singleton_record(current_singleton)
+            if current_coin_record is None:
+                current_coin_record = await node_client.get_coin_record_by_name(current_singleton.coin.name())
+
+            # Begin loop
+            while True:
+                latest_spend: Optional[CoinSpend] = await node_client.get_puzzle_and_solution(
+                    current_coin_record.coin.name(), current_coin_record.spent_block_index
+                )
+                if latest_spend is None:
+                    break
+                latest_solution: Program = latest_spend.solution.to_program()
+                await sync_store.add_singleton_record(dataclasses.replace(current_singleton,
+                    puzzle_reveal=latest_spend.puzzle_reveal,
+                    solution=latest_spend.solution,
+                    spend_type=get_spend_type_for_solution(latest_solution),
+                    spending_pubkey=get_spending_pubkey_for_solution(latest_solution),
+                ))
+                next_coin_record = [
+                    cr
+                    for cr in (await node_client.get_coin_records_by_parent_ids([current_coin_record.coin.name()]))
+                    if cr.coin.amount % 2 == 1
+                ][0]
+                if next_coin_record.coin.puzzle_hash == current_coin_record.coin.puzzle_hash:
+                    next_puzzle_root: bytes32 = current_singleton.puzzle_root
+                else:
+                    next_puzzle_root = get_new_puzzle_root_from_solution(latest_solution)
+                next_singleton = SingletonRecord(
+                    next_coin_record.coin,
+                    next_puzzle_root,
+                    LineageProof(
+                        current_coin_record.coin.parent_coin_info,
+                        construct_prefarm_inner_puzzle(current_singleton.puzzle_root).get_tree_hash(),
+                        current_coin_record.coin.amount,
+                    ),
+                    uint32(current_singleton.generation + 1),
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                await sync_store.add_singleton_record(next_singleton)
+                current_coin_record = next_coin_record
+                current_singleton = next_singleton
+        except Exception as e:
+            await sync_store.db_connection.close()
+            raise e
+        finally:
+            node_client.close()
+            await node_client.await_closed()
+
+        await sync_store.db_wrapper.commit_transaction()
+        await sync_store.db_connection.close()
+
+    asyncio.get_event_loop().run_until_complete(do_sync())
 
 
 def main() -> None:

@@ -100,8 +100,8 @@ def get_all_aggregate_pubkey_combinations(pubkey_list: List[G1Element], m: int) 
 
 def construct_lock_puzzle(pubkey: G1Element, prefarm_info: PrefarmInfo, next_root: bytes32) -> Program:
     return P2_NEW_LOCK_LEVEL.curry(
-        construct_rekey_puzzle(prefarm_info).get_tree_hash(),
         pubkey,
+        construct_rekey_puzzle(prefarm_info).get_tree_hash(),
         next_root,
     )
 

@@ -573,3 +573,28 @@ def get_rekey_completion_spend(
         ],
         G2Element(),
     )
+
+
+def get_new_puzzle_root_from_solution(solution: Program) -> bytes32:
+    rl_solution = solution.at("rrf")
+    prefarm_inner_solution = rl_solution.at("rf")
+    spend_solution = prefarm_inner_solution.at("rrf")
+    new_puzzle_root = spend_solution.at("rf")
+    return bytes32(new_puzzle_root.as_python())
+
+def get_spend_type_for_solution(solution: Program) -> SpendType:
+    rl_solution = solution.at("rrf")
+    prefarm_inner_solution = rl_solution.at("rf")
+    spend_type = prefarm_inner_solution.at("rf")
+    return SpendType(spend_type.as_python())
+
+def get_spending_pubkey_for_solution(solution: Program) -> G1Element:
+    if get_spend_type_for_solution(solution) == SpendType.FINISH_REKEY:
+        return None
+    else:
+        rl_solution = solution.at("rrf")
+        prefarm_inner_solution = rl_solution.at("rf")
+        filter_reveal = prefarm_inner_solution.at("rrrf")
+        leaf_reveal = filter_reveal.at("f")
+        pubkey = list(leaf_reveal.uncurry())[0]
+        return G1Element.from_bytes(pubkey.as_python())

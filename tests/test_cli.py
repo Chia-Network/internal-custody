@@ -12,6 +12,8 @@ from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.util.ints import uint32, uint64
 
 from cic.cli.main import cli
+from cic.cli.singleton_record import SingletonRecord
+from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
 
@@ -112,12 +114,15 @@ def test_init():
                 "launch_singleton",
                 "--configuration",
                 ".\infos\Configuration (awaiting launch).txt",
+                "--db-path",
+                "./infos/",
                 "--fee",
                 100,
             ],
         )
 
-        with open(next(Path("./infos/").glob("Configuration (*).txt")), "rb") as file:
+        config_path = next(Path("./infos/").glob("Configuration (*).txt"))
+        with open(config_path, "rb") as file:
             new_derivation = RootDerivation.from_bytes(file.read())
             assert new_derivation.prefarm_info.launcher_id != bytes32([0] * 32)
             assert new_derivation == dataclasses.replace(
@@ -140,3 +145,27 @@ def test_init():
                 await sim.close()
 
         asyncio.get_event_loop().run_until_complete(check_for_launcher())
+
+        sync_db_path = next(Path("./infos/").glob("sync (*).sqlite"))
+        assert sync_db_path.exists()
+
+        result = runner.invoke(
+            cli,
+            [
+                "sync",
+                "--configuration",
+                config_path,
+                "--db-path",
+                sync_db_path,
+            ],
+        )
+
+        async def check_for_singleton_record():
+            sync_store = await SyncStore.create(sync_db_path)
+            try:
+                singleton_record: SingletonRecord = await sync_store.get_latest_singleton()
+                assert singleton_record is not None
+            finally:
+                await sync_store.db_connection.close()
+
+        asyncio.get_event_loop().run_until_complete(check_for_singleton_record())
