@@ -61,7 +61,7 @@ class WalletClientMock:
         for a in coin_announcements:
             conditions.append(Program.to([61, a.name()]))
         if coins is None:
-            coins = await self.select_coins(None)
+            coins = await self.select_coins(None, None)
         conditions.append(Program.to([51, ACS_PH, sum(c.amount for c in coins) - total_amount]))  # change
         coin_spends: List[CoinSpend] = [CoinSpend(coins[0], ACS, Program.to(conditions))]
         if len(coins) > 1:
@@ -69,9 +69,29 @@ class WalletClientMock:
                 coin_spends.append(CoinSpend(coin, ACS, Program.to([])))
         return TXMock(SpendBundle(coin_spends, G2Element()))
 
+    def close(self):
+        return
+
+    async def await_closed(self):
+        try:
+            await self.sim_client.service.close()
+        finally:
+            return
+
 
 async def get_wallet_and_node_clients(node_rpc_port: int, wallet_rpc_port: int, fingerprint: int):
     sim = await SpendSim.create(db_path="./sim.db")
     await sim.farm_block(ACS_PH)
     client = FullNodeClientMock(sim)
     return client, WalletClientMock(client)
+
+async def get_wallet_client(wallet_rpc_port: int, fingerprint: int):
+    sim = await SpendSim.create(db_path="./sim.db")
+    await sim.farm_block(ACS_PH)
+    client = FullNodeClientMock(sim)
+    return WalletClientMock(client)
+
+async def get_node_client(node_rpc_port: int):
+    sim = await SpendSim.create(db_path="./sim.db")
+    await sim.farm_block(ACS_PH)
+    return FullNodeClientMock(sim)

@@ -2,13 +2,15 @@ import asyncio
 import dataclasses
 import os
 
-from blspy import G1Element
+from blspy import G1Element, G2Element
 from click.testing import CliRunner, Result
 from pathlib import Path
 
 from chia.clvm.spend_sim import SpendSim, SimClient
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
+from chia.types.coin_spend import CoinSpend
+from chia.types.spend_bundle import SpendBundle
 from chia.util.bech32m import encode_puzzle_hash
 from chia.util.ints import uint32, uint64
 
@@ -19,6 +21,9 @@ from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
 from cic.drivers.singleton import construct_p2_singleton
 
+
+ACS: Program = Program.to(1)
+ACS_PH: bytes32 = ACS.get_tree_hash()
 
 def test_help():
     runner = CliRunner()
@@ -115,7 +120,7 @@ def test_init():
             [
                 "launch_singleton",
                 "--configuration",
-                ".\infos\Configuration (awaiting launch).txt",
+                "./infos/Configuration (awaiting launch).txt",
                 "--db-path",
                 "./infos/",
                 "--fee",
@@ -127,12 +132,6 @@ def test_init():
         with open(config_path, "rb") as file:
             new_derivation = RootDerivation.from_bytes(file.read())
             assert new_derivation.prefarm_info.launcher_id != bytes32([0] * 32)
-            assert new_derivation == dataclasses.replace(
-                derivation,
-                prefarm_info=dataclasses.replace(
-                    derivation.prefarm_info, launcher_id=new_derivation.prefarm_info.launcher_id
-                ),
-            )
             derivation = new_derivation
 
         # The sim should be initialized now
@@ -162,16 +161,19 @@ def test_init():
             ],
         )
 
-        async def check_for_singleton_record():
+        latest_singleton_record: SingletonRecord
+        async def check_for_singleton_record() -> SingletonRecord:
             sync_store = await SyncStore.create(sync_db_path)
             try:
-                singleton_record: SingletonRecord = await sync_store.get_latest_singleton()
+                singleton_record: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
                 assert singleton_record is not None
+                return singleton_record
             finally:
                 await sync_store.db_connection.close()
 
-        asyncio.get_event_loop().run_until_complete(check_for_singleton_record())
+        latest_singleton_record = asyncio.get_event_loop().run_until_complete(check_for_singleton_record())
 
+        # Test our p2_singleton address creator
         result = runner.invoke(
             cli,
             [
@@ -183,4 +185,79 @@ def test_init():
             ],
         )
 
-        assert encode_puzzle_hash(construct_p2_singleton(new_derivation.prefarm_info.launcher_id).get_tree_hash(), "test") in result.output
+        P2_SINGLETON: Program = construct_p2_singleton(new_derivation.prefarm_info.launcher_id)
+        assert encode_puzzle_hash(P2_SINGLETON.get_tree_hash(), "test") in result.output
+
+        # Create and sync some p2_singletons
+        async def pay_singleton_and_pass_time():
+            try:
+                sim = await SpendSim.create(db_path="./sim.db")
+                sim_client = SimClient(sim)
+                acs_coin: Coin = next((cr.coin for cr in await sim_client.get_coin_records_by_puzzle_hashes([ACS_PH], include_spent_coins=False) if cr.coin.amount > prefarm_info.starting_amount))
+                result = await sim_client.push_tx(SpendBundle(
+                    [
+                        CoinSpend(
+                            acs_coin,
+                            ACS,
+                            Program.to([
+                                [51, P2_SINGLETON.get_tree_hash(), prefarm_info.starting_amount],
+                                [51, P2_SINGLETON.get_tree_hash(), 1]
+                            ]),
+                        )
+                    ],
+                    G2Element()
+                ))
+                await sim.farm_block()
+                sim.pass_time(derivation.prefarm_info.withdrawal_timelock)
+                await sim.farm_block()
+            finally:
+                await sim.close()
+
+        asyncio.get_event_loop().run_until_complete(pay_singleton_and_pass_time())
+
+        result = runner.invoke(
+            cli,
+            [
+                "sync",
+                "--configuration",
+                config_path,
+                "--db-path",
+                sync_db_path,
+            ],
+        )
+
+        async def check_for_singleton_record():
+            sync_store = await SyncStore.create(sync_db_path)
+            try:
+                singleton_record: SingletonRecord = await sync_store.get_latest_singleton()
+                assert singleton_record == latest_singleton_record
+                p2_singletons: List[Coin] = await sync_store.get_p2_singletons()
+                assert len(p2_singletons) == 2
+            finally:
+                await sync_store.db_connection.close()
+
+        asyncio.get_event_loop().run_until_complete(check_for_singleton_record())
+
+        result = runner.invoke(
+            cli,
+            [
+                "payment",
+                "--configuration",
+                config_path,
+                "--db-path",
+                sync_db_path,
+                "--pubkeys",
+                ",".join(pubkeys[0:3]),
+                "--amount",
+                2,
+                "--fee",
+                100,
+                "--recipient-address",
+                encode_puzzle_hash(ACS_PH, prefix="xch"),
+                "--absorb-available-payments",
+                "--amount-threshold",
+                2,
+            ],
+        )
+
+        withdrawal_bundle = SpendBundle.from_bytes(bytes.fromhex(result.output))

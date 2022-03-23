@@ -1,9 +1,12 @@
 import asyncio
 import click
 import dataclasses
+import math
 import os
+import time
 
 from blspy import G1Element, G2Element
+from operator import attrgetter
 from pathlib import Path
 from typing import Optional
 
@@ -13,13 +16,13 @@ from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.announcement import Announcement
 from chia.types.coin_record import CoinRecord
 from chia.types.spend_bundle import SpendBundle
-from chia.util.bech32m import encode_puzzle_hash
+from chia.util.bech32m import decode_puzzle_hash, encode_puzzle_hash
 from chia.util.ints import uint32, uint64
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
 
 from cic import __version__
-from cic.cli.clients import get_wallet_and_node_clients
+from cic.cli.clients import get_wallet_and_node_clients, get_wallet_client, get_node_client
 from cic.cli.singleton_record import SingletonRecord
 from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm_info import PrefarmInfo
@@ -27,6 +30,7 @@ from cic.drivers.prefarm import (
     construct_full_singleton,
     construct_singleton_inner_puzzle,
     get_new_puzzle_root_from_solution,
+    get_withdrawal_spend_info,
 )
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
 from cic.drivers.singleton import generate_launch_conditions_and_coin_spend, construct_p2_singleton
@@ -39,7 +43,9 @@ def load_prefarm_info(configuration: str) -> PrefarmInfo:
         path: Path = next(Path("./").glob("Configuration (*).txt"))
     else:
         path = Path(configuration)
-    with open(Path(configuration), "rb") as file:
+        if path.is_dir():
+            path = next(path.glob("Configuration (*).txt"))
+    with open(path, "rb") as file:
         file_bytes = file.read()
         try:
             return PrefarmInfo.from_bytes(file_bytes)
@@ -49,6 +55,29 @@ def load_prefarm_info(configuration: str) -> PrefarmInfo:
             except AssertionError:
                 raise ValueError("The configuration specified is not a recognizable format")
 
+def load_root_derivation(configuration: str) -> RootDerivation:
+    if configuration is None:
+        path: Path = next(Path("./").glob("Configuration (*).txt"))
+    else:
+        path = Path(configuration)
+        if path.is_dir():
+            path = next(path.glob("Configuration (*).txt"))
+    with open(path, "rb") as file:
+        file_bytes = file.read()
+        try:
+            return RootDerivation.from_bytes(file_bytes)
+        except AssertionError:
+            try:
+                PrefarmInfo.from_bytes(file_bytes)
+                raise ValueError("The specified configuration file can only perform observer actions")
+            except AssertionError:
+                raise ValueError("The configuration specified is not a recognizable format")
+
+async def load_db(db_path: str, launcher_id: bytes32) -> SyncStore:
+    path = Path(db_path)
+    if path.is_dir():
+        path = path.joinpath(f"sync ({launcher_id[0:3].hex()}).sqlite")
+    return await SyncStore.create(path)
 
 @click.group(
     help="\n  Commands to control a prefarm singleton \n",
@@ -226,15 +255,18 @@ def launch_cmd(
         try:
             fund_coin: Coin = (await wallet_client.select_coins(amount=1, wallet_id=1))[0]
             launcher_coin = Coin(fund_coin.name(), SINGLETON_LAUNCHER_HASH, 1)
-            new_derivation: RootDerivation = dataclasses.replace(
-                derivation, prefarm_info=dataclasses.replace(derivation.prefarm_info, launcher_id=launcher_coin.name())
+            new_derivation: RootDerivation = calculate_puzzle_root(
+                dataclasses.replace(derivation.prefarm_info, launcher_id=launcher_coin.name()),
+                derivation.pubkey_list,
+                derivation.required_pubkeys,
+                derivation.maximum_pubkeys,
+                derivation.minimum_pubkeys,
             )
             _, launch_spend = generate_launch_conditions_and_coin_spend(
                 fund_coin, construct_singleton_inner_puzzle(new_derivation.prefarm_info), uint64(1)
             )
             creation_bundle = SpendBundle([launch_spend], G2Element())
             announcement = Announcement(launcher_coin.name(), launch_spend.solution.to_program().get_tree_hash())
-            # TODO: A malicious farmer can steal our mojo here if they want (needs support for assertions in RPC)
             fund_bundle: SpendBundle = (
                 await wallet_client.create_signed_transaction(
                     [{"puzzle_hash": SINGLETON_LAUNCHER_HASH, "amount": 1}],
@@ -281,7 +313,9 @@ def launch_cmd(
                 )
         finally:
             node_client.close()
+            wallet_client.close()
             await node_client.await_closed()
+            await wallet_client.await_closed()
 
     asyncio.get_event_loop().run_until_complete(do_command())
 
@@ -325,14 +359,10 @@ def sync_cmd(
 
     # Start sync
     async def do_sync():
-        node_client, wallet_client = await get_wallet_and_node_clients(node_rpc_port, None, None)
+        node_client = await get_node_client(node_rpc_port)
+        sync_store: SyncStore = await load_db(db_path, prefarm_info.launcher_id)
 
-        path = Path(db_path)
-        if path.is_dir():
-            path = path.joinpath(f"sync ({prefarm_info.launcher_id[0:3].hex()}).sqlite")
-        sync_store = await SyncStore.create(path)
         await sync_store.db_wrapper.begin_transaction()
-
         try:
             current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
             current_coin_record: Optional[CoinRecord] = None
@@ -356,6 +386,7 @@ def sync_cmd(
             if current_coin_record is None:
                 current_coin_record = await node_client.get_coin_record_by_name(current_singleton.coin.name())
 
+            p2_singleton_begin_sync: uint32 = current_coin_record.confirmed_block_index
             # Begin loop
             while True:
                 latest_spend: Optional[CoinSpend] = await node_client.get_puzzle_and_solution(
@@ -396,6 +427,16 @@ def sync_cmd(
                 await sync_store.add_singleton_record(next_singleton)
                 current_coin_record = next_coin_record
                 current_singleton = next_singleton
+            # Quickly request all of the p2_singletons
+            p2_singleton_ph: bytes32 = construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash()
+            await sync_store.add_p2_singletons([
+                cr.coin
+                for cr in (await node_client.get_coin_records_by_puzzle_hashes(
+                    [p2_singleton_ph],
+                    include_spent_coins=False,
+                    start_height=p2_singleton_begin_sync,
+                ))
+            ])
         except Exception as e:
             await sync_store.db_connection.close()
             raise e
@@ -428,6 +469,159 @@ def address_cmd(configuration: str, prefix: str):
     prefarm_info = load_prefarm_info(configuration)
     print(encode_puzzle_hash(construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash(), prefix))
 
+
+@cli.command("payment", short_help="Absorb/Withdraw money into/from the singleton")
+@click.option(
+    "-c",
+    "--configuration",
+    help="The configuration file for the singleton who is handling the payment (default: ./Configuration (******).txt)",
+    default=None,
+    required=True,
+)
+@click.option(
+    "-db",
+    "--db-path",
+    help="The file path to the sync DB (default: ./sync (******).sqlite)",
+    default="./",
+    required=True,
+)
+@click.option(
+    "-wp",
+    "--wallet-rpc-port",
+    help="Set the port where the Wallet is hosting the RPC interface. See the rpc_port under wallet in config.yaml",
+    type=int,
+    default=None,
+)
+@click.option("-f", "--fingerprint", help="Set the fingerprint to specify which wallet to use", type=int, default=None)
+@click.option(
+    "-pks",
+    "--pubkeys",
+    help="A comma separated list of pubkeys that will be signing this spend.",
+    required=True,
+)
+@click.option(
+    "-a",
+    "--amount",
+    help="The outgoing amount (in mojos) to pay.  Can be zero to make no payment.",
+    default=0,
+    show_default=True,
+)
+@click.option(
+    "-m",
+    "--fee",
+    help="The fee to attach to this transaction (in mojos)/",
+    default=0,
+    show_default=True,
+)
+@click.option(
+    "-t",
+    "--recipient-address",
+    help="The address that can claim the money after the clawback period is over (must be supplied if amount is > 0)"
+)
+@click.option(
+    "-ap",
+    "--absorb-available-payments",
+    help="Look for any outstanding payments to the singleton and claim them while doing this spend (adds tx cost)",
+    is_flag=True,
+)
+@click.option(
+    "-mc",
+    "--maximum-extra-cost",
+    help="The maximum extra tx cost to be taken on while absorbing payments (as an estimated percentage)",
+    default=50,
+    show_default=True,
+)
+@click.option(
+    "-at",
+    "--amount-threshold",
+    help="The minimum amount required of a payment in order for it to be absorbed",
+    default=1000000000000,
+    show_default=True,
+)
+def payments_cmd(
+    configuration: str,
+    db_path: str,
+    wallet_rpc_port: Optional[int],
+    fingerprint: Optional[int],
+    pubkeys: str,
+    amount: int,
+    fee: int,
+    recipient_address: Optional[str],
+    absorb_available_payments: bool,
+    maximum_extra_cost: Optional[int],
+    amount_threshold: int,
+):
+    derivation = load_root_derivation(configuration)
+
+    # Check to make sure we've been given a correct set of parameters
+    if amount > 0 and recipient_address is None:
+        raise ValueError("You must specify a recipient address for outgoing payments")
+    if amount % 2 == 1:
+        raise ValueError("You can not make payments of an odd amount")
+    if fee < 0:
+        raise ValueError("Fee should be >= 0")
+
+    async def do_command():
+        wallet_client = await get_wallet_client(wallet_rpc_port, fingerprint)
+        sync_store: SyncStore = await load_db(db_path, derivation.prefarm_info.launcher_id)
+
+        try:
+            # Collect some relevant information
+            current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
+            if current_singleton is None:
+                raise RuntimeError("No singleton is found for this configuration.  Try `cic sync` then try again.")
+            pubkey_list: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
+            clawforward_ph: bytes32 = decode_puzzle_hash(recipient_address)
+            fee_conditions: List[Program] = []
+            fee_announcments: List[Announcement] = []
+            if fee > 0:
+                fee_conditions.append(Program.to([60, b'$']))  # create coin announcement
+                fee_conditions.append(Program.to([52, fee]))   # reserve fee
+                fee_announcments.append(Announcement(current_singleton.coin.name(), b'$'))
+
+            # Get any p2_singletons to spend
+            max_num: Optional[uint32] = uint32(math.floor(maximum_extra_cost/10)) if maximum_extra_cost is not None else None
+            p2_singletons: List[Coin] = await sync_store.get_p2_singletons(amount_threshold, max_num)
+            if sum(c.amount for c in p2_singletons) % 2 == 1:
+                smallest_coin: Coin = sorted(p2_singletons, key=attrgetter("amount"))[0]
+                p2_singletons = [c for c in p2_singletons if c.name() != smallest_coin.name()]
+
+            # Check that this payment will be legal
+            current_time: int = int(time.time() - 600)  # subtract 10 minutes to allow for weird block timestamps
+            possible_amount: int = (current_time - derivation.prefarm_info.start_date) * derivation.prefarm_info.mojos_per_second
+            withdrawn_amount: int = derivation.prefarm_info.starting_amount - (current_singleton.coin.amount - (amount - sum(c.amount for c in p2_singletons)))
+            if withdrawn_amount > possible_amount:
+                raise ValueError("That much cannot be withdrawn at this time.")
+
+            # Get the spend bundle
+            singleton_bundle, data_to_sign = get_withdrawal_spend_info(
+                current_singleton.coin,
+                pubkey_list,
+                derivation,
+                current_singleton.lineage_proof,
+                current_time,
+                amount,
+                clawforward_ph,
+                p2_singletons_to_claim=p2_singletons,
+                additional_conditions=fee_conditions,
+            )
+
+            # Get the fee transaction
+            fee_bundle: SpendBundle = (
+                await wallet_client.create_signed_transaction(
+                    [{"puzzle_hash": bytes32([0] * 32), "amount": 0}],  # TODO: this is dust, but the RPC requires it
+                    fee=uint64(fee),
+                    coin_announcements=fee_announcments,
+                )
+            ).spend_bundle
+
+            print(bytes(SpendBundle.aggregate([singleton_bundle, fee_bundle])).hex())
+        finally:
+            wallet_client.close()
+            await wallet_client.await_closed()
+            await sync_store.db_connection.close()
+
+    asyncio.get_event_loop().run_until_complete(do_command())
 
 def main() -> None:
     cli()  # pylint: disable=no-value-for-parameter

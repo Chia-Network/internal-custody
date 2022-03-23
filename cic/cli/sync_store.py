@@ -2,6 +2,7 @@ import aiosqlite
 
 from blspy import G1Element
 from pathlib import Path
+from typing import List, Optional
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import SerializedProgram
@@ -39,10 +40,20 @@ class SyncStore:
             "   spending_pubkey blob"
             ")"
         )
+
+        await self.db_connection.execute(
+            "CREATE TABLE IF NOT EXISTS p2_singletons("
+            "   coin_id blob PRIMARY_KEY,"
+            "   parent_id blob,"
+            "   puzzle_hash blob,"
+            "   amount bigint,"
+            "   spent tinyint"
+            ")"
+        )
         await self.db_connection.commit()
         return self
 
-    async def add_singleton_record(self, record: SingletonRecord):
+    async def add_singleton_record(self, record: SingletonRecord) -> None:
         cursor = await self.db_connection.execute(
             "INSERT OR REPLACE INTO singletons VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
@@ -61,7 +72,22 @@ class SyncStore:
         )
         await cursor.close()
 
-    async def get_latest_singleton(self):
+    async def add_p2_singletons(self, coins: List[Coin]) -> None:
+        for p2_singleton in coins:
+            cursor = await self.db_connection.execute(
+                "INSERT OR REPLACE INTO p2_singletons VALUES(?, ?, ?, ?, ?)",
+                (
+                    p2_singleton.name(),
+                    p2_singleton.parent_coin_info,
+                    p2_singleton.puzzle_hash,
+                    p2_singleton.amount,
+                    0,
+                ),
+            )
+        if len(coins) > 0:
+            await cursor.close()
+
+    async def get_latest_singleton(self) -> Optional[SingletonRecord]:
         cursor = await self.db_connection.execute("SELECT * from singletons ORDER BY generation DESC LIMIT 1")
         record = await cursor.fetchone()
         await cursor.close()
@@ -79,3 +105,13 @@ class SyncStore:
             None if record[9] == 0 else SpendType(record[9]),
             None if record[10] == bytes([0]) else G1Element.from_bytes(record[10]),
         ) if record is not None else None
+
+    async def get_p2_singletons(self, minimum_amount = uint64(0), max_num: Optional[uint32] = None) -> List[Coin]:
+        limit_str: str = f" LIMIT {max_num}" if max_num is not None else ""
+        cursor = await self.db_connection.execute(
+            f"SELECT * from p2_singletons WHERE amount>=? AND spent==0 ORDER BY amount DESC{limit_str}", (minimum_amount,)
+        )
+        coins = await cursor.fetchall()
+        await cursor.close()
+
+        return [Coin(coin[1], coin[2], uint64(coin[3])) for coin in coins]

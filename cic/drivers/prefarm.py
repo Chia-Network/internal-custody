@@ -156,7 +156,7 @@ def get_withdrawal_spend_info(
     )
 
     # Construct ACH creation solution
-    if payment_amount < 0:
+    if amount == 0:
         ach_conditions: List[Program] = []
     else:
         ach_conditions = [
