@@ -5,11 +5,12 @@ import math
 import os
 import time
 
-from blspy import G1Element, G2Element
+from blspy import PrivateKey, G1Element, G2Element
 from operator import attrgetter
 from pathlib import Path
 from typing import Optional
 
+from chia.consensus.default_constants import DEFAULT_CONSTANTS
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
@@ -20,6 +21,10 @@ from chia.util.bech32m import decode_puzzle_hash, encode_puzzle_hash
 from chia.util.ints import uint32, uint64
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
+from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
+    calculate_synthetic_offset,
+    DEFAULT_HIDDEN_PUZZLE_HASH,
+)
 
 from cic import __version__
 from cic.cli.clients import get_wallet_and_node_clients, get_wallet_client, get_node_client
@@ -28,12 +33,20 @@ from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.prefarm import (
     construct_full_singleton,
+    construct_prefarm_inner_puzzle,
     construct_singleton_inner_puzzle,
     get_new_puzzle_root_from_solution,
     get_withdrawal_spend_info,
+    get_spend_type_for_solution,
+    get_spending_pubkey_for_solution,
 )
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
 from cic.drivers.singleton import generate_launch_conditions_and_coin_spend, construct_p2_singleton
+
+from hsms.bls12_381 import BLSPublicKey, BLSSecretExponent
+from hsms.process.signing_hints import SumHint
+from hsms.process.unsigned_spend import UnsignedSpend
+from hsms.streamables.coin_spend import CoinSpend as HSMCoinSpend
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
@@ -415,7 +428,9 @@ def sync_cmd(
                     next_puzzle_root,
                     LineageProof(
                         current_coin_record.coin.parent_coin_info,
-                        construct_prefarm_inner_puzzle(current_singleton.puzzle_root).get_tree_hash(),
+                        construct_prefarm_inner_puzzle(
+                            dataclasses.replace(prefarm_info, puzzle_root=current_singleton.puzzle_root)
+                        ).get_tree_hash(),
                         current_coin_record.coin.amount,
                     ),
                     uint32(current_singleton.generation + 1),
@@ -587,10 +602,9 @@ def payments_cmd(
                 p2_singletons = [c for c in p2_singletons if c.name() != smallest_coin.name()]
 
             # Check that this payment will be legal
-            current_time: int = int(time.time() - 600)  # subtract 10 minutes to allow for weird block timestamps
-            possible_amount: int = (current_time - derivation.prefarm_info.start_date) * derivation.prefarm_info.mojos_per_second
             withdrawn_amount: int = derivation.prefarm_info.starting_amount - (current_singleton.coin.amount - (amount - sum(c.amount for c in p2_singletons)))
-            if withdrawn_amount > possible_amount:
+            time_to_use: int = math.ceil(withdrawn_amount/derivation.prefarm_info.mojos_per_second)
+            if time_to_use > int(time.time() - 600): # subtract 10 minutes to allow for weird block timestamps
                 raise ValueError("That much cannot be withdrawn at this time.")
 
             # Get the spend bundle
@@ -599,7 +613,7 @@ def payments_cmd(
                 pubkey_list,
                 derivation,
                 current_singleton.lineage_proof,
-                current_time,
+                time_to_use,
                 amount,
                 clawforward_ph,
                 p2_singletons_to_claim=p2_singletons,
@@ -615,7 +629,20 @@ def payments_cmd(
                 )
             ).spend_bundle
 
-            print(bytes(SpendBundle.aggregate([singleton_bundle, fee_bundle])).hex())
+            # Cast everything into HSM types
+            as_bls_pubkey_list = [BLSPublicKey(pk) for pk in pubkey_list]
+            agg_pk = sum(as_bls_pubkey_list, start=BLSPublicKey.zero())
+            synth_sk = BLSSecretExponent(PrivateKey.from_bytes(calculate_synthetic_offset(agg_pk, DEFAULT_HIDDEN_PUZZLE_HASH).to_bytes(32, "big")))
+            coin_spends = [HSMCoinSpend(cs.coin, cs.puzzle_reveal.to_program(), cs.solution.to_program()) for cs in [*singleton_bundle.coin_spends, *fee_bundle.coin_spends]]
+            unsigned_spend = UnsignedSpend(
+                coin_spends,
+                [SumHint(as_bls_pubkey_list, synth_sk)],
+                [],
+                DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA,  # TODO
+            )
+
+            # Print the result
+            print(bytes(unsigned_spend).hex())
         finally:
             wallet_client.close()
             await wallet_client.await_closed()

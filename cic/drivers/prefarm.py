@@ -2,6 +2,7 @@ import dataclasses
 import enum
 
 from blspy import G1Element, G2Element
+from clvm.casts import int_from_bytes
 from typing import List, Optional, Tuple
 
 from chia.types.blockchain_format.coin import Coin
@@ -586,7 +587,7 @@ def get_spend_type_for_solution(solution: Program) -> SpendType:
     rl_solution = solution.at("rrf")
     prefarm_inner_solution = rl_solution.at("rf")
     spend_type = prefarm_inner_solution.at("rf")
-    return SpendType(spend_type.as_python())
+    return SpendType(int_from_bytes(spend_type.as_python()))
 
 def get_spending_pubkey_for_solution(solution: Program) -> G1Element:
     if get_spend_type_for_solution(solution) == SpendType.FINISH_REKEY:
@@ -594,7 +595,7 @@ def get_spending_pubkey_for_solution(solution: Program) -> G1Element:
     else:
         rl_solution = solution.at("rrf")
         prefarm_inner_solution = rl_solution.at("rf")
-        filter_reveal = prefarm_inner_solution.at("rrrf")
-        leaf_reveal = filter_reveal.at("f")
-        pubkey = list(leaf_reveal.uncurry())[0]
-        return G1Element.from_bytes(pubkey.as_python())
+        filter_solution = prefarm_inner_solution.at("rrrrrf")
+        leaf_reveal = filter_solution.at("f")
+        pubkey = list(leaf_reveal.uncurry())[1].as_python()[0]
+        return G1Element.from_bytes(pubkey)

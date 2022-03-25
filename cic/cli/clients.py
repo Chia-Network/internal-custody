@@ -62,7 +62,7 @@ class WalletClientMock:
             conditions.append(Program.to([61, a.name()]))
         if coins is None:
             coins = await self.select_coins(None, None)
-        conditions.append(Program.to([51, ACS_PH, sum(c.amount for c in coins) - total_amount]))  # change
+        conditions.append(Program.to([51, ACS_PH, sum(c.amount for c in coins) - (total_amount + fee)]))  # change
         coin_spends: List[CoinSpend] = [CoinSpend(coins[0], ACS, Program.to(conditions))]
         if len(coins) > 1:
             for coin in coins[1:]:

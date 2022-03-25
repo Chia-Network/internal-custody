@@ -2,7 +2,7 @@ import asyncio
 import dataclasses
 import os
 
-from blspy import G1Element, G2Element
+from blspy import BasicSchemeMPL, PrivateKey, G1Element, G2Element
 from click.testing import CliRunner, Result
 from pathlib import Path
 
@@ -10,8 +10,10 @@ from chia.clvm.spend_sim import SpendSim, SimClient
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.coin_spend import CoinSpend
+from chia.types.mempool_inclusion_status import MempoolInclusionStatus
 from chia.types.spend_bundle import SpendBundle
 from chia.util.bech32m import encode_puzzle_hash
+from chia.util.hash import std_hash
 from chia.util.ints import uint32, uint64
 
 from cic.cli.main import cli
@@ -20,6 +22,18 @@ from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
 from cic.drivers.singleton import construct_p2_singleton
+
+from hsms.bls12_381 import BLSSecretExponent, BLSSignature
+from hsms.cmds.hsmmerge import create_spend_bundle
+from hsms.process.sign import sign
+from hsms.process.unsigned_spend import UnsignedSpend
+
+# Key functions
+def secret_key_for_index(index: int) -> PrivateKey:
+    blob = index.to_bytes(32, "big")
+    hashed_blob = BasicSchemeMPL.key_gen(std_hash(b"foo" + blob))
+    secret_exponent = int.from_bytes(hashed_blob, "big")
+    return PrivateKey.from_bytes(secret_exponent.to_bytes(32, "big"))
 
 
 ACS: Program = Program.to(1)
@@ -84,15 +98,16 @@ def test_init():
 
         # Derive the private information
         pubkeys = [
-            "8b500e920de2f44efbe0ecf3fdf8baa1a980dcf73fd76844d69f300cc843c77340f430b9658c1e8a9f8ca1bb6cf1a31c",
-            "b5ae919c39f696cfa34b3fa7bacfc0616a243cf99f9957aa5fcc23a1eebc8572dbad976471fd8f1d4d6eb1eec906261f",
-            "ba0015763b9551bcf22f4af4c7769fc059c390336ff9dcbd97cfb5ac6512d692061199942865a481ab0f04acc3db08f9",
-            "ad674bf3038a2d71ee3a957e49accfc0992f08734ef1ad2b2ffc1c6f3e34c516a00103b786fec4feb1847773bf3a797e",
-            "aa8c0d4d2a47b103de778990735984cea771f34f810d666781c7ddc590eadf355cc986c6a4c089c681fd0d988caf91a3",
+            secret_key_for_index(0).get_g1(),
+            secret_key_for_index(1).get_g1(),
+            secret_key_for_index(2).get_g1(),
+            secret_key_for_index(3).get_g1(),
+            secret_key_for_index(4).get_g1(),
         ]
+        pubkeys_as_hex = [bytes(pk).hex() for pk in pubkeys]
         derivation: RootDerivation = calculate_puzzle_root(
             prefarm_info,
-            [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys],
+            pubkeys,
             uint32(3),
             uint32(5),
             uint32(1),
@@ -105,7 +120,7 @@ def test_init():
                 "--configuration",
                 "./infos/Configuration (needs derivation).txt",
                 "--pubkeys",
-                ",".join(pubkeys),
+                ",".join(pubkeys_as_hex),
                 "--initial-lock-level",
                 uint32(3),
             ],
@@ -247,7 +262,7 @@ def test_init():
                 "--db-path",
                 sync_db_path,
                 "--pubkeys",
-                ",".join(pubkeys[0:3]),
+                ",".join(pubkeys_as_hex[0:3]),
                 "--amount",
                 2,
                 "--fee",
@@ -260,4 +275,48 @@ def test_init():
             ],
         )
 
-        withdrawal_bundle = SpendBundle.from_bytes(bytes.fromhex(result.output))
+        # Do a little bit of a signing cermony
+        withdrawal_bundle = UnsignedSpend.from_bytes(bytes.fromhex(result.output))
+        sigs: List[BLSSignature] = []
+        for key in range(0,3):
+            se = BLSSecretExponent(secret_key_for_index(key))
+            sigs.extend([si.signature for si in sign(withdrawal_bundle, [se])])
+        _hsms_bundle = create_spend_bundle(withdrawal_bundle, sigs)
+        signed_withdrawal_bundle = SpendBundle.from_bytes(bytes(_hsms_bundle))  # gotta convert from the hsms here
+
+        # Push the tx
+        async def push_withdrawal_spend():
+            try:
+                sim = await SpendSim.create(db_path="./sim.db")
+                sim_client = SimClient(sim)
+                result = await sim_client.push_tx(signed_withdrawal_bundle)
+                assert result[0] == MempoolInclusionStatus.SUCCESS
+                await sim.farm_block()
+            finally:
+                await sim.close()
+
+        asyncio.get_event_loop().run_until_complete(push_withdrawal_spend())
+
+        # Sync up
+        result = runner.invoke(
+            cli,
+            [
+                "sync",
+                "--configuration",
+                config_path,
+                "--db-path",
+                sync_db_path,
+            ],
+        )
+
+        async def check_for_singleton_record() -> SingletonRecord:
+            sync_store = await SyncStore.create(sync_db_path)
+            try:
+                singleton_record: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
+                assert singleton_record is not None
+                assert singleton_record != latest_singleton_record
+                return singleton_record
+            finally:
+                await sync_store.db_connection.close()
+
+        latest_singleton_record = asyncio.get_event_loop().run_until_complete(check_for_singleton_record())
