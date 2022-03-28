@@ -44,7 +44,7 @@ class WalletClientMock:
 
     # These are the only two methods we need
     async def select_coins(self, amount, wallet_id) -> List[Coin]:
-        return [(await self.sim_client.get_coin_records_by_puzzle_hashes([ACS_PH], include_spent_coins=False))[0].coin]
+        return [sorted(await self.sim_client.get_coin_records_by_puzzle_hashes([ACS_PH], include_spent_coins=False), key=lambda cr: cr.coin.name())[0].coin]
 
     async def create_signed_transaction(
         self,
