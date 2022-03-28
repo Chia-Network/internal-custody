@@ -162,9 +162,6 @@ def test_init():
 
         asyncio.get_event_loop().run_until_complete(check_for_launcher())
 
-        sync_db_path = next(Path("./infos/").glob("sync (*).sqlite"))
-        assert sync_db_path.exists()
-
         result = runner.invoke(
             cli,
             [
@@ -172,9 +169,12 @@ def test_init():
                 "--configuration",
                 config_path,
                 "--db-path",
-                sync_db_path,
+                "./infos/"
             ],
         )
+
+        sync_db_path = next(Path("./infos/").glob("sync (*).sqlite"))
+        assert sync_db_path.exists()
 
         latest_singleton_record: SingletonRecord
         async def check_for_singleton_record() -> SingletonRecord:

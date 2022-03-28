@@ -292,31 +292,6 @@ def launch_cmd(
             if not result["success"]:
                 raise ValueError(result["error"])
 
-            path = Path(db_path)
-            if path.is_dir():
-                path = path.joinpath(f"sync ({launcher_coin.name()[0:3].hex()}).sqlite")
-            sync_store = await SyncStore.create(path)
-            try:
-                await sync_store.add_singleton_record(
-                    SingletonRecord(
-                        Coin(
-                            launcher_coin.name(),
-                            construct_full_singleton(new_derivation.prefarm_info).get_tree_hash(),
-                            uint64(1),
-                        ),
-                        new_derivation.prefarm_info.puzzle_root,
-                        LineageProof(parent_name=launcher_coin.parent_coin_info, amount=uint64(1)),
-                        uint32(0),
-                        None,
-                        None,
-                        None,
-                        None,
-                    )
-                )
-                await sync_store.db_connection.commit()
-            finally:
-                await sync_store.db_connection.close()
-
             with open(Path(configuration), "wb") as file:
                 file.write(bytes(new_derivation))
             if "awaiting launch" in configuration:
@@ -380,14 +355,15 @@ def sync_cmd(
             current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
             current_coin_record: Optional[CoinRecord] = None
             if current_singleton is None:
-                current_coin_record = await node_client.get_coin_record_by_name(prefarm_info.launcher_id)
+                launcher_coin = await node_client.get_coin_record_by_name(prefarm_info.launcher_id)
+                current_coin_record = (await node_client.get_coin_records_by_parent_ids([prefarm_info.launcher_id]))[0]
                 if construct_full_singleton(prefarm_info).get_tree_hash() != current_coin_record.coin.puzzle_hash:
                     raise ValueError("The specified config has the incorrect puzzle root")
                 current_singleton = SingletonRecord(
                     current_coin_record.coin,
                     prefarm_info.puzzle_root,
                     LineageProof(
-                        parent_name=current_coin_record.coin.parent_coin_info, amount=current_coin_record.coin.amount
+                        parent_name=launcher_coin.coin.parent_coin_info, amount=launcher_coin.coin.amount
                     ),
                     uint32(0),
                     None,
@@ -428,7 +404,7 @@ def sync_cmd(
                     next_puzzle_root,
                     LineageProof(
                         current_coin_record.coin.parent_coin_info,
-                        construct_prefarm_inner_puzzle(
+                        construct_singleton_inner_puzzle(
                             dataclasses.replace(prefarm_info, puzzle_root=current_singleton.puzzle_root)
                         ).get_tree_hash(),
                         current_coin_record.coin.amount,
