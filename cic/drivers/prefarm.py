@@ -1,5 +1,6 @@
 import dataclasses
 import enum
+import math
 
 from blspy import G1Element, G2Element
 from clvm.casts import int_from_bytes
@@ -384,6 +385,11 @@ def calculate_rekey_args(
     return timelock, new_puzzle_root, filter_puzzle, Program.to(filter_proof), filter_solution, data_to_sign
 
 
+# when we do rekeys we don't care about the current time so this calculates the lowest possible value to satisfy the RL
+def calculate_lowest_rl_time(prefarm_info: PrefarmInfo, singleton_amount: uint64) -> uint64:
+    return uint64(prefarm_info.start_date + math.ceil((prefarm_info.starting_amount - singleton_amount)/prefarm_info.mojos_per_second))
+
+
 def get_rekey_spend_info(
     singleton: Coin,
     pubkeys: List[G1Element],
@@ -441,7 +447,7 @@ def get_rekey_spend_info(
                     ),
                     singleton.amount,
                     solve_rate_limiting_puzzle(
-                        uint64(0),
+                        calculate_lowest_rl_time(derivation.prefarm_info, singleton.amount),
                         solve_prefarm_inner(
                             SpendType.FINISH_REKEY,
                             singleton.amount,
@@ -463,7 +469,7 @@ def get_rekey_spend_info(
                         lineage_proof,
                         singleton.amount,
                         solve_rate_limiting_puzzle(
-                            uint64(0),
+                            calculate_lowest_rl_time(derivation.prefarm_info, singleton.amount),
                             solve_prefarm_inner(
                                 SpendType.START_REKEY,
                                 singleton.amount,
@@ -552,7 +558,7 @@ def get_rekey_completion_spend(
                     singleton_lineage,
                     singleton.amount,
                     solve_rate_limiting_puzzle(
-                        uint64(0),
+                        calculate_lowest_rl_time(derivation.prefarm_info, singleton.amount),
                         solve_prefarm_inner(
                             SpendType.FINISH_REKEY,
                             singleton.amount,

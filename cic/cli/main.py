@@ -37,6 +37,7 @@ from cic.drivers.prefarm import (
     construct_singleton_inner_puzzle,
     get_new_puzzle_root_from_solution,
     get_withdrawal_spend_info,
+    get_rekey_spend_info,
     get_spend_type_for_solution,
     get_spending_pubkey_for_solution,
 )
@@ -251,7 +252,7 @@ def derive_cmd(
     type=int,
     default=None,
 )
-@click.option("-m", "--fee", help="Fee to use for the launch transaction (in mojos)", default=0)
+@click.option("--fee", help="Fee to use for the launch transaction (in mojos)", default=0)
 def launch_cmd(
     configuration: str,
     db_path: str,
@@ -500,9 +501,8 @@ def address_cmd(configuration: str, prefix: str):
     show_default=True,
 )
 @click.option(
-    "-m",
     "--fee",
-    help="The fee to attach to this transaction (in mojos)/",
+    help="The fee to attach to this transaction (in mojos)",
     default=0,
     show_default=True,
 )
@@ -627,6 +627,125 @@ def payments_cmd(
             await sync_store.db_connection.close()
 
     asyncio.get_event_loop().run_until_complete(do_command())
+
+
+@cli.command("start_rekey", short_help="Absorb/Withdraw money into/from the singleton")
+@click.option(
+    "-c",
+    "--configuration",
+    help="The configuration file for the singleton who is handling the payment (default: ./Configuration (******).txt)",
+    default=None,
+    required=True,
+)
+@click.option(
+    "-db",
+    "--db-path",
+    help="The file path to the sync DB (default: ./sync (******).sqlite)",
+    default="./",
+    required=True,
+)
+@click.option(
+    "-wp",
+    "--wallet-rpc-port",
+    help="Set the port where the Wallet is hosting the RPC interface. See the rpc_port under wallet in config.yaml",
+    type=int,
+    default=None,
+)
+@click.option("-f", "--fingerprint", help="Set the fingerprint to specify which wallet to use", type=int, default=None)
+@click.option(
+    "-pks",
+    "--pubkeys",
+    help="A comma separated list of pubkeys that will be signing this spend.",
+    required=True,
+)
+@click.option(
+    "-new",
+    "--new-configuration",
+    help="The configuration you would like to rekey the singleton to",
+    required=True,
+)
+@click.option(
+    "--fee",
+    help="The fee to attach to this transaction (in mojos)",
+    default=0,
+    show_default=True,
+)
+def start_rekey_cmd(
+    configuration: str,
+    db_path: str,
+    wallet_rpc_port: Optional[int],
+    fingerprint: Optional[int],
+    pubkeys: str,
+    new_configuration: str,
+    fee: int,
+):
+    derivation = load_root_derivation(configuration)
+    new_derivation: RootDerivation = load_root_derivation(new_configuration)
+
+    # Quick sanity check that everything except the puzzle root is the same
+    if derivation.prefarm_info != dataclasses.replace(new_derivation.prefarm_info, puzzle_root=derivation.prefarm_info.puzzle_root):
+        raise ValueError(
+            "This configuration has more changed than the keys."
+            "Please derive a configuration with the same values for everything except key-related info."
+        )
+
+    async def do_command():
+        wallet_client = await get_wallet_client(wallet_rpc_port, fingerprint)
+        sync_store: SyncStore = await load_db(db_path, derivation.prefarm_info.launcher_id)
+
+        try:
+            # Collect some relevant information
+            current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
+            if current_singleton is None:
+                raise RuntimeError("No singleton is found for this configuration.  Try `cic sync` then try again.")
+            pubkey_list: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
+            fee_conditions: List[Program] = []
+            fee_announcments: List[Announcement] = []
+            if fee > 0:
+                fee_conditions.append(Program.to([60, b'$']))  # create coin announcement
+                fee_conditions.append(Program.to([52, fee]))   # reserve fee
+                fee_announcments.append(Announcement(current_singleton.coin.name(), b'$'))
+
+            # Get the spend bundle
+            singleton_bundle, data_to_sign = get_rekey_spend_info(
+                current_singleton.coin,
+                pubkey_list,
+                derivation,
+                current_singleton.lineage_proof,
+                new_derivation,
+                fee_conditions,
+            )
+
+            # Get the fee transaction
+            fee_bundle: SpendBundle = (
+                await wallet_client.create_signed_transaction(
+                    [{"puzzle_hash": bytes32([0] * 32), "amount": 0}],  # TODO: this is dust, but the RPC requires it
+                    fee=uint64(fee),
+                    coin_announcements=fee_announcments,
+                )
+            ).spend_bundle
+
+            # Cast everything into HSM types
+            as_bls_pubkey_list = [BLSPublicKey(pk) for pk in pubkey_list]
+            agg_pk = sum(as_bls_pubkey_list, start=BLSPublicKey.zero())
+            synth_sk = BLSSecretExponent(PrivateKey.from_bytes(calculate_synthetic_offset(agg_pk, DEFAULT_HIDDEN_PUZZLE_HASH).to_bytes(32, "big")))
+            coin_spends = [HSMCoinSpend(cs.coin, cs.puzzle_reveal.to_program(), cs.solution.to_program()) for cs in [*singleton_bundle.coin_spends, *fee_bundle.coin_spends]]
+            unsigned_spend = UnsignedSpend(
+                coin_spends,
+                [SumHint(as_bls_pubkey_list, synth_sk)],
+                [],
+                DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA,  # TODO
+            )
+
+            # Print the result
+            print(bytes(unsigned_spend).hex())
+        finally:
+            wallet_client.close()
+            await wallet_client.await_closed()
+            await sync_store.db_connection.close()
+
+    asyncio.get_event_loop().run_until_complete(do_command())
+
 
 def main() -> None:
     cli()  # pylint: disable=no-value-for-parameter

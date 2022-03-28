@@ -315,8 +315,64 @@ def test_init():
                 singleton_record: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
                 assert singleton_record is not None
                 assert singleton_record != latest_singleton_record
+                # +1 from the launch, -2 from the payment
+                assert singleton_record.coin.amount == prefarm_info.starting_amount - 1
                 return singleton_record
             finally:
                 await sync_store.db_connection.close()
 
         latest_singleton_record = asyncio.get_event_loop().run_until_complete(check_for_singleton_record())
+
+        # Attempt a rekey
+        new_derivation: RootDerivation = calculate_puzzle_root(
+            derivation.prefarm_info,
+            pubkeys,
+            # mess with the key quantities
+            uint32(2),
+            uint32(4),
+            uint32(2),
+        )
+        new_derivation_filepath: str = "./new_derivation.txt"
+        with open(new_derivation_filepath, "wb") as file:
+            file.write(bytes(new_derivation))
+
+        result = runner.invoke(
+            cli,
+            [
+                "start_rekey",
+                "--configuration",
+                config_path,
+                "--db-path",
+                sync_db_path,
+                "--pubkeys",
+                ",".join(pubkeys_as_hex[0:3]),
+                "--new-configuration",
+                new_derivation_filepath,
+                "--fee",
+                100,
+            ],
+        )
+
+        # Do a little bit of a signing cermony
+        rekey_bundle = UnsignedSpend.from_bytes(bytes.fromhex(result.output))
+        sigs: List[BLSSignature] = []
+        for key in range(0,3):
+            se = BLSSecretExponent(secret_key_for_index(key))
+            sigs.extend([si.signature for si in sign(rekey_bundle, [se])])
+        _hsms_bundle = create_spend_bundle(rekey_bundle, sigs)
+        signed_rekey_bundle = SpendBundle.from_bytes(bytes(_hsms_bundle))  # gotta convert from the hsms here
+
+        # Push the tx
+        async def push_start_rekey_spend():
+            try:
+                sim = await SpendSim.create(db_path="./sim.db")
+                sim_client = SimClient(sim)
+                sim.pass_time(prefarm_info.rekey_increments)
+                await sim.farm_block()
+                result = await sim_client.push_tx(signed_rekey_bundle)
+                assert result[0] == MempoolInclusionStatus.SUCCESS
+                await sim.farm_block()
+            finally:
+                await sim.close()
+
+        asyncio.get_event_loop().run_until_complete(push_start_rekey_spend())
