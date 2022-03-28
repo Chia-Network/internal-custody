@@ -5,7 +5,7 @@ from typing import Optional
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import SerializedProgram
 from chia.types.blockchain_format.sized_bytes import bytes32
-from chia.util.ints import uint32
+from chia.util.ints import uint32, uint64
 from chia.wallet.lineage_proof import LineageProof
 
 from cic.drivers.prefarm import SpendType
@@ -16,6 +16,7 @@ class SingletonRecord:
     coin: Coin
     puzzle_root: bytes32
     lineage_proof: LineageProof
+    confirmed_at_time: uint64
     generation: uint32
     puzzle_reveal: Optional[SerializedProgram]
     solution: Optional[SerializedProgram]

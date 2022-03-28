@@ -365,6 +365,7 @@ def sync_cmd(
                     LineageProof(
                         parent_name=launcher_coin.coin.parent_coin_info, amount=launcher_coin.coin.amount
                     ),
+                    current_coin_record.timestamp,
                     uint32(0),
                     None,
                     None,
@@ -409,6 +410,7 @@ def sync_cmd(
                         ).get_tree_hash(),
                         current_coin_record.coin.amount,
                     ),
+                    next_coin_record.timestamp,
                     uint32(current_singleton.generation + 1),
                     None,
                     None,

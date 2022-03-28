@@ -33,6 +33,7 @@ class SyncStore:
             "   amount bigint,"
             "   puzzle_root blob,"
             "   lineage_proof blob,"
+            "   confirmed_at_time bigint,"
             "   generation bigint,"
             "   puzzle_reveal blob,"
             "   solution blob,"
@@ -55,7 +56,7 @@ class SyncStore:
 
     async def add_singleton_record(self, record: SingletonRecord) -> None:
         cursor = await self.db_connection.execute(
-            "INSERT OR REPLACE INTO singletons VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO singletons VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 record.coin.name(),
                 record.coin.parent_coin_info,
@@ -63,6 +64,7 @@ class SyncStore:
                 record.coin.amount,
                 record.puzzle_root,
                 bytes(record.lineage_proof),
+                record.confirmed_at_time,
                 record.generation,
                 bytes([0]) if record.puzzle_reveal is None else bytes(record.puzzle_reveal),
                 bytes([0]) if record.solution is None else bytes(record.solution),
@@ -99,11 +101,12 @@ class SyncStore:
             ),
             record[4],
             LineageProof.from_bytes(record[5]),
-            uint32(record[6]),
-            None if record[7] == bytes([0]) else SerializedProgram.from_bytes(record[7]),
+            uint64(record[6]),
+            uint32(record[7]),
             None if record[8] == bytes([0]) else SerializedProgram.from_bytes(record[8]),
-            None if record[9] == 0 else SpendType(record[9]),
-            None if record[10] == bytes([0]) else G1Element.from_bytes(record[10]),
+            None if record[9] == bytes([0]) else SerializedProgram.from_bytes(record[9]),
+            None if record[10] == 0 else SpendType(record[10]),
+            None if record[11] == bytes([0]) else G1Element.from_bytes(record[11]),
         ) if record is not None else None
 
     async def get_p2_singletons(self, minimum_amount = uint64(0), max_num: Optional[uint32] = None) -> List[Coin]:
