@@ -6,11 +6,12 @@ from typing import List, Optional
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import SerializedProgram
+from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.util.db_wrapper import DBWrapper
 from chia.util.ints import uint32, uint64
 from chia.wallet.lineage_proof import LineageProof
 
-from cic.cli.singleton_record import SingletonRecord
+from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
 from cic.drivers.prefarm import SpendType
 
 
@@ -52,6 +53,35 @@ class SyncStore:
             "   spent tinyint"
             ")"
         )
+
+        await self.db_connection.execute(
+            "CREATE TABLE IF NOT EXISTS achs("
+            "   coin_id blob PRIMARY_KEY,"
+            "   parent_id blob,"
+            "   puzzle_hash blob,"
+            "   amount bigint,"
+            "   from_root blob,"
+            "   p2_ph blob,"
+            "   confirmed_at_time bigint,"
+            "   spent_at_height bigint,"
+            "   completed tinyint"
+            ")"
+        )
+
+        await self.db_connection.execute(
+            "CREATE TABLE IF NOT EXISTS rekeys("
+            "   coin_id blob PRIMARY_KEY,"
+            "   parent_id blob,"
+            "   puzzle_hash blob,"
+            "   amount bigint,"
+            "   from_root blob,"
+            "   to_root blob,"
+            "   timelock blob,"
+            "   confirmed_at_time bigint,"
+            "   spent_at_height bigint,"
+            "   completed tinyint"
+            ")"
+        )
         await self.db_connection.commit()
         return self
 
@@ -71,6 +101,55 @@ class SyncStore:
                 bytes([0]) if record.solution is None else bytes(record.solution),
                 0 if record.spend_type is None else bytes(record.spend_type),
                 bytes([0]) if record.spending_pubkey is None else bytes(record.spending_pubkey),
+            ),
+        )
+        await cursor.close()
+
+    async def add_ach_record(self, record: ACHRecord) -> None:
+        completed_int: int
+        if record.completed:
+            completed_int = 1
+        elif record.completed is None:
+            completed_int = 0
+        else:
+            completed_int = -1
+        cursor = await self.db_connection.execute(
+            "INSERT OR REPLACE INTO achs VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                record.coin.name(),
+                record.coin.parent_coin_info,
+                record.coin.puzzle_hash,
+                record.coin.amount,
+                record.from_root,
+                record.p2_ph,
+                record.confirmed_at_time,
+                0 if record.spent_at_height is None else record.spent_at_height,
+                completed_int,
+            ),
+        )
+        await cursor.close()
+
+    async def add_rekey_record(self, record: RekeyRecord) -> None:
+        completed_int: int
+        if record.completed:
+            completed_int = 1
+        elif record.completed is None:
+            completed_int = 0
+        else:
+            completed_int = -1
+        cursor = await self.db_connection.execute(
+            "INSERT OR REPLACE INTO rekeys VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                record.coin.name(),
+                record.coin.parent_coin_info,
+                record.coin.puzzle_hash,
+                record.coin.amount,
+                record.from_root,
+                record.to_root,
+                record.timelock,
+                record.confirmed_at_time,
+                0 if record.spent_at_height is None else record.spent_at_height,
+                completed_int,
             ),
         )
         await cursor.close()
@@ -113,6 +192,53 @@ class SyncStore:
             if record is not None
             else None
         )
+
+    async def get_ach_records(self, include_spent_coins: bool = False) -> List[ACHRecord]:
+        optional_unspent_str: str = " WHERE spent_at_height>0" if include_spent_coins else ""
+        cursor = await self.db_connection.execute(
+            f"SELECT * from achs{optional_unspent_str} ORDER BY confirmed_at_time DESC"
+        )
+        records = await cursor.fetchall()
+        await cursor.close()
+        return [
+            ACHRecord(
+                Coin(
+                    record[1],
+                    record[2],
+                    uint64(record[3]),
+                ),
+                bytes32(record[4]),
+                bytes32(record[5]),
+                uint64(record[6]),
+                None if record[7] == 0 else uint32(record[7]),
+                None if record[8] == 0 else record[8] == 1,
+            )
+            for record in records
+        ]
+
+    async def get_rekey_records(self, include_spent_coins: bool = False) -> List[RekeyRecord]:
+        optional_unspent_str: str = " WHERE spent_at_height>0" if include_spent_coins else ""
+        cursor = await self.db_connection.execute(
+            f"SELECT * from rekeys{optional_unspent_str} ORDER BY confirmed_at_time DESC"
+        )
+        records = await cursor.fetchall()
+        await cursor.close()
+        return [
+            RekeyRecord(
+                Coin(
+                    record[1],
+                    record[2],
+                    uint64(record[3]),
+                ),
+                bytes32(record[4]),
+                bytes32(record[5]),
+                uint64(record[6]),
+                uint64(record[7]),
+                None if record[8] == 0 else uint32(record[8]),
+                None if record[9] == 0 else record[9] == 1,
+            )
+            for record in records
+        ]
 
     async def get_p2_singletons(self, minimum_amount=uint64(0), max_num: Optional[uint32] = None) -> List[Coin]:
         limit_str: str = f" LIMIT {max_num}" if max_num is not None else ""

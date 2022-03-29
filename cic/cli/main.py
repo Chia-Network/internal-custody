@@ -29,10 +29,11 @@ from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
 
 from cic import __version__
 from cic.cli.clients import get_wallet_and_node_clients, get_wallet_client, get_node_client
-from cic.cli.singleton_record import SingletonRecord
+from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
 from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.prefarm import (
+    SpendType,
     construct_full_singleton,
     construct_singleton_inner_puzzle,
     get_new_puzzle_root_from_solution,
@@ -40,6 +41,9 @@ from cic.drivers.prefarm import (
     get_rekey_spend_info,
     get_spend_type_for_solution,
     get_spending_pubkey_for_solution,
+    get_spend_params_for_ach_creation,
+    get_spend_params_for_rekey_creation,
+    was_rekey_completed,
 )
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
 from cic.drivers.singleton import generate_launch_conditions_and_coin_spend, construct_p2_singleton
@@ -386,21 +390,29 @@ def sync_cmd(
                 )
                 if latest_spend is None:
                     break
+
+                # Fill in all of the information about the spent singleton
                 latest_solution: Program = latest_spend.solution.to_program()
+                spend_type: SpendType = get_spend_type_for_solution(latest_solution)
                 await sync_store.add_singleton_record(
                     dataclasses.replace(
                         current_singleton,
                         puzzle_reveal=latest_spend.puzzle_reveal,
                         solution=latest_spend.solution,
-                        spend_type=get_spend_type_for_solution(latest_solution),
+                        spend_type=spend_type,
                         spending_pubkey=get_spending_pubkey_for_solution(latest_solution),
                     )
                 )
-                next_coin_record = [
-                    cr
-                    for cr in (await node_client.get_coin_records_by_parent_ids([current_coin_record.coin.name()]))
-                    if cr.coin.amount % 2 == 1
-                ][0]
+
+                # Create the new singleton's record
+                all_children: List[CoinRecord] = await node_client.get_coin_records_by_parent_ids(
+                    [current_coin_record.coin.name()]
+                )
+                drop_coin: Optional[CoinRecord] = None
+                potential_drop_coins = [cr for cr in all_children if cr.coin.amount % 2 == 0]
+                if len(potential_drop_coins) > 0:
+                    drop_coin = potential_drop_coins[0]
+                next_coin_record = [cr for cr in all_children if cr.coin.amount % 2 == 1][0]
                 if next_coin_record.coin.puzzle_hash == current_coin_record.coin.puzzle_hash:
                     next_puzzle_root: bytes32 = current_singleton.puzzle_root
                 else:
@@ -423,6 +435,56 @@ def sync_cmd(
                     None,
                 )
                 await sync_store.add_singleton_record(next_singleton)
+                # Detect any drop coins and add records for them
+                if drop_coin is not None:
+                    drop_coin_child: Optional[CoinRecord] = None
+                    potential_children: List[CoinRecord] = await node_client.get_coin_records_by_parent_ids(
+                        [drop_coin.coin.name()]
+                    )
+                    if len(potential_children) > 0:
+                        drop_coin_child = potential_children[0]
+                    if spend_type == SpendType.HANDLE_PAYMENT:
+                        _, _, p2_ph = get_spend_params_for_ach_creation(latest_solution)
+                        completed: Optional[bool] = None
+                        if drop_coin_child is not None:
+                            if (
+                                drop_coin_child.coin.puzzle_hash
+                                == construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash()
+                            ):
+                                completed = False
+                            else:
+                                completed = True
+                        await sync_store.add_ach_record(
+                            ACHRecord(
+                                drop_coin.coin,
+                                current_singleton.puzzle_root,
+                                p2_ph,
+                                drop_coin.timestamp,
+                                None if drop_coin.spent_block_index == 0 else drop_coin.spent_block_index,
+                                completed,
+                            )
+                        )
+                    elif spend_type == SpendType.START_REKEY:
+                        timelock, new_root = get_spend_params_for_rekey_creation(latest_solution)
+                        completed: Optional[bool] = None
+                        if drop_coin.spent_block_index > 0:
+                            rekey_spend: Optional[CoinSpend] = await node_client.get_puzzle_and_solution(
+                                drop_coin.coin.name(), drop_coin.spent_block_index
+                            )
+                            assert rekey_spend is not None
+                            completed = was_rekey_completed(rekey_spend.solution.to_program())
+                        await sync_store.add_rekey_record(
+                            RekeyRecord(
+                                drop_coin.coin,
+                                current_singleton.puzzle_root,
+                                new_root,
+                                timelock,
+                                drop_coin.timestamp,
+                                None if drop_coin.spent_block_index == 0 else drop_coin.spent_block_index,
+                                completed,
+                            )
+                        )
+                # Loop with the next coin
                 current_coin_record = next_coin_record
                 current_singleton = next_singleton
             # Quickly request all of the p2_singletons

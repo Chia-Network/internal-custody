@@ -20,6 +20,7 @@ from chia.util.ints import uint64
 
 from cic.drivers.drop_coins import (
     construct_rekey_puzzle,
+    construct_rekey_clawback,
     construct_ach_puzzle,
     curry_rekey_puzzle,
     curry_ach_puzzle,
@@ -610,3 +611,30 @@ def get_spending_pubkey_for_solution(solution: Program) -> G1Element:
         leaf_reveal = filter_solution.at("f")
         pubkey = list(leaf_reveal.uncurry())[1].as_python()[0]
         return G1Element.from_bytes(pubkey)
+
+
+def get_spend_params_for_ach_creation(solution: Program) -> Tuple[uint64, uint64, bytes32]:
+    rl_solution = solution.at("rrf")
+    prefarm_inner_solution = rl_solution.at("rf")
+    spend_solution = prefarm_inner_solution.at("rrf")
+    out_amount = uint64(int_from_bytes(spend_solution.at("f").as_python()))
+    in_amount = uint64(int_from_bytes(spend_solution.at("rf").as_python()))
+    p2_ph = bytes32(spend_solution.at("rrf").as_python())
+    return out_amount, in_amount, p2_ph
+
+
+def get_spend_params_for_rekey_creation(solution: Program) -> Tuple[uint64, bytes32]:
+    rl_solution = solution.at("rrf")
+    prefarm_inner_solution = rl_solution.at("rf")
+    spend_solution = prefarm_inner_solution.at("rrf")
+    timelock = uint64(int_from_bytes(spend_solution.at("f").as_python()))
+    new_root = bytes32(spend_solution.at("rf").as_python())
+    return timelock, new_root
+
+
+def was_rekey_completed(solution: Program) -> bool:
+    puzzle_reveal = solution.at("f")
+    if puzzle_reveal == construct_rekey_clawback():
+        return False
+    else:
+        return True

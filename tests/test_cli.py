@@ -4,7 +4,7 @@ import os
 from blspy import BasicSchemeMPL, PrivateKey, G2Element
 from click.testing import CliRunner, Result
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from chia.clvm.spend_sim import SpendSim, SimClient
 from chia.types.blockchain_format.coin import Coin
@@ -18,7 +18,7 @@ from chia.util.hash import std_hash
 from chia.util.ints import uint32, uint64
 
 from cic.cli.main import cli
-from cic.cli.singleton_record import SingletonRecord
+from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
 from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
@@ -319,7 +319,9 @@ def test_init():
             ],
         )
 
-        async def check_for_singleton_record() -> SingletonRecord:
+        ach_payment: ACHRecord
+
+        async def check_for_singleton_record_and_payment() -> Tuple[SingletonRecord, ACHRecord]:
             sync_store = await SyncStore.create(sync_db_path)
             try:
                 singleton_record: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
@@ -327,11 +329,14 @@ def test_init():
                 assert singleton_record != latest_singleton_record
                 # +1 from the launch, -2 from the payment
                 assert singleton_record.coin.amount == prefarm_info.starting_amount - 1
-                return singleton_record
+                ach_record: ACHRecord = (await sync_store.get_ach_records(include_spent_coins=False))[0]
+                return singleton_record, ach_record
             finally:
                 await sync_store.db_connection.close()
 
-        latest_singleton_record = asyncio.get_event_loop().run_until_complete(check_for_singleton_record())
+        latest_singleton_record, ach_payment = asyncio.get_event_loop().run_until_complete(
+            check_for_singleton_record_and_payment()
+        )
 
         # Attempt a rekey
         new_derivation: RootDerivation = calculate_puzzle_root(
@@ -365,10 +370,10 @@ def test_init():
 
         # Do a little bit of a signing cermony
         rekey_bundle = UnsignedSpend.from_bytes(bytes.fromhex(result.output))
-        sigs: List[BLSSignature] = []
-        for key in range(0, 3):
-            se = BLSSecretExponent(secret_key_for_index(key))
-            sigs.extend([si.signature for si in sign(rekey_bundle, [se])])
+        sigs: List[BLSSignature] = [
+            si.signature
+            for si in sign(rekey_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
+        ]
         _hsms_bundle = create_spend_bundle(rekey_bundle, sigs)
         signed_rekey_bundle = SpendBundle.from_bytes(bytes(_hsms_bundle))  # gotta convert from the hsms here
 
@@ -386,3 +391,32 @@ def test_init():
                 await sim.close()
 
         asyncio.get_event_loop().run_until_complete(push_start_rekey_spend())
+
+        # Sync up
+        result = runner.invoke(
+            cli,
+            [
+                "sync",
+                "--configuration",
+                config_path,
+                "--db-path",
+                sync_db_path,
+            ],
+        )
+
+        rekey_drop: RekeyRecord
+
+        async def check_for_singleton_record_and_rekey() -> Tuple[SingletonRecord, RekeyRecord]:
+            sync_store = await SyncStore.create(sync_db_path)
+            try:
+                singleton_record: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
+                assert singleton_record is not None
+                assert singleton_record != latest_singleton_record
+                rekey_record: RekeyRecord = (await sync_store.get_rekey_records(include_spent_coins=False))[0]
+                return singleton_record, rekey_record
+            finally:
+                await sync_store.db_connection.close()
+
+        latest_singleton_record, rekey_drop = asyncio.get_event_loop().run_until_complete(
+            check_for_singleton_record_and_rekey()
+        )
