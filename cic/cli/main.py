@@ -8,7 +8,7 @@ import time
 from blspy import PrivateKey, G1Element, G2Element
 from operator import attrgetter
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from chia.consensus.default_constants import DEFAULT_CONSTANTS
 from chia.types.blockchain_format.coin import Coin
@@ -16,6 +16,7 @@ from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.announcement import Announcement
 from chia.types.coin_record import CoinRecord
+from chia.types.coin_spend import CoinSpend
 from chia.types.spend_bundle import SpendBundle
 from chia.util.bech32m import decode_puzzle_hash, encode_puzzle_hash
 from chia.util.ints import uint32, uint64
@@ -33,7 +34,6 @@ from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.prefarm import (
     construct_full_singleton,
-    construct_prefarm_inner_puzzle,
     construct_singleton_inner_puzzle,
     get_new_puzzle_root_from_solution,
     get_withdrawal_spend_info,
@@ -52,7 +52,7 @@ from hsms.streamables.coin_spend import CoinSpend as HSMCoinSpend
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
 
-def load_prefarm_info(configuration: str) -> PrefarmInfo:
+def load_prefarm_info(configuration: Optional[str]) -> PrefarmInfo:
     if configuration is None:
         path: Path = next(Path("./").glob("Configuration (*).txt"))
     else:
@@ -68,6 +68,7 @@ def load_prefarm_info(configuration: str) -> PrefarmInfo:
                 return RootDerivation.from_bytes(file_bytes).prefarm_info
             except AssertionError:
                 raise ValueError("The configuration specified is not a recognizable format")
+
 
 def load_root_derivation(configuration: str) -> RootDerivation:
     if configuration is None:
@@ -87,11 +88,13 @@ def load_root_derivation(configuration: str) -> RootDerivation:
             except AssertionError:
                 raise ValueError("The configuration specified is not a recognizable format")
 
+
 async def load_db(db_path: str, launcher_id: bytes32) -> SyncStore:
     path = Path(db_path)
     if path.is_dir():
         path = path.joinpath(f"sync ({launcher_id[0:3].hex()}).sqlite")
     return await SyncStore.create(path)
+
 
 @click.group(
     help="\n  Commands to control a prefarm singleton \n",
@@ -206,13 +209,13 @@ def derive_cmd(
 ):
     with open(Path(configuration), "rb") as file:
         prefarm_info = PrefarmInfo.from_bytes(file.read())
-    pubkeys: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
+    pubkey_list: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
 
     derivation: RootDerivation = calculate_puzzle_root(
         prefarm_info,
-        pubkeys,
+        pubkey_list,
         uint32(initial_lock_level),
-        uint32(len(pubkeys) if maximum_lock_level is None else maximum_lock_level),
+        uint32(len(pubkey_list) if maximum_lock_level is None else maximum_lock_level),
         uint32(minimum_pks),
     )
 
@@ -363,9 +366,7 @@ def sync_cmd(
                 current_singleton = SingletonRecord(
                     current_coin_record.coin,
                     prefarm_info.puzzle_root,
-                    LineageProof(
-                        parent_name=launcher_coin.coin.parent_coin_info, amount=launcher_coin.coin.amount
-                    ),
+                    LineageProof(parent_name=launcher_coin.coin.parent_coin_info, amount=launcher_coin.coin.amount),
                     current_coin_record.timestamp,
                     uint32(0),
                     None,
@@ -386,12 +387,15 @@ def sync_cmd(
                 if latest_spend is None:
                     break
                 latest_solution: Program = latest_spend.solution.to_program()
-                await sync_store.add_singleton_record(dataclasses.replace(current_singleton,
-                    puzzle_reveal=latest_spend.puzzle_reveal,
-                    solution=latest_spend.solution,
-                    spend_type=get_spend_type_for_solution(latest_solution),
-                    spending_pubkey=get_spending_pubkey_for_solution(latest_solution),
-                ))
+                await sync_store.add_singleton_record(
+                    dataclasses.replace(
+                        current_singleton,
+                        puzzle_reveal=latest_spend.puzzle_reveal,
+                        solution=latest_spend.solution,
+                        spend_type=get_spend_type_for_solution(latest_solution),
+                        spending_pubkey=get_spending_pubkey_for_solution(latest_solution),
+                    )
+                )
                 next_coin_record = [
                     cr
                     for cr in (await node_client.get_coin_records_by_parent_ids([current_coin_record.coin.name()]))
@@ -423,14 +427,18 @@ def sync_cmd(
                 current_singleton = next_singleton
             # Quickly request all of the p2_singletons
             p2_singleton_ph: bytes32 = construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash()
-            await sync_store.add_p2_singletons([
-                cr.coin
-                for cr in (await node_client.get_coin_records_by_puzzle_hashes(
-                    [p2_singleton_ph],
-                    include_spent_coins=False,
-                    start_height=p2_singleton_begin_sync,
-                ))
-            ])
+            await sync_store.add_p2_singletons(
+                [
+                    cr.coin
+                    for cr in (
+                        await node_client.get_coin_records_by_puzzle_hashes(
+                            [p2_singleton_ph],
+                            include_spent_coins=False,
+                            start_height=p2_singleton_begin_sync,
+                        )
+                    )
+                ]
+            )
         except Exception as e:
             await sync_store.db_connection.close()
             raise e
@@ -509,7 +517,7 @@ def address_cmd(configuration: str, prefix: str):
 @click.option(
     "-t",
     "--recipient-address",
-    help="The address that can claim the money after the clawback period is over (must be supplied if amount is > 0)"
+    help="The address that can claim the money after the clawback period is over (must be supplied if amount is > 0)",
 )
 @click.option(
     "-ap",
@@ -568,21 +576,25 @@ def payments_cmd(
             fee_conditions: List[Program] = []
             fee_announcments: List[Announcement] = []
             if fee > 0:
-                fee_conditions.append(Program.to([60, b'$']))  # create coin announcement
-                fee_conditions.append(Program.to([52, fee]))   # reserve fee
-                fee_announcments.append(Announcement(current_singleton.coin.name(), b'$'))
+                fee_conditions.append(Program.to([60, b"$"]))  # create coin announcement
+                fee_conditions.append(Program.to([52, fee]))  # reserve fee
+                fee_announcments.append(Announcement(current_singleton.coin.name(), b"$"))
 
             # Get any p2_singletons to spend
-            max_num: Optional[uint32] = uint32(math.floor(maximum_extra_cost/10)) if maximum_extra_cost is not None else None
+            max_num: Optional[uint32] = (
+                uint32(math.floor(maximum_extra_cost / 10)) if maximum_extra_cost is not None else None
+            )
             p2_singletons: List[Coin] = await sync_store.get_p2_singletons(amount_threshold, max_num)
             if sum(c.amount for c in p2_singletons) % 2 == 1:
                 smallest_coin: Coin = sorted(p2_singletons, key=attrgetter("amount"))[0]
                 p2_singletons = [c for c in p2_singletons if c.name() != smallest_coin.name()]
 
             # Check that this payment will be legal
-            withdrawn_amount: int = derivation.prefarm_info.starting_amount - (current_singleton.coin.amount - (amount - sum(c.amount for c in p2_singletons)))
-            time_to_use: int = math.ceil(withdrawn_amount/derivation.prefarm_info.mojos_per_second)
-            if time_to_use > int(time.time() - 600): # subtract 10 minutes to allow for weird block timestamps
+            withdrawn_amount: int = derivation.prefarm_info.starting_amount - (
+                current_singleton.coin.amount - (amount - sum(c.amount for c in p2_singletons))
+            )
+            time_to_use: int = math.ceil(withdrawn_amount / derivation.prefarm_info.mojos_per_second)
+            if time_to_use > int(time.time() - 600):  # subtract 10 minutes to allow for weird block timestamps
                 raise ValueError("That much cannot be withdrawn at this time.")
 
             # Get the spend bundle
@@ -610,8 +622,15 @@ def payments_cmd(
             # Cast everything into HSM types
             as_bls_pubkey_list = [BLSPublicKey(pk) for pk in pubkey_list]
             agg_pk = sum(as_bls_pubkey_list, start=BLSPublicKey.zero())
-            synth_sk = BLSSecretExponent(PrivateKey.from_bytes(calculate_synthetic_offset(agg_pk, DEFAULT_HIDDEN_PUZZLE_HASH).to_bytes(32, "big")))
-            coin_spends = [HSMCoinSpend(cs.coin, cs.puzzle_reveal.to_program(), cs.solution.to_program()) for cs in [*singleton_bundle.coin_spends, *fee_bundle.coin_spends]]
+            synth_sk = BLSSecretExponent(
+                PrivateKey.from_bytes(
+                    calculate_synthetic_offset(agg_pk, DEFAULT_HIDDEN_PUZZLE_HASH).to_bytes(32, "big")
+                )
+            )
+            coin_spends = [
+                HSMCoinSpend(cs.coin, cs.puzzle_reveal.to_program(), cs.solution.to_program())
+                for cs in [*singleton_bundle.coin_spends, *fee_bundle.coin_spends]
+            ]
             unsigned_spend = UnsignedSpend(
                 coin_spends,
                 [SumHint(as_bls_pubkey_list, synth_sk)],
@@ -683,7 +702,9 @@ def start_rekey_cmd(
     new_derivation: RootDerivation = load_root_derivation(new_configuration)
 
     # Quick sanity check that everything except the puzzle root is the same
-    if derivation.prefarm_info != dataclasses.replace(new_derivation.prefarm_info, puzzle_root=derivation.prefarm_info.puzzle_root):
+    if derivation.prefarm_info != dataclasses.replace(
+        new_derivation.prefarm_info, puzzle_root=derivation.prefarm_info.puzzle_root
+    ):
         raise ValueError(
             "This configuration has more changed than the keys."
             "Please derive a configuration with the same values for everything except key-related info."
@@ -702,9 +723,9 @@ def start_rekey_cmd(
             fee_conditions: List[Program] = []
             fee_announcments: List[Announcement] = []
             if fee > 0:
-                fee_conditions.append(Program.to([60, b'$']))  # create coin announcement
-                fee_conditions.append(Program.to([52, fee]))   # reserve fee
-                fee_announcments.append(Announcement(current_singleton.coin.name(), b'$'))
+                fee_conditions.append(Program.to([60, b"$"]))  # create coin announcement
+                fee_conditions.append(Program.to([52, fee]))  # reserve fee
+                fee_announcments.append(Announcement(current_singleton.coin.name(), b"$"))
 
             # Get the spend bundle
             singleton_bundle, data_to_sign = get_rekey_spend_info(
@@ -728,8 +749,15 @@ def start_rekey_cmd(
             # Cast everything into HSM types
             as_bls_pubkey_list = [BLSPublicKey(pk) for pk in pubkey_list]
             agg_pk = sum(as_bls_pubkey_list, start=BLSPublicKey.zero())
-            synth_sk = BLSSecretExponent(PrivateKey.from_bytes(calculate_synthetic_offset(agg_pk, DEFAULT_HIDDEN_PUZZLE_HASH).to_bytes(32, "big")))
-            coin_spends = [HSMCoinSpend(cs.coin, cs.puzzle_reveal.to_program(), cs.solution.to_program()) for cs in [*singleton_bundle.coin_spends, *fee_bundle.coin_spends]]
+            synth_sk = BLSSecretExponent(
+                PrivateKey.from_bytes(
+                    calculate_synthetic_offset(agg_pk, DEFAULT_HIDDEN_PUZZLE_HASH).to_bytes(32, "big")
+                )
+            )
+            coin_spends = [
+                HSMCoinSpend(cs.coin, cs.puzzle_reveal.to_program(), cs.solution.to_program())
+                for cs in [*singleton_bundle.coin_spends, *fee_bundle.coin_spends]
+            ]
             unsigned_spend = UnsignedSpend(
                 coin_spends,
                 [SumHint(as_bls_pubkey_list, synth_sk)],

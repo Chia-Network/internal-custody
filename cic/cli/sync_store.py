@@ -11,6 +11,7 @@ from chia.util.ints import uint32, uint64
 from chia.wallet.lineage_proof import LineageProof
 
 from cic.cli.singleton_record import SingletonRecord
+from cic.drivers.prefarm import SpendType
 
 
 class SyncStore:
@@ -93,26 +94,31 @@ class SyncStore:
         cursor = await self.db_connection.execute("SELECT * from singletons ORDER BY generation DESC LIMIT 1")
         record = await cursor.fetchone()
         await cursor.close()
-        return SingletonRecord(
-            Coin(
-                record[1],
-                record[2],
-                uint64(record[3]),
-            ),
-            record[4],
-            LineageProof.from_bytes(record[5]),
-            uint64(record[6]),
-            uint32(record[7]),
-            None if record[8] == bytes([0]) else SerializedProgram.from_bytes(record[8]),
-            None if record[9] == bytes([0]) else SerializedProgram.from_bytes(record[9]),
-            None if record[10] == 0 else SpendType(record[10]),
-            None if record[11] == bytes([0]) else G1Element.from_bytes(record[11]),
-        ) if record is not None else None
+        return (
+            SingletonRecord(
+                Coin(
+                    record[1],
+                    record[2],
+                    uint64(record[3]),
+                ),
+                record[4],
+                LineageProof.from_bytes(record[5]),
+                uint64(record[6]),
+                uint32(record[7]),
+                None if record[8] == bytes([0]) else SerializedProgram.from_bytes(record[8]),
+                None if record[9] == bytes([0]) else SerializedProgram.from_bytes(record[9]),
+                None if record[10] == 0 else SpendType(record[10]),
+                None if record[11] == bytes([0]) else G1Element.from_bytes(record[11]),
+            )
+            if record is not None
+            else None
+        )
 
-    async def get_p2_singletons(self, minimum_amount = uint64(0), max_num: Optional[uint32] = None) -> List[Coin]:
+    async def get_p2_singletons(self, minimum_amount=uint64(0), max_num: Optional[uint32] = None) -> List[Coin]:
         limit_str: str = f" LIMIT {max_num}" if max_num is not None else ""
         cursor = await self.db_connection.execute(
-            f"SELECT * from p2_singletons WHERE amount>=? AND spent==0 ORDER BY amount DESC{limit_str}", (minimum_amount,)
+            f"SELECT * from p2_singletons WHERE amount>=? AND spent==0 ORDER BY amount DESC{limit_str}",
+            (minimum_amount,),
         )
         coins = await cursor.fetchall()
         await cursor.close()

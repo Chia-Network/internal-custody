@@ -1,5 +1,3 @@
-import asyncio
-
 from blspy import G2Element
 from typing import Any, Dict, List, Optional
 
@@ -18,7 +16,7 @@ ACS_PH = ACS.get_tree_hash()
 
 class FullNodeClientMock(SimClient):
     # We're just overriding the push_tx endpoint to return a dict and farm a block when done
-    async def push_tx(self, spend_bundle: SpendBundle) -> Dict[str, Any]:
+    async def push_tx(self, spend_bundle: SpendBundle) -> Dict[str, Any]:  # type: ignore
         result = await super().push_tx(spend_bundle)
         if result[0] == MempoolInclusionStatus.SUCCESS:
             await self.service.farm_block()
@@ -44,7 +42,12 @@ class WalletClientMock:
 
     # These are the only two methods we need
     async def select_coins(self, amount, wallet_id) -> List[Coin]:
-        return [sorted(await self.sim_client.get_coin_records_by_puzzle_hashes([ACS_PH], include_spent_coins=False), key=lambda cr: cr.coin.name())[0].coin]
+        return [
+            sorted(
+                await self.sim_client.get_coin_records_by_puzzle_hashes([ACS_PH], include_spent_coins=False),
+                key=lambda cr: cr.coin.name(),
+            )[0].coin
+        ]
 
     async def create_signed_transaction(
         self,
@@ -55,11 +58,12 @@ class WalletClientMock:
     ) -> TXMock:
         total_amount: int = 0
         conditions: List[Program] = []
-        for a in additions:
-            total_amount += a["amount"]
-            conditions.append(Program.to([51, a["puzzle_hash"], a["amount"]]))
-        for a in coin_announcements:
-            conditions.append(Program.to([61, a.name()]))
+        for add in additions:
+            total_amount += add["amount"]
+            conditions.append(Program.to([51, add["puzzle_hash"], add["amount"]]))
+        if coin_announcements is not None:
+            for ca in coin_announcements:
+                conditions.append(Program.to([61, ca.name()]))
         if coins is None:
             coins = await self.select_coins(None, None)
         conditions.append(Program.to([51, ACS_PH, sum(c.amount for c in coins) - (total_amount + fee)]))  # change
@@ -85,11 +89,13 @@ async def get_wallet_and_node_clients(node_rpc_port: int, wallet_rpc_port: int, 
     client = FullNodeClientMock(sim)
     return client, WalletClientMock(client)
 
+
 async def get_wallet_client(wallet_rpc_port: int, fingerprint: int):
     sim = await SpendSim.create(db_path="./sim.db")
     await sim.farm_block(ACS_PH)
     client = FullNodeClientMock(sim)
     return WalletClientMock(client)
+
 
 async def get_node_client(node_rpc_port: int):
     sim = await SpendSim.create(db_path="./sim.db")

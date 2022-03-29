@@ -387,7 +387,10 @@ def calculate_rekey_args(
 
 # when we do rekeys we don't care about the current time so this calculates the lowest possible value to satisfy the RL
 def calculate_lowest_rl_time(prefarm_info: PrefarmInfo, singleton_amount: uint64) -> uint64:
-    return uint64(prefarm_info.start_date + math.ceil((prefarm_info.starting_amount - singleton_amount)/prefarm_info.mojos_per_second))
+    return uint64(
+        prefarm_info.start_date
+        + math.ceil((prefarm_info.starting_amount - singleton_amount) / prefarm_info.mojos_per_second)
+    )
 
 
 def get_rekey_spend_info(
@@ -589,11 +592,13 @@ def get_new_puzzle_root_from_solution(solution: Program) -> bytes32:
     new_puzzle_root = spend_solution.at("rf")
     return bytes32(new_puzzle_root.as_python())
 
+
 def get_spend_type_for_solution(solution: Program) -> SpendType:
     rl_solution = solution.at("rrf")
     prefarm_inner_solution = rl_solution.at("rf")
     spend_type = prefarm_inner_solution.at("rf")
     return SpendType(int_from_bytes(spend_type.as_python()))
+
 
 def get_spending_pubkey_for_solution(solution: Program) -> G1Element:
     if get_spend_type_for_solution(solution) == SpendType.FINISH_REKEY:

@@ -37,7 +37,7 @@ class RootDerivation(Streamable):
         self,
         aggregate_pubkey: G1Element,
         lock: bool = False,
-    ) -> Tuple[ProofType, ProofType]:
+    ) -> Tuple[Dict[bytes32, Tuple[int, List[bytes32]]], Dict[bytes32, Tuple[int, List[bytes32]]]]:
         filter_proofs: Dict[bytes32, Tuple[int, List[bytes32]]] = {}
         leaf_proofs: Dict[bytes32, Tuple[int, List[bytes32]]] = {}
         for k, v in self.filter_proofs:
@@ -130,7 +130,7 @@ def calculate_puzzle_root(
     else:
         next_puzzle_root = None
 
-    all_inner_proofs: ProofType = {}
+    all_inner_proofs: Dict[bytes32, Tuple[int, List[bytes32]]] = {}
     all_filters: List[bytes32] = []
 
     # Construct the rekey and payments filter
@@ -175,6 +175,6 @@ def calculate_puzzle_root(
         maximum_pubkeys,
         minimum_pubkeys,
         next_puzzle_root,
-        list(filter_proofs.items()),
-        list(all_inner_proofs.items()),
+        list(filter_proofs.items()),  # type: ignore
+        list(all_inner_proofs.items()),  # type: ignore
     )

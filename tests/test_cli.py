@@ -1,12 +1,13 @@
 import asyncio
-import dataclasses
 import os
 
-from blspy import BasicSchemeMPL, PrivateKey, G1Element, G2Element
+from blspy import BasicSchemeMPL, PrivateKey, G2Element
 from click.testing import CliRunner, Result
 from pathlib import Path
+from typing import List, Optional
 
 from chia.clvm.spend_sim import SpendSim, SimClient
+from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.coin_spend import CoinSpend
@@ -28,6 +29,7 @@ from hsms.cmds.hsmmerge import create_spend_bundle
 from hsms.process.sign import sign
 from hsms.process.unsigned_spend import UnsignedSpend
 
+
 # Key functions
 def secret_key_for_index(index: int) -> PrivateKey:
     blob = index.to_bytes(32, "big")
@@ -38,6 +40,7 @@ def secret_key_for_index(index: int) -> PrivateKey:
 
 ACS: Program = Program.to(1)
 ACS_PH: bytes32 = ACS.get_tree_hash()
+
 
 def test_help():
     runner = CliRunner()
@@ -164,19 +167,14 @@ def test_init():
 
         result = runner.invoke(
             cli,
-            [
-                "sync",
-                "--configuration",
-                config_path,
-                "--db-path",
-                "./infos/"
-            ],
+            ["sync", "--configuration", config_path, "--db-path", "./infos/"],
         )
 
         sync_db_path = next(Path("./infos/").glob("sync (*).sqlite"))
         assert sync_db_path.exists()
 
         latest_singleton_record: SingletonRecord
+
         async def check_for_singleton_record() -> SingletonRecord:
             sync_store = await SyncStore.create(sync_db_path)
             try:
@@ -208,20 +206,32 @@ def test_init():
             try:
                 sim = await SpendSim.create(db_path="./sim.db")
                 sim_client = SimClient(sim)
-                acs_coin: Coin = next((cr.coin for cr in await sim_client.get_coin_records_by_puzzle_hashes([ACS_PH], include_spent_coins=False) if cr.coin.amount > prefarm_info.starting_amount))
-                result = await sim_client.push_tx(SpendBundle(
-                    [
-                        CoinSpend(
-                            acs_coin,
-                            ACS,
-                            Program.to([
-                                [51, P2_SINGLETON.get_tree_hash(), prefarm_info.starting_amount],
-                                [51, P2_SINGLETON.get_tree_hash(), 1]
-                            ]),
+                acs_coin: Coin = next(
+                    (
+                        cr.coin
+                        for cr in await sim_client.get_coin_records_by_puzzle_hashes(
+                            [ACS_PH], include_spent_coins=False
                         )
-                    ],
-                    G2Element()
-                ))
+                        if cr.coin.amount > prefarm_info.starting_amount
+                    )
+                )
+                await sim_client.push_tx(
+                    SpendBundle(
+                        [
+                            CoinSpend(
+                                acs_coin,
+                                ACS,
+                                Program.to(
+                                    [
+                                        [51, P2_SINGLETON.get_tree_hash(), prefarm_info.starting_amount],
+                                        [51, P2_SINGLETON.get_tree_hash(), 1],
+                                    ]
+                                ),
+                            )
+                        ],
+                        G2Element(),
+                    )
+                )
                 await sim.farm_block()
                 sim.pass_time(derivation.prefarm_info.withdrawal_timelock)
                 await sim.farm_block()
@@ -241,7 +251,7 @@ def test_init():
             ],
         )
 
-        async def check_for_singleton_record():
+        async def check_for_singleton_record_and_payments():
             sync_store = await SyncStore.create(sync_db_path)
             try:
                 singleton_record: SingletonRecord = await sync_store.get_latest_singleton()
@@ -251,7 +261,7 @@ def test_init():
             finally:
                 await sync_store.db_connection.close()
 
-        asyncio.get_event_loop().run_until_complete(check_for_singleton_record())
+        asyncio.get_event_loop().run_until_complete(check_for_singleton_record_and_payments())
 
         result = runner.invoke(
             cli,
@@ -278,7 +288,7 @@ def test_init():
         # Do a little bit of a signing cermony
         withdrawal_bundle = UnsignedSpend.from_bytes(bytes.fromhex(result.output))
         sigs: List[BLSSignature] = []
-        for key in range(0,3):
+        for key in range(0, 3):
             se = BLSSecretExponent(secret_key_for_index(key))
             sigs.extend([si.signature for si in sign(withdrawal_bundle, [se])])
         _hsms_bundle = create_spend_bundle(withdrawal_bundle, sigs)
@@ -356,7 +366,7 @@ def test_init():
         # Do a little bit of a signing cermony
         rekey_bundle = UnsignedSpend.from_bytes(bytes.fromhex(result.output))
         sigs: List[BLSSignature] = []
-        for key in range(0,3):
+        for key in range(0, 3):
             se = BLSSecretExponent(secret_key_for_index(key))
             sigs.extend([si.signature for si in sign(rekey_bundle, [se])])
         _hsms_bundle = create_spend_bundle(rekey_bundle, sigs)
