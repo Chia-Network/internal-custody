@@ -28,7 +28,7 @@ from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
 )
 
 from cic import __version__
-from cic.cli.clients import get_wallet_and_node_clients, get_wallet_client, get_node_client
+from cic.cli.clients import get_wallet_and_node_clients, get_node_client
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
 from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm_info import PrefarmInfo
