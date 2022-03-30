@@ -39,6 +39,8 @@ from cic.drivers.prefarm import (
     get_new_puzzle_root_from_solution,
     get_withdrawal_spend_info,
     get_rekey_spend_info,
+    get_ach_clawback_spend_info,
+    get_rekey_clawback_spend_info,
     get_spend_type_for_solution,
     get_spending_pubkey_for_solution,
     get_spend_params_for_ach_creation,
@@ -437,42 +439,20 @@ def sync_cmd(
                 await sync_store.add_singleton_record(next_singleton)
                 # Detect any drop coins and add records for them
                 if drop_coin is not None:
-                    drop_coin_child: Optional[CoinRecord] = None
-                    potential_children: List[CoinRecord] = await node_client.get_coin_records_by_parent_ids(
-                        [drop_coin.coin.name()]
-                    )
-                    if len(potential_children) > 0:
-                        drop_coin_child = potential_children[0]
                     if spend_type == SpendType.HANDLE_PAYMENT:
                         _, _, p2_ph = get_spend_params_for_ach_creation(latest_solution)
-                        completed: Optional[bool] = None
-                        if drop_coin_child is not None:
-                            if (
-                                drop_coin_child.coin.puzzle_hash
-                                == construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash()
-                            ):
-                                completed = False
-                            else:
-                                completed = True
                         await sync_store.add_ach_record(
                             ACHRecord(
                                 drop_coin.coin,
                                 current_singleton.puzzle_root,
                                 p2_ph,
                                 drop_coin.timestamp,
-                                None if drop_coin.spent_block_index == 0 else drop_coin.spent_block_index,
-                                completed,
+                                None,
+                                None,
                             )
                         )
                     elif spend_type == SpendType.START_REKEY:
                         timelock, new_root = get_spend_params_for_rekey_creation(latest_solution)
-                        completed: Optional[bool] = None
-                        if drop_coin.spent_block_index > 0:
-                            rekey_spend: Optional[CoinSpend] = await node_client.get_puzzle_and_solution(
-                                drop_coin.coin.name(), drop_coin.spent_block_index
-                            )
-                            assert rekey_spend is not None
-                            completed = was_rekey_completed(rekey_spend.solution.to_program())
                         await sync_store.add_rekey_record(
                             RekeyRecord(
                                 drop_coin.coin,
@@ -480,8 +460,8 @@ def sync_cmd(
                                 new_root,
                                 timelock,
                                 drop_coin.timestamp,
-                                None if drop_coin.spent_block_index == 0 else drop_coin.spent_block_index,
-                                completed,
+                                None,
+                                None,
                             )
                         )
                 # Loop with the next coin
@@ -501,6 +481,52 @@ def sync_cmd(
                     )
                 ]
             )
+            # Check the status of any drop coins
+            ach_coins: List[ACHRecord] = await sync_store.get_ach_records(include_spent_coins=False)
+            rekey_coins: List[ACHRecord] = await sync_store.get_rekey_records(include_spent_coins=False)
+            ach_ids: List[bytes32] = [ach.coin.name() for ach in ach_coins]
+            rekey_ids: List[bytes32] = [rekey.coin.name() for rekey in rekey_coins]
+            all_drop_coin_records: List[CoinRecord] = await node_client.get_coin_records_by_names(
+                [*ach_ids, *rekey_ids], include_spent_coins=True
+            )
+            for spent_drop_coin in [cr for cr in all_drop_coin_records if cr.spent_block_index > 0]:
+                if spent_drop_coin.coin.name() in ach_ids:
+                    current_ach_record: ACHRecord = [
+                        r for r in ach_coins if r.coin.name() == spent_drop_coin.coin.name()
+                    ][0]
+                    drop_coin_child: CoinRecord = (
+                        await node_client.get_coin_records_by_parent_ids([spent_drop_coin.coin.name()])
+                    )[0]
+                    if (
+                        drop_coin_child.coin.puzzle_hash
+                        == construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash()
+                    ):
+                        completed = False
+                    else:
+                        completed = True
+                    await sync_store.add_ach_record(
+                        dataclasses.replace(
+                            current_ach_record,
+                            spent_at_height=spent_drop_coin.spent_block_index,
+                            completed=completed,
+                        )
+                    )
+                else:
+                    current_rekey_record: ACHRecord = [
+                        r for r in rekey_coins if r.coin.name() == spent_drop_coin.coin.name()
+                    ][0]
+                    rekey_spend: Optional[CoinSpend] = await node_client.get_puzzle_and_solution(
+                        spent_drop_coin.coin.name(), spent_drop_coin.spent_block_index
+                    )
+                    assert rekey_spend is not None
+                    completed = was_rekey_completed(rekey_spend.solution.to_program())
+                    await sync_store.add_rekey_record(
+                        dataclasses.replace(
+                            current_rekey_record,
+                            spent_at_height=spent_drop_coin.spent_block_index,
+                            completed=completed,
+                        )
+                    )
         except Exception as e:
             await sync_store.db_connection.close()
             raise e
@@ -828,6 +854,167 @@ def start_rekey_cmd(
             )
 
             # Print the result
+            print(bytes(unsigned_spend).hex())
+        finally:
+            wallet_client.close()
+            await wallet_client.await_closed()
+            await sync_store.db_connection.close()
+
+    asyncio.get_event_loop().run_until_complete(do_command())
+
+
+@cli.command("clawback", short_help="Clawback a withdrawal or rekey attempt (will be prompted which one)")
+@click.option(
+    "-c",
+    "--configuration",
+    help="The configuration file for the singleton who is handling the payment (default: ./Configuration (******).txt)",
+    default=None,
+    required=True,
+)
+@click.option(
+    "-db",
+    "--db-path",
+    help="The file path to the sync DB (default: ./sync (******).sqlite)",
+    default="./",
+    required=True,
+)
+@click.option(
+    "-wp",
+    "--wallet-rpc-port",
+    help="Set the port where the Wallet is hosting the RPC interface. See the rpc_port under wallet in config.yaml",
+    type=int,
+    default=None,
+)
+@click.option("-f", "--fingerprint", help="Set the fingerprint to specify which wallet to use", type=int, default=None)
+@click.option(
+    "-pks",
+    "--pubkeys",
+    help="A comma separated list of pubkeys that will be signing this spend.",
+    required=True,
+)
+@click.option(
+    "--fee",
+    help="The fee to attach to this transaction (in mojos)",
+    default=0,
+    show_default=True,
+)
+def clawback_cmd(
+    configuration: str,
+    db_path: str,
+    wallet_rpc_port: Optional[int],
+    fingerprint: Optional[int],
+    pubkeys: str,
+    fee: int,
+):
+    derivation = load_root_derivation(configuration)
+
+    async def do_command():
+        wallet_client = await get_wallet_client(wallet_rpc_port, fingerprint)
+        sync_store: SyncStore = await load_db(db_path, derivation.prefarm_info.launcher_id)
+
+        try:
+            achs: List[ACHRecord] = await sync_store.get_ach_records(include_spent_coins=False)
+            rekeys: List[RekeyRecord] = await sync_store.get_rekey_records(include_spent_coins=False)
+
+            # Prompt the user for the action to cancel
+            if len(achs) == 0 and len(rekeys) == 0:
+                print("No actions outstanding")
+                return
+            print("Which actions would you like to cancel?:")
+            print()
+            index: int = 1
+            for ach in achs:
+                print(f"{index}) PAYMENT to {encode_puzzle_hash(ach.p2_ph, 'xch')} of amount {ach.coin.amount}")
+                index += 1
+            for rekey in rekeys:
+                print(f"{index}) REKEY from {rekey.from_root} to {rekey.to_root}")
+                index += 1
+            selected_action = int(input("(Enter index of action to cancel): "))
+            if selected_action not in range(1, index):
+                print("Invalid index specified.")
+                return
+
+            # Construct the spend for the selected index
+            pubkey_list: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
+            fee_conditions: List[Program] = []
+            fee_announcments: List[Announcement] = []
+            if fee > 0:
+                fee_conditions.append(Program.to([60, b"$"]))  # create coin announcement
+            if selected_action <= len(achs):
+                ach_record: ACHRecord = achs[selected_action - 1]
+                if fee > 0:
+                    fee_announcments.append(Announcement(ach_record.coin.name(), b"$"))
+
+                # Validate we have enough keys
+                if len(pubkey_list) != derivation.required_pubkeys:
+                    print("Incorrect number of keys to claw back selected payment")
+                    return
+
+                # Get the spend bundle
+                clawback_bundle, data_to_sign = get_ach_clawback_spend_info(
+                    ach_record.coin,
+                    pubkey_list,
+                    derivation,
+                    ach_record.p2_ph,
+                    fee_conditions,
+                )
+            else:
+                rekey_record: RekeyRecord = rekeys[selected_action - len(achs) - 1]
+                if fee > 0:
+                    fee_announcments.append(Announcement(rekey_record.coin.name(), b"$"))
+                parent_singleton: Optional[SingletonRecord] = await sync_store.get_singleton_record(
+                    rekey_record.coin.parent_coin_info
+                )
+                if parent_singleton is None:
+                    raise RuntimeError("Bad sync information. Please try a resync.")
+
+                # Validate we have enough keys
+                timelock: uint64 = rekey_record.timelock
+                required_pubkeys: Optional[int] = None
+                if timelock == derivation.prefarm_info.rekey_increments:
+                    required_pubkeys = derivation.required_pubkeys
+                else:
+                    for i in range(derivation.minimum_pubkeys, derivation.required_pubkeys):
+                        if timelock == derivation.prefarm_info.slow_rekey_timelock + (
+                            derivation.prefarm_info.rekey_increments * (derivation.required_pubkeys - i)
+                        ):
+                            required_pubkeys = i
+                            break
+                if required_pubkeys is None or len(pubkey_list) != required_pubkeys:
+                    print("Incorrect number of keys to claw back selected rekey")
+                    return
+
+                # Get the spend bundle
+                clawback_bundle, data_to_sign = get_rekey_clawback_spend_info(
+                    rekey_record.coin,
+                    pubkey_list,
+                    derivation,
+                    rekey_record.timelock,
+                    dataclasses.replace(
+                        derivation,
+                        prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=rekey_record.to_root),
+                    ),
+                    fee_conditions,
+                )
+
+            as_bls_pubkey_list = [BLSPublicKey(pk) for pk in pubkey_list]
+            agg_pk = sum(as_bls_pubkey_list, start=BLSPublicKey.zero())
+            synth_sk = BLSSecretExponent(
+                PrivateKey.from_bytes(
+                    calculate_synthetic_offset(agg_pk, DEFAULT_HIDDEN_PUZZLE_HASH).to_bytes(32, "big")
+                )
+            )
+            coin_spends = [
+                HSMCoinSpend(cs.coin, cs.puzzle_reveal.to_program(), cs.solution.to_program())
+                for cs in [*clawback_bundle.coin_spends]
+            ]
+            unsigned_spend = UnsignedSpend(
+                coin_spends,
+                [SumHint(as_bls_pubkey_list, synth_sk)],
+                [],
+                DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA,  # TODO
+            )
+
             print(bytes(unsigned_spend).hex())
         finally:
             wallet_client.close()

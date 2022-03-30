@@ -29,7 +29,7 @@ class SyncStore:
 
         await self.db_connection.execute(
             "CREATE TABLE IF NOT EXISTS singletons("
-            "   coin_id blob PRIMARY_KEY,"
+            "   coin_id blob PRIMARY KEY,"
             "   parent_id blob,"
             "   puzzle_hash blob,"
             "   amount bigint,"
@@ -46,7 +46,7 @@ class SyncStore:
 
         await self.db_connection.execute(
             "CREATE TABLE IF NOT EXISTS p2_singletons("
-            "   coin_id blob PRIMARY_KEY,"
+            "   coin_id blob PRIMARY KEY,"
             "   parent_id blob,"
             "   puzzle_hash blob,"
             "   amount bigint,"
@@ -56,7 +56,7 @@ class SyncStore:
 
         await self.db_connection.execute(
             "CREATE TABLE IF NOT EXISTS achs("
-            "   coin_id blob PRIMARY_KEY,"
+            "   coin_id blob PRIMARY KEY,"
             "   parent_id blob,"
             "   puzzle_hash blob,"
             "   amount bigint,"
@@ -70,7 +70,7 @@ class SyncStore:
 
         await self.db_connection.execute(
             "CREATE TABLE IF NOT EXISTS rekeys("
-            "   coin_id blob PRIMARY_KEY,"
+            "   coin_id blob PRIMARY KEY,"
             "   parent_id blob,"
             "   puzzle_hash blob,"
             "   amount bigint,"
@@ -99,7 +99,7 @@ class SyncStore:
                 record.generation,
                 bytes([0]) if record.puzzle_reveal is None else bytes(record.puzzle_reveal),
                 bytes([0]) if record.solution is None else bytes(record.solution),
-                0 if record.spend_type is None else bytes(record.spend_type),
+                0 if record.spend_type is None else record.spend_type.value,
                 bytes([0]) if record.spending_pubkey is None else bytes(record.spending_pubkey),
             ),
         )
@@ -193,8 +193,32 @@ class SyncStore:
             else None
         )
 
+    async def get_singleton_record(self, coin_id: bytes32) -> Optional[SingletonRecord]:
+        cursor = await self.db_connection.execute("SELECT * from singletons WHERE coin_id=?", (coin_id,))
+        record = await cursor.fetchone()
+        await cursor.close()
+        return (
+            SingletonRecord(
+                Coin(
+                    record[1],
+                    record[2],
+                    uint64(record[3]),
+                ),
+                record[4],
+                LineageProof.from_bytes(record[5]),
+                uint64(record[6]),
+                uint32(record[7]),
+                None if record[8] == bytes([0]) else SerializedProgram.from_bytes(record[8]),
+                None if record[9] == bytes([0]) else SerializedProgram.from_bytes(record[9]),
+                None if record[10] == 0 else SpendType(record[10]),
+                None if record[11] == bytes([0]) else G1Element.from_bytes(record[11]),
+            )
+            if record is not None
+            else None
+        )
+
     async def get_ach_records(self, include_spent_coins: bool = False) -> List[ACHRecord]:
-        optional_unspent_str: str = " WHERE spent_at_height>0" if include_spent_coins else ""
+        optional_unspent_str: str = "" if include_spent_coins else " WHERE spent_at_height==0"
         cursor = await self.db_connection.execute(
             f"SELECT * from achs{optional_unspent_str} ORDER BY confirmed_at_time DESC"
         )
@@ -217,7 +241,7 @@ class SyncStore:
         ]
 
     async def get_rekey_records(self, include_spent_coins: bool = False) -> List[RekeyRecord]:
-        optional_unspent_str: str = " WHERE spent_at_height>0" if include_spent_coins else ""
+        optional_unspent_str: str = "" if include_spent_coins else " WHERE spent_at_height==0"
         cursor = await self.db_connection.execute(
             f"SELECT * from rekeys{optional_unspent_str} ORDER BY confirmed_at_time DESC"
         )

@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 
 from blspy import BasicSchemeMPL, PrivateKey, G2Element
 from click.testing import CliRunner, Result
@@ -420,3 +421,86 @@ def test_init():
         latest_singleton_record, rekey_drop = asyncio.get_event_loop().run_until_complete(
             check_for_singleton_record_and_rekey()
         )
+
+        async def set_rewind_height() -> uint32:
+            try:
+                sim = await SpendSim.create(db_path="./sim.db")
+                return sim.block_height
+            finally:
+                await sim.close()
+
+        REWIND_HERE: uint32 = asyncio.get_event_loop().run_until_complete(set_rewind_height())
+
+        # Attempt to claw back both coins
+        for i in range(0, 2):
+            result = runner.invoke(
+                cli,
+                [
+                    "clawback",
+                    "--configuration",
+                    config_path,
+                    "--db-path",
+                    sync_db_path,
+                    "--pubkeys",
+                    ",".join(pubkeys_as_hex[0:3]),
+                    "--fee",
+                    100,
+                ],
+                input="1\n",
+            )
+
+            end_of_output_hex = re.compile("[a-f0-9]+$")
+            spend_hex = re.search(end_of_output_hex, result.output).group(0)
+            # Do a little bit of a signing cermony
+            clawback_bundle = UnsignedSpend.from_bytes(bytes.fromhex(spend_hex))
+            sigs: List[BLSSignature] = [
+                si.signature
+                for si in sign(clawback_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
+            ]
+            _hsms_bundle = create_spend_bundle(clawback_bundle, sigs)
+            signed_clawback_bundle = SpendBundle.from_bytes(bytes(_hsms_bundle))  # gotta convert from the hsms here
+
+            # Push the tx
+            async def push_clawback_spend():
+                try:
+                    sim = await SpendSim.create(db_path="./sim.db")
+                    sim_client = SimClient(sim)
+                    result = await sim_client.push_tx(signed_clawback_bundle)
+                    assert result[0] == MempoolInclusionStatus.SUCCESS
+                    await sim.farm_block()
+                finally:
+                    await sim.close()
+
+            asyncio.get_event_loop().run_until_complete(push_clawback_spend())
+
+            # Sync up
+            result = runner.invoke(
+                cli,
+                [
+                    "sync",
+                    "--configuration",
+                    config_path,
+                    "--db-path",
+                    sync_db_path,
+                ],
+            )
+
+            async def check_for_spent_record():
+                sync_store = await SyncStore.create(sync_db_path)
+                try:
+                    if i == 0:
+                        records = await sync_store.get_ach_records()
+                    else:
+                        records = await sync_store.get_rekey_records()
+                    assert len(records) == 0
+                finally:
+                    await sync_store.db_connection.close()
+
+            asyncio.get_event_loop().run_until_complete(check_for_spent_record())
+
+        async def rewind_sim():
+            try:
+                sim = await SpendSim.create(db_path="./sim.db")
+                await sim.rewind(REWIND_HERE)
+            finally:
+                await sim.close()

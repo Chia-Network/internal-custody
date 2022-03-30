@@ -494,7 +494,7 @@ def get_rekey_spend_info(
     )
 
 
-def get_rekey_clawback_spend_bundle(
+def get_rekey_clawback_spend_info(
     rekey_coin: Coin,
     pubkeys: List[G1Element],
     derivation: RootDerivation,

@@ -38,7 +38,7 @@ from cic.drivers.prefarm import (
     get_ach_clawforward_spend_bundle,
     get_ach_clawback_spend_info,
     get_rekey_spend_info,
-    get_rekey_clawback_spend_bundle,
+    get_rekey_clawback_spend_info,
     get_rekey_completion_spend,
     calculate_rekey_args,
 )
@@ -726,7 +726,7 @@ async def test_rekeys(setup_info, cost_logger):
             construct_singleton_inner_puzzle(new_derivation.prefarm_info).get_tree_hash(),
             new_singleton.amount,
         )
-        too_few_cancel_bundle, data_to_sign = get_rekey_clawback_spend_bundle(
+        too_few_cancel_bundle, data_to_sign = get_rekey_clawback_spend_info(
             rekey_coin,
             [ONE_PUBKEY],
             new_derivation,
@@ -750,7 +750,7 @@ async def test_rekeys(setup_info, cost_logger):
 
         # Cancel with the 3 keys
         REWIND_HERE: uint32 = setup_info.sim.block_height
-        same_number_cancel_bundle, data_to_sign = get_rekey_clawback_spend_bundle(
+        same_number_cancel_bundle, data_to_sign = get_rekey_clawback_spend_info(
             rekey_coin,
             THREE_PUBKEYS,
             new_derivation,
@@ -863,7 +863,7 @@ async def test_rekeys(setup_info, cost_logger):
             setup_info.derivation,
         )
 
-        malicious_rekey_clawback_bundle, data_to_sign = get_rekey_clawback_spend_bundle(
+        malicious_rekey_clawback_bundle, data_to_sign = get_rekey_clawback_spend_info(
             rekey_coin,
             THREE_NEW_PUBKEYS,
             new_derivation,
