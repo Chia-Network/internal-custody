@@ -576,14 +576,6 @@ def address_cmd(configuration: str, prefix: str):
     required=True,
 )
 @click.option(
-    "-wp",
-    "--wallet-rpc-port",
-    help="Set the port where the Wallet is hosting the RPC interface. See the rpc_port under wallet in config.yaml",
-    type=int,
-    default=None,
-)
-@click.option("-f", "--fingerprint", help="Set the fingerprint to specify which wallet to use", type=int, default=None)
-@click.option(
     "-pks",
     "--pubkeys",
     help="A comma separated list of pubkeys that will be signing this spend.",
@@ -624,8 +616,6 @@ def address_cmd(configuration: str, prefix: str):
 def payments_cmd(
     configuration: str,
     db_path: str,
-    wallet_rpc_port: Optional[int],
-    fingerprint: Optional[int],
     pubkeys: str,
     amount: int,
     recipient_address: Optional[str],
@@ -642,7 +632,6 @@ def payments_cmd(
         raise ValueError("You can not make payments of an odd amount")
 
     async def do_command():
-        wallet_client = await get_wallet_client(wallet_rpc_port, fingerprint)
         sync_store: SyncStore = await load_db(db_path, derivation.prefarm_info.launcher_id)
 
         try:
@@ -706,8 +695,6 @@ def payments_cmd(
             # Print the result
             print(bytes(unsigned_spend).hex())
         finally:
-            wallet_client.close()
-            await wallet_client.await_closed()
             await sync_store.db_connection.close()
 
     asyncio.get_event_loop().run_until_complete(do_command())
@@ -729,14 +716,6 @@ def payments_cmd(
     required=True,
 )
 @click.option(
-    "-wp",
-    "--wallet-rpc-port",
-    help="Set the port where the Wallet is hosting the RPC interface. See the rpc_port under wallet in config.yaml",
-    type=int,
-    default=None,
-)
-@click.option("-f", "--fingerprint", help="Set the fingerprint to specify which wallet to use", type=int, default=None)
-@click.option(
     "-pks",
     "--pubkeys",
     help="A comma separated list of pubkeys that will be signing this spend.",
@@ -751,8 +730,6 @@ def payments_cmd(
 def start_rekey_cmd(
     configuration: str,
     db_path: str,
-    wallet_rpc_port: Optional[int],
-    fingerprint: Optional[int],
     pubkeys: str,
     new_configuration: str,
 ):
@@ -769,7 +746,6 @@ def start_rekey_cmd(
         )
 
     async def do_command():
-        wallet_client = await get_wallet_client(wallet_rpc_port, fingerprint)
         sync_store: SyncStore = await load_db(db_path, derivation.prefarm_info.launcher_id)
 
         try:
@@ -812,8 +788,6 @@ def start_rekey_cmd(
             # Print the result
             print(bytes(unsigned_spend).hex())
         finally:
-            wallet_client.close()
-            await wallet_client.await_closed()
             await sync_store.db_connection.close()
 
     asyncio.get_event_loop().run_until_complete(do_command())
@@ -835,14 +809,6 @@ def start_rekey_cmd(
     required=True,
 )
 @click.option(
-    "-wp",
-    "--wallet-rpc-port",
-    help="Set the port where the Wallet is hosting the RPC interface. See the rpc_port under wallet in config.yaml",
-    type=int,
-    default=None,
-)
-@click.option("-f", "--fingerprint", help="Set the fingerprint to specify which wallet to use", type=int, default=None)
-@click.option(
     "-pks",
     "--pubkeys",
     help="A comma separated list of pubkeys that will be signing this spend.",
@@ -851,14 +817,11 @@ def start_rekey_cmd(
 def clawback_cmd(
     configuration: str,
     db_path: str,
-    wallet_rpc_port: Optional[int],
-    fingerprint: Optional[int],
     pubkeys: str,
 ):
     derivation = load_root_derivation(configuration)
 
     async def do_command():
-        wallet_client = await get_wallet_client(wallet_rpc_port, fingerprint)
         sync_store: SyncStore = await load_db(db_path, derivation.prefarm_info.launcher_id)
 
         try:
@@ -959,8 +922,6 @@ def clawback_cmd(
 
             print(bytes(unsigned_spend).hex())
         finally:
-            wallet_client.close()
-            await wallet_client.await_closed()
             await sync_store.db_connection.close()
 
     asyncio.get_event_loop().run_until_complete(do_command())
