@@ -597,12 +597,6 @@ def address_cmd(configuration: str, prefix: str):
     show_default=True,
 )
 @click.option(
-    "--fee",
-    help="The fee to attach to this transaction (in mojos)",
-    default=0,
-    show_default=True,
-)
-@click.option(
     "-t",
     "--recipient-address",
     help="The address that can claim the money after the clawback period is over (must be supplied if amount is > 0)",
@@ -634,7 +628,6 @@ def payments_cmd(
     fingerprint: Optional[int],
     pubkeys: str,
     amount: int,
-    fee: int,
     recipient_address: Optional[str],
     absorb_available_payments: bool,
     maximum_extra_cost: Optional[int],
@@ -647,8 +640,6 @@ def payments_cmd(
         raise ValueError("You must specify a recipient address for outgoing payments")
     if amount % 2 == 1:
         raise ValueError("You can not make payments of an odd amount")
-    if fee < 0:
-        raise ValueError("Fee should be >= 0")
 
     async def do_command():
         wallet_client = await get_wallet_client(wallet_rpc_port, fingerprint)
@@ -661,12 +652,7 @@ def payments_cmd(
                 raise RuntimeError("No singleton is found for this configuration.  Try `cic sync` then try again.")
             pubkey_list: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
             clawforward_ph: bytes32 = decode_puzzle_hash(recipient_address)
-            fee_conditions: List[Program] = []
-            fee_announcments: List[Announcement] = []
-            if fee > 0:
-                fee_conditions.append(Program.to([60, b"$"]))  # create coin announcement
-                fee_conditions.append(Program.to([52, fee]))  # reserve fee
-                fee_announcments.append(Announcement(current_singleton.coin.name(), b"$"))
+            fee_conditions: List[Program] = [Program.to([60, b"$"])]
 
             # Get any p2_singletons to spend
             max_num: Optional[uint32] = (
@@ -698,15 +684,6 @@ def payments_cmd(
                 additional_conditions=fee_conditions,
             )
 
-            # Get the fee transaction
-            fee_bundle: SpendBundle = (
-                await wallet_client.create_signed_transaction(
-                    [{"puzzle_hash": bytes32([0] * 32), "amount": 0}],  # TODO: this is dust, but the RPC requires it
-                    fee=uint64(fee),
-                    coin_announcements=fee_announcments,
-                )
-            ).spend_bundle
-
             # Cast everything into HSM types
             as_bls_pubkey_list = [BLSPublicKey(pk) for pk in pubkey_list]
             agg_pk = sum(as_bls_pubkey_list, start=BLSPublicKey.zero())
@@ -717,7 +694,7 @@ def payments_cmd(
             )
             coin_spends = [
                 HSMCoinSpend(cs.coin, cs.puzzle_reveal.to_program(), cs.solution.to_program())
-                for cs in [*singleton_bundle.coin_spends, *fee_bundle.coin_spends]
+                for cs in singleton_bundle.coin_spends
             ]
             unsigned_spend = UnsignedSpend(
                 coin_spends,
@@ -771,12 +748,6 @@ def payments_cmd(
     help="The configuration you would like to rekey the singleton to",
     required=True,
 )
-@click.option(
-    "--fee",
-    help="The fee to attach to this transaction (in mojos)",
-    default=0,
-    show_default=True,
-)
 def start_rekey_cmd(
     configuration: str,
     db_path: str,
@@ -784,7 +755,6 @@ def start_rekey_cmd(
     fingerprint: Optional[int],
     pubkeys: str,
     new_configuration: str,
-    fee: int,
 ):
     derivation = load_root_derivation(configuration)
     new_derivation: RootDerivation = load_root_derivation(new_configuration)
@@ -808,12 +778,7 @@ def start_rekey_cmd(
             if current_singleton is None:
                 raise RuntimeError("No singleton is found for this configuration.  Try `cic sync` then try again.")
             pubkey_list: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
-            fee_conditions: List[Program] = []
-            fee_announcments: List[Announcement] = []
-            if fee > 0:
-                fee_conditions.append(Program.to([60, b"$"]))  # create coin announcement
-                fee_conditions.append(Program.to([52, fee]))  # reserve fee
-                fee_announcments.append(Announcement(current_singleton.coin.name(), b"$"))
+            fee_conditions: List[Program] = [Program.to([60, b"$"])]
 
             # Get the spend bundle
             singleton_bundle, data_to_sign = get_rekey_spend_info(
@@ -825,15 +790,6 @@ def start_rekey_cmd(
                 fee_conditions,
             )
 
-            # Get the fee transaction
-            fee_bundle: SpendBundle = (
-                await wallet_client.create_signed_transaction(
-                    [{"puzzle_hash": bytes32([0] * 32), "amount": 0}],  # TODO: this is dust, but the RPC requires it
-                    fee=uint64(fee),
-                    coin_announcements=fee_announcments,
-                )
-            ).spend_bundle
-
             # Cast everything into HSM types
             as_bls_pubkey_list = [BLSPublicKey(pk) for pk in pubkey_list]
             agg_pk = sum(as_bls_pubkey_list, start=BLSPublicKey.zero())
@@ -844,7 +800,7 @@ def start_rekey_cmd(
             )
             coin_spends = [
                 HSMCoinSpend(cs.coin, cs.puzzle_reveal.to_program(), cs.solution.to_program())
-                for cs in [*singleton_bundle.coin_spends, *fee_bundle.coin_spends]
+                for cs in singleton_bundle.coin_spends
             ]
             unsigned_spend = UnsignedSpend(
                 coin_spends,
@@ -892,19 +848,12 @@ def start_rekey_cmd(
     help="A comma separated list of pubkeys that will be signing this spend.",
     required=True,
 )
-@click.option(
-    "--fee",
-    help="The fee to attach to this transaction (in mojos)",
-    default=0,
-    show_default=True,
-)
 def clawback_cmd(
     configuration: str,
     db_path: str,
     wallet_rpc_port: Optional[int],
     fingerprint: Optional[int],
     pubkeys: str,
-    fee: int,
 ):
     derivation = load_root_derivation(configuration)
 
@@ -936,14 +885,9 @@ def clawback_cmd(
 
             # Construct the spend for the selected index
             pubkey_list: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
-            fee_conditions: List[Program] = []
-            fee_announcments: List[Announcement] = []
-            if fee > 0:
-                fee_conditions.append(Program.to([60, b"$"]))  # create coin announcement
+            fee_conditions: List[Program] = [Program.to([60, b"$"])]
             if selected_action <= len(achs):
                 ach_record: ACHRecord = achs[selected_action - 1]
-                if fee > 0:
-                    fee_announcments.append(Announcement(ach_record.coin.name(), b"$"))
 
                 # Validate we have enough keys
                 if len(pubkey_list) != derivation.required_pubkeys:
@@ -960,8 +904,6 @@ def clawback_cmd(
                 )
             else:
                 rekey_record: RekeyRecord = rekeys[selected_action - len(achs) - 1]
-                if fee > 0:
-                    fee_announcments.append(Announcement(rekey_record.coin.name(), b"$"))
                 parent_singleton: Optional[SingletonRecord] = await sync_store.get_singleton_record(
                     rekey_record.coin.parent_coin_info
                 )

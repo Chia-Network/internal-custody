@@ -276,8 +276,6 @@ def test_init():
                 ",".join(pubkeys_as_hex[0:3]),
                 "--amount",
                 2,
-                "--fee",
-                100,
                 "--recipient-address",
                 encode_puzzle_hash(ACS_PH, prefix="xch"),
                 "--absorb-available-payments",
@@ -364,8 +362,6 @@ def test_init():
                 ",".join(pubkeys_as_hex[0:3]),
                 "--new-configuration",
                 new_derivation_filepath,
-                "--fee",
-                100,
             ],
         )
 
@@ -443,8 +439,6 @@ def test_init():
                     sync_db_path,
                     "--pubkeys",
                     ",".join(pubkeys_as_hex[0:3]),
-                    "--fee",
-                    100,
                 ],
                 input="1\n",
             )
