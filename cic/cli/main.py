@@ -41,6 +41,8 @@ from cic.drivers.prefarm import (
     get_rekey_spend_info,
     get_ach_clawback_spend_info,
     get_rekey_clawback_spend_info,
+    get_ach_clawforward_spend_bundle,
+    get_rekey_completion_spend,
     get_spend_type_for_solution,
     get_spending_pubkey_for_solution,
     get_spend_params_for_ach_creation,
@@ -867,11 +869,6 @@ def clawback_cmd(
                 )
             else:
                 rekey_record: RekeyRecord = rekeys[selected_action - len(achs) - 1]
-                parent_singleton: Optional[SingletonRecord] = await sync_store.get_singleton_record(
-                    rekey_record.coin.parent_coin_info
-                )
-                if parent_singleton is None:
-                    raise RuntimeError("Bad sync information. Please try a resync.")
 
                 # Validate we have enough keys
                 timelock: uint64 = rekey_record.timelock
@@ -911,7 +908,7 @@ def clawback_cmd(
             )
             coin_spends = [
                 HSMCoinSpend(cs.coin, cs.puzzle_reveal.to_program(), cs.solution.to_program())
-                for cs in [*clawback_bundle.coin_spends]
+                for cs in clawback_bundle.coin_spends
             ]
             unsigned_spend = UnsignedSpend(
                 coin_spends,
@@ -921,6 +918,109 @@ def clawback_cmd(
             )
 
             print(bytes(unsigned_spend).hex())
+        finally:
+            await sync_store.db_connection.close()
+
+    asyncio.get_event_loop().run_until_complete(do_command())
+
+
+@cli.command("complete", short_help="Complete a withdrawal or rekey attempt (will be prompted which one)")
+@click.option(
+    "-c",
+    "--configuration",
+    help="The configuration file for the singleton who is handling the payment (default: ./Configuration (******).txt)",
+    default=None,
+    required=True,
+)
+@click.option(
+    "-db",
+    "--db-path",
+    help="The file path to the sync DB (default: ./sync (******).sqlite)",
+    default="./",
+    required=True,
+)
+def complete_cmd(
+    configuration: str,
+    db_path: str,
+):
+    derivation = load_root_derivation(configuration)
+
+    async def do_command():
+        sync_store: SyncStore = await load_db(db_path, derivation.prefarm_info.launcher_id)
+
+        try:
+            achs: List[ACHRecord] = await sync_store.get_ach_records(include_spent_coins=False)
+            rekeys: List[RekeyRecord] = await sync_store.get_rekey_records(include_spent_coins=False)
+
+            # Prompt the user for the action to complete
+            if len(achs) == 0 and len(rekeys) == 0:
+                print("No actions outstanding")
+                return
+            print("Which actions would you like to complete?:")
+            print()
+            index: int = 1
+            for ach in achs:
+                if ach.confirmed_at_time + derivation.prefarm_info.payment_clawback_period < time.time():
+                    prefix = f"{index})"
+                    index += 1
+                else:
+                    prefix = "-)"
+                print(f"{prefix} PAYMENT to {encode_puzzle_hash(ach.p2_ph, 'xch')} of amount {ach.coin.amount}")
+
+            for rekey in rekeys:
+                if rekey.confirmed_at_time + derivation.prefarm_info.rekey_clawback_period < time.time():
+                    prefix = f"{index})"
+                    index += 1
+                else:
+                    prefix = "-)"
+                print(f"{prefix} REKEY from {rekey.from_root} to {rekey.to_root}")
+            if index == 1:
+                print("No actions can be completed at this time.")
+                return
+            selected_action = int(input("(Enter index of action to complete): "))
+            if selected_action not in range(1, index):
+                print("Invalid index specified.")
+                return
+
+            # Construct the spend for the selected index
+            if selected_action <= len(achs):
+                ach_record: ACHRecord = achs[selected_action - 1]
+                # Get the spend bundle
+                completion_bundle = get_ach_clawforward_spend_bundle(
+                    ach_record.coin,
+                    derivation,
+                    ach_record.p2_ph,
+                )
+            else:
+                rekey_record: RekeyRecord = rekeys[selected_action - len(achs) - 1]
+                current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
+                if current_singleton is None:
+                    raise RuntimeError("No singleton is found for this configuration.  Try `cic sync` then try again.")
+                parent_singleton: Optional[SingletonRecord] = await sync_store.get_singleton_record(
+                    rekey_record.coin.parent_coin_info
+                )
+                if parent_singleton is None:
+                    raise RuntimeError("Bad sync information. Please try a resync.")
+
+                # Get the spend bundle
+                completion_bundle = get_rekey_completion_spend(
+                    current_singleton.coin,
+                    rekey_record.coin,
+                    derivation.pubkey_list[0 : derivation.required_pubkeys],
+                    derivation,
+                    current_singleton.lineage_proof,
+                    LineageProof(
+                        parent_singleton.coin.parent_coin_info,
+                        construct_singleton_inner_puzzle(derivation.prefarm_info).get_tree_hash(),
+                        parent_singleton.coin.amount,
+                    ),
+                    dataclasses.replace(
+                        derivation,
+                        prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=rekey_record.to_root),
+                    ),
+                )
+
+            print(bytes(completion_bundle).hex())
         finally:
             await sync_store.db_connection.close()
 

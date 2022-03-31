@@ -483,18 +483,86 @@ def test_init():
                 sync_store = await SyncStore.create(sync_db_path)
                 try:
                     if i == 0:
-                        records = await sync_store.get_ach_records()
+                        records = await sync_store.get_ach_records(include_spent_coins=True)
                     else:
-                        records = await sync_store.get_rekey_records()
-                    assert len(records) == 0
+                        records = await sync_store.get_rekey_records(include_spent_coins=True)
+                    assert len(records) == 1
+                    assert not records[0].completed
                 finally:
                     await sync_store.db_connection.close()
 
             asyncio.get_event_loop().run_until_complete(check_for_spent_record())
 
-        async def rewind_sim():
+        async def rewind():
             try:
+                sync_store = await SyncStore.create(sync_db_path)
                 sim = await SpendSim.create(db_path="./sim.db")
                 await sim.rewind(REWIND_HERE)
+                sim.pass_time(max(prefarm_info.payment_clawback_period, prefarm_info.rekey_clawback_period))
+                await sim.farm_block()
+                await sync_store.db_wrapper.begin_transaction()
+                await sync_store.add_ach_record(ach_payment)
+                await sync_store.add_rekey_record(rekey_drop)
+                await sync_store.db_wrapper.commit_transaction()
             finally:
+                await sync_store.db_connection.close()
                 await sim.close()
+
+        asyncio.get_event_loop().run_until_complete(rewind())
+
+        # Attempt to complete both coins
+        for i in range(0, 2):
+            result = runner.invoke(
+                cli,
+                [
+                    "complete",
+                    "--configuration",
+                    config_path,
+                    "--db-path",
+                    sync_db_path,
+                ],
+                input="1\n",
+            )
+
+            end_of_output_hex = re.compile("[a-f0-9]+$")
+            spend_hex = re.search(end_of_output_hex, result.output).group(0)
+            completion_bundle = SpendBundle.from_bytes(bytes.fromhex(spend_hex))
+
+            # Push the tx
+            async def push_completion_spend():
+                try:
+                    sim = await SpendSim.create(db_path="./sim.db")
+                    sim_client = SimClient(sim)
+                    result = await sim_client.push_tx(completion_bundle)
+                    assert result[0] == MempoolInclusionStatus.SUCCESS
+                    await sim.farm_block()
+                finally:
+                    await sim.close()
+
+            asyncio.get_event_loop().run_until_complete(push_completion_spend())
+
+            # Sync up
+            result = runner.invoke(
+                cli,
+                [
+                    "sync",
+                    "--configuration",
+                    config_path,
+                    "--db-path",
+                    sync_db_path,
+                ],
+            )
+
+            async def check_for_spent_record():
+                sync_store = await SyncStore.create(sync_db_path)
+                try:
+                    if i == 0:
+                        records = await sync_store.get_ach_records(include_spent_coins=True)
+                    else:
+                        records = await sync_store.get_rekey_records(include_spent_coins=True)
+                    assert len(records) == 1
+                    assert records[0].completed
+                finally:
+                    await sync_store.db_connection.close()
+
+            asyncio.get_event_loop().run_until_complete(check_for_spent_record())
