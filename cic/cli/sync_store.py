@@ -217,8 +217,8 @@ class SyncStore:
             else None
         )
 
-    async def get_ach_records(self, include_spent_coins: bool = False) -> List[ACHRecord]:
-        optional_unspent_str: str = "" if include_spent_coins else " WHERE spent_at_height==0"
+    async def get_ach_records(self, include_completed_coins: bool = False) -> List[ACHRecord]:
+        optional_unspent_str: str = "" if include_completed_coins else " WHERE completed==0"
         cursor = await self.db_connection.execute(
             f"SELECT * from achs{optional_unspent_str} ORDER BY confirmed_at_time DESC"
         )
@@ -240,8 +240,8 @@ class SyncStore:
             for record in records
         ]
 
-    async def get_rekey_records(self, include_spent_coins: bool = False) -> List[RekeyRecord]:
-        optional_unspent_str: str = "" if include_spent_coins else " WHERE spent_at_height==0"
+    async def get_rekey_records(self, include_completed_coins: bool = False) -> List[RekeyRecord]:
+        optional_unspent_str: str = "" if include_completed_coins else " WHERE completed==0"
         cursor = await self.db_connection.execute(
             f"SELECT * from rekeys{optional_unspent_str} ORDER BY confirmed_at_time DESC"
         )

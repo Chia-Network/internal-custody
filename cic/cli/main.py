@@ -484,14 +484,16 @@ def sync_cmd(
                 ]
             )
             # Check the status of any drop coins
-            ach_coins: List[ACHRecord] = await sync_store.get_ach_records(include_spent_coins=False)
-            rekey_coins: List[ACHRecord] = await sync_store.get_rekey_records(include_spent_coins=False)
+            ach_coins: List[ACHRecord] = await sync_store.get_ach_records(include_completed_coins=False)
+            rekey_coins: List[ACHRecord] = await sync_store.get_rekey_records(include_completed_coins=False)
             ach_ids: List[bytes32] = [ach.coin.name() for ach in ach_coins]
             rekey_ids: List[bytes32] = [rekey.coin.name() for rekey in rekey_coins]
             all_drop_coin_records: List[CoinRecord] = await node_client.get_coin_records_by_names(
                 [*ach_ids, *rekey_ids], include_spent_coins=True
             )
-            for spent_drop_coin in [cr for cr in all_drop_coin_records if cr.spent_block_index > 0]:
+            all_spent_drop_coins: List[CoinRecord] = [cr for cr in all_drop_coin_records if cr.spent_block_index > 0]
+            all_unspent_drop_coins: List[CoinRecord] = [cr for cr in all_drop_coin_records if cr.spent_block_index == 0]
+            for spent_drop_coin in all_spent_drop_coins:
                 if spent_drop_coin.coin.name() in ach_ids:
                     current_ach_record: ACHRecord = [
                         r for r in ach_coins if r.coin.name() == spent_drop_coin.coin.name()
@@ -529,6 +531,13 @@ def sync_cmd(
                             completed=completed,
                         )
                     )
+            for outdated_rekey in [
+                r
+                for r in rekey_coins
+                if r.coin.name() in (cr.coin.name() for cr in all_unspent_drop_coins)
+                and r.from_root != current_singleton.puzzle_root
+            ]:
+                await sync_store.add_rekey_record(dataclasses.replace(outdated_rekey, completed=False))
         except Exception as e:
             await sync_store.db_connection.close()
             raise e
@@ -827,8 +836,8 @@ def clawback_cmd(
         sync_store: SyncStore = await load_db(db_path, derivation.prefarm_info.launcher_id)
 
         try:
-            achs: List[ACHRecord] = await sync_store.get_ach_records(include_spent_coins=False)
-            rekeys: List[RekeyRecord] = await sync_store.get_rekey_records(include_spent_coins=False)
+            achs: List[ACHRecord] = await sync_store.get_ach_records(include_completed_coins=False)
+            rekeys: List[RekeyRecord] = await sync_store.get_rekey_records(include_completed_coins=False)
 
             # Prompt the user for the action to cancel
             if len(achs) == 0 and len(rekeys) == 0:
@@ -949,8 +958,8 @@ def complete_cmd(
         sync_store: SyncStore = await load_db(db_path, derivation.prefarm_info.launcher_id)
 
         try:
-            achs: List[ACHRecord] = await sync_store.get_ach_records(include_spent_coins=False)
-            rekeys: List[RekeyRecord] = await sync_store.get_rekey_records(include_spent_coins=False)
+            achs: List[ACHRecord] = await sync_store.get_ach_records(include_completed_coins=False)
+            rekeys: List[RekeyRecord] = await sync_store.get_rekey_records(include_completed_coins=False)
 
             # Prompt the user for the action to complete
             if len(achs) == 0 and len(rekeys) == 0:

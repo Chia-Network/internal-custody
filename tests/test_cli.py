@@ -328,7 +328,7 @@ def test_init():
                 assert singleton_record != latest_singleton_record
                 # +1 from the launch, -2 from the payment
                 assert singleton_record.coin.amount == prefarm_info.starting_amount - 1
-                ach_record: ACHRecord = (await sync_store.get_ach_records(include_spent_coins=False))[0]
+                ach_record: ACHRecord = (await sync_store.get_ach_records(include_completed_coins=False))[0]
                 return singleton_record, ach_record
             finally:
                 await sync_store.db_connection.close()
@@ -409,7 +409,7 @@ def test_init():
                 singleton_record: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
                 assert singleton_record is not None
                 assert singleton_record != latest_singleton_record
-                rekey_record: RekeyRecord = (await sync_store.get_rekey_records(include_spent_coins=False))[0]
+                rekey_record: RekeyRecord = (await sync_store.get_rekey_records(include_completed_coins=False))[0]
                 return singleton_record, rekey_record
             finally:
                 await sync_store.db_connection.close()
@@ -489,9 +489,9 @@ def test_init():
                 sync_store = await SyncStore.create(sync_db_path)
                 try:
                     if i == 0:
-                        records = await sync_store.get_ach_records(include_spent_coins=True)
+                        records = await sync_store.get_ach_records(include_completed_coins=True)
                     else:
-                        records = await sync_store.get_rekey_records(include_spent_coins=True)
+                        records = await sync_store.get_rekey_records(include_completed_coins=True)
                     assert len(records) == 1
                     assert not records[0].completed
                 finally:
@@ -560,9 +560,9 @@ def test_init():
                 sync_store = await SyncStore.create(sync_db_path)
                 try:
                     if i == 0:
-                        records = await sync_store.get_ach_records(include_spent_coins=True)
+                        records = await sync_store.get_ach_records(include_completed_coins=True)
                     else:
-                        records = await sync_store.get_rekey_records(include_spent_coins=True)
+                        records = await sync_store.get_rekey_records(include_completed_coins=True)
                     assert len(records) == 1
                     assert records[0].completed
                 finally:
