@@ -1027,6 +1027,76 @@ def complete_cmd(
     asyncio.get_event_loop().run_until_complete(do_command())
 
 
+@cli.command("increase_security_level", short_help="Initiate an increase of the number of keys required for withdrawal")
+@click.option(
+    "-c",
+    "--configuration",
+    help="The configuration file for the singleton who is handling the payment (default: ./Configuration (******).txt)",
+    default=None,
+    required=True,
+)
+@click.option(
+    "-db",
+    "--db-path",
+    help="The file path to the sync DB (default: ./sync (******).sqlite)",
+    default="./",
+    required=True,
+)
+@click.option(
+    "-pks",
+    "--pubkeys",
+    help="A comma separated list of pubkeys that will be signing this spend.",
+    required=True,
+)
+def increase_cmd(
+    configuration: str,
+    db_path: str,
+    pubkeys: str,
+):
+    derivation = load_root_derivation(configuration)
+
+    async def do_command():
+        sync_store: SyncStore = await load_db(db_path, derivation.prefarm_info.launcher_id)
+        try:
+            current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
+            if current_singleton is None:
+                raise RuntimeError("No singleton is found for this configuration.  Try `cic sync` then try again.")
+            pubkey_list: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
+            fee_conditions: List[Program] = [Program.to([60, b"$"])]
+
+            # Validate we have enough pubkeys
+            if len(pubkey_list) < derivation.required_pubkeys:
+                print("Not enough keys to increase the security level")
+                return
+
+            # Create the spend
+            lock_bundle, data_to_sign = get_rekey_spend_info(
+                current_singleton.coin,
+                pubkey_list,
+                derivation,
+                current_singleton.lineage_proof,
+                additional_conditions=fee_conditions,
+            )
+
+            as_bls_pubkey_list = [BLSPublicKey(pk) for pk in pubkey_list]
+            coin_spends = [
+                HSMCoinSpend(cs.coin, cs.puzzle_reveal.to_program(), cs.solution.to_program())
+                for cs in lock_bundle.coin_spends
+            ]
+            unsigned_spend = UnsignedSpend(
+                coin_spends,
+                [SumHint(as_bls_pubkey_list, BLSSecretExponent.zero())],
+                [],
+                DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA,  # TODO
+            )
+
+            print(bytes(unsigned_spend).hex())
+        finally:
+            await sync_store.db_connection.close()
+
+    asyncio.get_event_loop().run_until_complete(do_command())
+
+
 def main() -> None:
     cli()  # pylint: disable=no-value-for-parameter
 

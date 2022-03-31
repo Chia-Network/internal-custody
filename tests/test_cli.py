@@ -418,8 +418,14 @@ def test_init():
             check_for_singleton_record_and_rekey()
         )
 
+        db_backup_path = "./db_backup.sqlite"
+
         async def set_rewind_height() -> uint32:
             try:
+                with open(db_backup_path, "wb") as backup:
+                    with open(sync_db_path, "rb") as file:
+                        backup.write(file.read())
+
                 sim = await SpendSim.create(db_path="./sim.db")
                 return sim.block_height
             finally:
@@ -495,17 +501,14 @@ def test_init():
 
         async def rewind():
             try:
-                sync_store = await SyncStore.create(sync_db_path)
                 sim = await SpendSim.create(db_path="./sim.db")
                 await sim.rewind(REWIND_HERE)
                 sim.pass_time(max(prefarm_info.payment_clawback_period, prefarm_info.rekey_clawback_period))
                 await sim.farm_block()
-                await sync_store.db_wrapper.begin_transaction()
-                await sync_store.add_ach_record(ach_payment)
-                await sync_store.add_rekey_record(rekey_drop)
-                await sync_store.db_wrapper.commit_transaction()
+                with open(db_backup_path, "rb") as backup:
+                    with open(sync_db_path, "wb") as file:
+                        file.write(backup.read())
             finally:
-                await sync_store.db_connection.close()
                 await sim.close()
 
         asyncio.get_event_loop().run_until_complete(rewind())
@@ -566,3 +569,51 @@ def test_init():
                     await sync_store.db_connection.close()
 
             asyncio.get_event_loop().run_until_complete(check_for_spent_record())
+
+        async def rewind():
+            try:
+                sim = await SpendSim.create(db_path="./sim.db")
+                await sim.rewind(REWIND_HERE)
+                with open(db_backup_path, "rb") as backup:
+                    with open(sync_db_path, "wb") as file:
+                        file.write(backup.read())
+            finally:
+                await sim.close()
+
+        asyncio.get_event_loop().run_until_complete(rewind())
+
+        # Try a lock level increase
+        result = runner.invoke(
+            cli,
+            [
+                "increase_security_level",
+                "--configuration",
+                config_path,
+                "--db-path",
+                sync_db_path,
+                "--pubkeys",
+                ",".join(pubkeys_as_hex[0:3]),
+            ],
+        )
+
+        # Do a little bit of a signing cermony
+        lock_bundle = UnsignedSpend.from_bytes(bytes.fromhex(result.output))
+        sigs: List[BLSSignature] = [
+            si.signature
+            for si in sign(lock_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
+        ]
+        _hsms_bundle = create_spend_bundle(lock_bundle, sigs)
+        signed_lock_bundle = SpendBundle.from_bytes(bytes(_hsms_bundle))  # gotta convert from the hsms here
+
+        # Push the tx
+        async def push_lock_spend():
+            try:
+                sim = await SpendSim.create(db_path="./sim.db")
+                sim_client = SimClient(sim)
+                result = await sim_client.push_tx(signed_lock_bundle)
+                assert result[0] == MempoolInclusionStatus.SUCCESS
+                await sim.farm_block()
+            finally:
+                await sim.close()
+
+        asyncio.get_event_loop().run_until_complete(push_lock_spend())
