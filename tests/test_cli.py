@@ -73,7 +73,7 @@ def test_init():
             cli,
             [
                 "init",
-                "--filepath",
+                "--directory",
                 "./infos/",
                 "--date",
                 prefarm_info.start_date,
@@ -185,6 +185,40 @@ def test_init():
                 await sync_store.db_connection.close()
 
         latest_singleton_record = asyncio.get_event_loop().run_until_complete(check_for_singleton_record())
+
+        # Test the other derive_root options
+        result = runner.invoke(
+            cli,
+            [
+                "derive_root",
+                "--db-path",
+                sync_db_path,
+                "--pubkeys",
+                ",".join(pubkeys_as_hex),
+                "--initial-lock-level",
+                uint32(3),
+                "--slow-penalty",
+                uint64(45),
+                "--rekey-timelock",
+                uint64(15),
+                "--validate-against",
+                config_path,
+            ],
+        )
+        assert "Configuration successfully validated" in result.output
+
+        result = runner.invoke(
+            cli,
+            [
+                "export_root",
+                "--filename",
+                config_path,
+                "--db-path",
+                sync_db_path,
+            ],
+        )
+        with open(config_path, "rb") as file:
+            assert RootDerivation.from_bytes(file.read()) == derivation
 
         # Test our p2_singleton address creator
         result = runner.invoke(
@@ -560,6 +594,31 @@ def test_init():
                     await sync_store.db_connection.close()
 
             asyncio.get_event_loop().run_until_complete(check_for_spent_record())
+
+        # Check to see that updating the config works
+        result = runner.invoke(
+            cli,
+            [
+                "update_config",
+                "--configuration",
+                new_derivation_filepath,
+                "--db-path",
+                sync_db_path,
+            ],
+        )
+        assert "Configuration update successful" in result.output
+
+        result = runner.invoke(
+            cli,
+            [
+                "update_config",
+                "--configuration",
+                new_derivation_filepath,
+                "--db-path",
+                sync_db_path,
+            ],
+        )
+        assert "The configuration of this sync DB is not outdated" in result.output
 
         async def rewind():
             try:

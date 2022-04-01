@@ -286,7 +286,7 @@ class SyncStore:
 
         return [Coin(coin[1], coin[2], uint64(coin[3])) for coin in coins]
 
-    async def add_configuration(self, configuration: Union[PrefarmInfo, RootDerivation]) -> None:
+    async def add_configuration(self, configuration: Union[PrefarmInfo, RootDerivation], outdated: bool = False) -> None:
         # Validate this is not a second configuration
         cursor = await self.db_connection.execute("SELECT * FROM configuration_info")
         info = await cursor.fetchone()
@@ -295,7 +295,7 @@ class SyncStore:
             try:
                 valid = PrefarmInfo.from_bytes(info[1]).is_valid_update(configuration)
             except AssertionError:
-                valid = RootDerivation.from_bytes(info[1]).prefarm_info.is_valid_update(configuration)
+                valid = RootDerivation.from_bytes(info[1]).prefarm_info.is_valid_update(configuration.prefarm_info)
             if not valid:
                 raise ValueError("The specified configuration cannot be a valid update of the existing configuration")
 
@@ -305,7 +305,7 @@ class SyncStore:
         except AttributeError:
             launcher_id = configuration.prefarm_info.launcher_id  # type: ignore
         cursor = await self.db_connection.execute(
-            "INSERT OR REPLACE INTO configuration_info VALUES(?, ?, ?)", (launcher_id, bytes(configuration), 0)
+            "INSERT OR REPLACE INTO configuration_info VALUES(?, ?, ?)", (launcher_id, bytes(configuration), 1 if outdated else 0)
         )
         await cursor.close()
 

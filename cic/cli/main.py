@@ -124,7 +124,7 @@ def cli(ctx: click.Context) -> None:
 
 @cli.command("init", short_help="Create a configuration file for the prefarm")
 @click.option(
-    "-f", "--filepath", help="The filepath at which to create the configuration file", default=".", required=True
+    "-d", "--directory", help="The directory in which to create the configuration file", default=".", required=True
 )
 @click.option("-d", "--date", help="Unix time at which withdrawals become possible", required=True)
 @click.option("-r", "--rate", help="Mojos that can be withdrawn per second", required=True)
@@ -150,7 +150,7 @@ def cli(ctx: click.Context) -> None:
     required=True,
 )
 def init_cmd(
-    filepath: str,
+    directory: str,
     date: int,
     rate: int,
     amount: int,
@@ -169,11 +169,13 @@ def init_cmd(
         uint64(rekey_cancel),
     )
 
-    path = Path(filepath)
-    if path.is_dir():
-        path = path.joinpath("Configuration (needs derivation).txt")
+    path = Path(directory)
+    path_1 = path.joinpath("Configuration (needs derivation).txt")
+    path_2 = path.joinpath("Observer Info.txt")
 
-    with open(path, "wb") as file:
+    with open(path_1, "wb") as file:
+        file.write(bytes(prefarm_info))
+    with open(path_2, "wb") as file:
         file.write(bytes(prefarm_info))
 
 
@@ -181,9 +183,14 @@ def init_cmd(
 @click.option(
     "-c",
     "--configuration",
-    help="The configuration file with which to derive the root",
-    default="./Configuration (needs derivation).txt",
-    required=True,
+    help="The configuration file with which to derive the root (default: ./Configuration (needs derivation).txt)",
+    default=None,
+)
+@click.option(
+    "-db",
+    "--db-path",
+    help="Optionally specify a DB path to find the configuration from",
+    default=None,
 )
 @click.option("-pks", "--pubkeys", help="A comma separated list of pubkeys to derive a puzzle for", required=True)
 @click.option(
@@ -212,19 +219,38 @@ def init_cmd(
     required=True,
 )
 @click.option("-sp", "--slow-penalty", help="The time penalty for performing a slow rekey (in seconds)", required=True)
+@click.option(
+    "-va",
+    "--validate-against",
+    help="Specify a configuration file to check whether it matches the specified parameters",
+    default=None,
+)
 def derive_cmd(
-    configuration: str,
+    configuration: Optional[str],
+    db_path: Optional[str],
     pubkeys: str,
     initial_lock_level: int,
     minimum_pks: int,
     rekey_timelock: int,
     slow_penalty: int,
+    validate_against: Optional[str],
     maximum_lock_level: Optional[int] = None,
 ):
-    with open(Path(configuration), "rb") as file:
-        prefarm_info = PrefarmInfo.from_bytes(file.read())
-    pubkey_list: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
+    if configuration is not None:
+        with open(Path(configuration), "rb") as file:
+            prefarm_info = PrefarmInfo.from_bytes(file.read())
+    elif db_path is not None:
+        async def get_prefarm_info() -> PrefarmInfo:
+            sync_store = await load_db(db_path)
+            try:
+                return await sync_store.get_configuration(True, block_outdated=False)
+            finally:
+                await sync_store.db_connection.close()
+        prefarm_info = asyncio.get_event_loop().run_until_complete(get_prefarm_info())
+    else:
+        raise ValueError("A configuration or DB path is required.")
 
+    pubkey_list: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
     derivation: RootDerivation = calculate_puzzle_root(
         prefarm_info,
         pubkey_list,
@@ -235,10 +261,17 @@ def derive_cmd(
         rekey_timelock,
     )
 
-    with open(Path(configuration), "wb") as file:
-        file.write(bytes(derivation))
-    if "needs derivation" in configuration:
-        os.rename(Path(configuration), Path("awaiting launch".join(configuration.split("needs derivation"))))
+    if validate_against is None:
+        with open(Path(configuration), "wb") as file:
+            file.write(bytes(derivation))
+        if "needs derivation" in configuration:
+            os.rename(Path(configuration), Path("awaiting launch".join(configuration.split("needs derivation"))))
+    else:
+        validation_info = load_prefarm_info(validate_against)
+        if validation_info.puzzle_root == derivation.prefarm_info.puzzle_root:
+            print("Configuration successfully validated")
+        else:
+            print("Configuration does not match specified parameters")
 
 
 @cli.command("launch_singleton", short_help="Use 1 mojo to launch the singleton that will control the funds")
@@ -332,11 +365,95 @@ def launch_cmd(
     asyncio.get_event_loop().run_until_complete(do_command())
 
 
+@cli.command("update_config", short_help="Update an outdated config in a sync DB with a new config")
+@click.option(
+    "-c",
+    "--configuration",
+    help="The configuration file with which to initialize a sync database (default: ./Configuration (******).txt)",
+    default=None,
+)
+@click.option(
+    "-db",
+    "--db-path",
+    help="The file path to initialize/find the sync database at (default: ./sync (******).sqlite)",
+    default="./",
+    required=True,
+)
+def update_cmd(
+    configuration: Optional[str],
+    db_path: str,
+):
+    async def do_command():
+        sync_store: SyncStore = await load_db(db_path)
+        try:
+            if not await sync_store.is_configuration_outdated():
+                print("The configuration of this sync DB is not outdated")
+            else:
+                try:
+                    db_config = load_root_derivation(configuration)
+                    puzzle_root = db_config.prefarm_info.puzzle_root
+                except ValueError:
+                    db_config = load_prefarm_info(configuration)
+                    puzzle_root = db_config.puzzle_root
+                latest_singleton = await sync_store.get_latest_singleton()
+                if latest_singleton.puzzle_root != puzzle_root:
+                    print("Completing update, but configuration is still outdated")
+                    outdated = True
+                else:
+                    outdated = False
+                await sync_store.db_wrapper.begin_transaction()
+                await sync_store.add_configuration(db_config, outdated)
+                await sync_store.db_wrapper.commit_transaction()
+                print("Configuration update successful")
+        finally:
+            await sync_store.db_connection.close()
+
+    asyncio.get_event_loop().run_until_complete(do_command())
+
+
+@cli.command("export_config", short_help="Export a copy of the current DB's config")
+@click.option(
+    "-f",
+    "--filename",
+    help="The file path to export the config to (default: ./Configuration (******).sqlite)",
+    default=None,
+)
+@click.option(
+    "-db",
+    "--db-path",
+    help="The file path to initialize/find the sync database at (default: ./sync (******).sqlite)",
+    default="./",
+    required=True,
+)
+def export_cmd(
+    filename: Optional[str],
+    db_path: str,
+):
+    async def do_command():
+        sync_store: SyncStore = await load_db(db_path)
+        try:
+            try:
+                configuration = sync_store.get_configuration(False, block_outdated=False)
+                puzzle_root = db_config.prefarm_info.puzzle_root
+            except ValueError:
+                configuration = sync_store.get_configuration(True, block_outdated=False)
+                puzzle_root = db_config.puzzle_root
+            if filename is None:
+                filename = f"Configuration ({puzzle_root[0:3].hex()}).txt"
+            with open(Path(filename), "wb") as file:
+                file.write(bytes(configuration))
+            print(f"Config successfully exported to {filename}")
+        finally:
+            await sync_store.db_connection.close()
+
+    asyncio.get_event_loop().run_until_complete(do_command())
+
+
 @cli.command("sync", short_help="Sync a singleton from an existing configuration")
 @click.option(
     "-c",
     "--configuration",
-    help="The configuration file for the singleton to sync (default: ./Configuration (******).txt)",
+    help="The configuration file with which to initialize a sync database (default: ./Configuration (******).txt)",
     default=None,
 )
 @click.option(
@@ -375,7 +492,7 @@ def sync_cmd(
                 await sync_store.add_configuration(db_config)
             else:
                 sync_store: SyncStore = await load_db(db_path)
-                prefarm_info = await sync_store.get_configuration(public=True, block_outdated=True)
+                prefarm_info = await sync_store.get_configuration(public=True, block_outdated=False)
                 await sync_store.db_wrapper.begin_transaction()
 
             current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
