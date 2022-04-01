@@ -12,7 +12,6 @@ from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.coin_spend import CoinSpend
-from chia.types.mempool_inclusion_status import MempoolInclusionStatus
 from chia.types.spend_bundle import SpendBundle
 from chia.util.bech32m import encode_puzzle_hash
 from chia.util.hash import std_hash
@@ -192,8 +191,8 @@ def test_init():
             cli,
             [
                 "p2_address",
-                "--configuration",
-                config_path,
+                "--db-path",
+                sync_db_path,
                 "--prefix",
                 "test",
             ],
@@ -245,8 +244,6 @@ def test_init():
             cli,
             [
                 "sync",
-                "--configuration",
-                config_path,
                 "--db-path",
                 sync_db_path,
             ],
@@ -268,8 +265,6 @@ def test_init():
             cli,
             [
                 "payment",
-                "--configuration",
-                config_path,
                 "--db-path",
                 sync_db_path,
                 "--pubkeys",
@@ -302,7 +297,7 @@ def test_init():
                 bytes(signed_withdrawal_bundle).hex(),
                 "--fee",
                 100,
-            ]
+            ],
         )
         assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
 
@@ -311,8 +306,6 @@ def test_init():
             cli,
             [
                 "sync",
-                "--configuration",
-                config_path,
                 "--db-path",
                 sync_db_path,
             ],
@@ -354,8 +347,6 @@ def test_init():
             cli,
             [
                 "start_rekey",
-                "--configuration",
-                config_path,
                 "--db-path",
                 sync_db_path,
                 "--pubkeys",
@@ -393,7 +384,7 @@ def test_init():
                 bytes(signed_rekey_bundle).hex(),
                 "--fee",
                 100,
-            ]
+            ],
         )
         assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
 
@@ -402,8 +393,6 @@ def test_init():
             cli,
             [
                 "sync",
-                "--configuration",
-                config_path,
                 "--db-path",
                 sync_db_path,
             ],
@@ -447,8 +436,6 @@ def test_init():
                 cli,
                 [
                     "clawback",
-                    "--configuration",
-                    config_path,
                     "--db-path",
                     sync_db_path,
                     "--pubkeys",
@@ -477,7 +464,7 @@ def test_init():
                     bytes(signed_clawback_bundle).hex(),
                     "--fee",
                     100,
-                ]
+                ],
             )
             assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
 
@@ -486,8 +473,6 @@ def test_init():
                 cli,
                 [
                     "sync",
-                    "--configuration",
-                    config_path,
                     "--db-path",
                     sync_db_path,
                 ],
@@ -527,8 +512,6 @@ def test_init():
                 cli,
                 [
                     "complete",
-                    "--configuration",
-                    config_path,
                     "--db-path",
                     sync_db_path,
                 ],
@@ -548,7 +531,7 @@ def test_init():
                     bytes(completion_bundle).hex(),
                     "--fee",
                     100,
-                ]
+                ],
             )
             assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
 
@@ -557,8 +540,6 @@ def test_init():
                 cli,
                 [
                     "sync",
-                    "--configuration",
-                    config_path,
                     "--db-path",
                     sync_db_path,
                 ],
@@ -595,8 +576,6 @@ def test_init():
             cli,
             [
                 "increase_security_level",
-                "--configuration",
-                config_path,
                 "--db-path",
                 sync_db_path,
                 "--pubkeys",
@@ -622,6 +601,6 @@ def test_init():
                 bytes(signed_lock_bundle).hex(),
                 "--fee",
                 100,
-            ]
+            ],
         )
         assert r"{'success': True, 'status': 'SUCCESS'}" in result.output

@@ -79,7 +79,7 @@ def load_prefarm_info(configuration: Optional[str]) -> PrefarmInfo:
                 raise ValueError("The configuration specified is not a recognizable format")
 
 
-def load_root_derivation(configuration: str) -> RootDerivation:
+def load_root_derivation(configuration: Optional[str]) -> RootDerivation:
     if configuration is None:
         path: Path = next(Path("./").glob("Configuration (*).txt"))
     else:
@@ -98,10 +98,17 @@ def load_root_derivation(configuration: str) -> RootDerivation:
                 raise ValueError("The configuration specified is not a recognizable format")
 
 
-async def load_db(db_path: str, launcher_id: bytes32) -> SyncStore:
+async def load_db(db_path: str, launcher_id: Optional[bytes32] = None) -> SyncStore:
     path = Path(db_path)
     if path.is_dir():
-        path = path.joinpath(f"sync ({launcher_id[0:3].hex()}).sqlite")
+        existing = list(path.glob("sync (*).sqlite"))
+        if len(existing) == 0:
+            if launcher_id is None:
+                raise ValueError("Insufficient info to initialize DB")
+            else:
+                path = path.joinpath(f"sync ({launcher_id[0:3].hex()}).sqlite")
+        else:
+            path = existing[0]
     return await SyncStore.create(path)
 
 
@@ -310,7 +317,9 @@ def launch_cmd(
             if "awaiting launch" in configuration:
                 os.rename(
                     Path(configuration),
-                    Path(launcher_coin.name()[0:3].hex().join(configuration.split("awaiting launch"))),
+                    Path(
+                        new_derivation.prefarm_info.puzzle_root[0:3].hex().join(configuration.split("awaiting launch"))
+                    ),
                 )
         finally:
             node_client.close()
@@ -327,20 +336,13 @@ def launch_cmd(
     "--configuration",
     help="The configuration file for the singleton to sync (default: ./Configuration (******).txt)",
     default=None,
-    required=True,
 )
 @click.option(
     "-db",
     "--db-path",
-    help="The file path to initialize the sync database at (default: ./sync (******).sqlite)",
+    help="The file path to initialize/find the sync database at (default: ./sync (******).sqlite)",
     default="./",
     required=True,
-)
-@click.option(
-    "-u",
-    "--auto-update-config",
-    help="Automatically update the synced config with the synced information (only works for observers)",
-    is_flag=True,
 )
 @click.option(
     "-np",
@@ -352,19 +354,28 @@ def launch_cmd(
 def sync_cmd(
     configuration: Optional[str],
     db_path: str,
-    auto_update_config: bool,
     node_rpc_port: Optional[int],
 ):
-    # Load the configuration (can be either public or private config)
-    prefarm_info: PrefarmInfo = load_prefarm_info(configuration)
-
     # Start sync
     async def do_sync():
-        node_client = await get_node_client(node_rpc_port)
-        sync_store: SyncStore = await load_db(db_path, prefarm_info.launcher_id)
-
-        await sync_store.db_wrapper.begin_transaction()
         try:
+            node_client = await get_node_client(node_rpc_port)
+
+            if configuration is not None:
+                try:
+                    db_config = load_root_derivation(configuration)
+                    prefarm_info = db_config.prefarm_info
+                except ValueError:
+                    db_config = load_prefarm_info(configuration)
+                    prefarm_info = db_config
+                sync_store: SyncStore = await load_db(db_path, prefarm_info.launcher_id)
+                await sync_store.db_wrapper.begin_transaction()
+                await sync_store.add_configuration(db_config)
+            else:
+                sync_store: SyncStore = await load_db(db_path)
+                prefarm_info = await sync_store.get_configuration(public=True, block_outdated=True)
+                await sync_store.db_wrapper.begin_transaction()
+
             current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
             current_coin_record: Optional[CoinRecord] = None
             if current_singleton is None:
@@ -394,6 +405,10 @@ def sync_cmd(
                     current_coin_record.coin.name(), current_coin_record.spent_block_index
                 )
                 if latest_spend is None:
+                    if current_singleton.puzzle_root != prefarm_info.puzzle_root:
+                        outdated: bool = await sync_store.update_config_puzzle_root(current_singleton.puzzle_root)
+                        if outdated:
+                            print("Configuration is outdated, please update it with command <TODO>")
                     break
 
                 # Fill in all of the information about the spent singleton
@@ -554,10 +569,10 @@ def sync_cmd(
 
 @cli.command("p2_address", short_help="Print the address to pay to the singleton")
 @click.option(
-    "-c",
-    "--configuration",
-    help="The configuration file for the singleton to pay (default: ./Configuration (******).txt)",
-    default=None,
+    "-db",
+    "--db-path",
+    help="The file path to the sync DB (default: ./sync (******).sqlite)",
+    default="./",
     required=True,
 )
 @click.option(
@@ -567,9 +582,16 @@ def sync_cmd(
     default="xch",
     show_default=True,
 )
-def address_cmd(configuration: str, prefix: str):
-    prefarm_info = load_prefarm_info(configuration)
-    print(encode_puzzle_hash(construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash(), prefix))
+def address_cmd(db_path: str, prefix: str):
+    async def do_command():
+        sync_store: SyncStore = await load_db(db_path)
+        try:
+            prefarm_info = await sync_store.get_configuration(True, block_outdated=False)
+            print(encode_puzzle_hash(construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash(), prefix))
+        finally:
+            await sync_store.db_connection.close()
+
+    asyncio.get_event_loop().run_until_complete(do_command())
 
 
 @cli.command("push_tx", short_help="Push a signed spend bundle to the network")
@@ -614,7 +636,7 @@ def push_cmd(
 
             try:
                 push_bundle = SpendBundle.from_bytes(bytes.fromhex(spend_bundle))
-            except:
+            except Exception:
                 print("Spend bundle cannot be recognized.  Please make sure this spend bundle is signed and try again.")
                 return
 
@@ -657,13 +679,6 @@ def push_cmd(
 
 
 @cli.command("payment", short_help="Absorb/Withdraw money into/from the singleton")
-@click.option(
-    "-c",
-    "--configuration",
-    help="The configuration file for the singleton who is handling the payment (default: ./Configuration (******).txt)",
-    default=None,
-    required=True,
-)
 @click.option(
     "-db",
     "--db-path",
@@ -710,7 +725,6 @@ def push_cmd(
     show_default=True,
 )
 def payments_cmd(
-    configuration: str,
     db_path: str,
     pubkeys: str,
     amount: int,
@@ -719,8 +733,6 @@ def payments_cmd(
     maximum_extra_cost: Optional[int],
     amount_threshold: int,
 ):
-    derivation = load_root_derivation(configuration)
-
     # Check to make sure we've been given a correct set of parameters
     if amount > 0 and recipient_address is None:
         raise ValueError("You must specify a recipient address for outgoing payments")
@@ -728,9 +740,9 @@ def payments_cmd(
         raise ValueError("You can not make payments of an odd amount")
 
     async def do_command():
-        sync_store: SyncStore = await load_db(db_path, derivation.prefarm_info.launcher_id)
-
+        sync_store: SyncStore = await load_db(db_path)
         try:
+            derivation = await sync_store.get_configuration(False, block_outdated=True)
             # Collect some relevant information
             current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
             if current_singleton is None:
@@ -798,13 +810,6 @@ def payments_cmd(
 
 @cli.command("start_rekey", short_help="Absorb/Withdraw money into/from the singleton")
 @click.option(
-    "-c",
-    "--configuration",
-    help="The configuration file for the singleton who is handling the payment (default: ./Configuration (******).txt)",
-    default=None,
-    required=True,
-)
-@click.option(
     "-db",
     "--db-path",
     help="The file path to the sync DB (default: ./sync (******).sqlite)",
@@ -824,27 +829,24 @@ def payments_cmd(
     required=True,
 )
 def start_rekey_cmd(
-    configuration: str,
     db_path: str,
     pubkeys: str,
     new_configuration: str,
 ):
-    derivation = load_root_derivation(configuration)
-    new_derivation: RootDerivation = load_root_derivation(new_configuration)
-
-    # Quick sanity check that everything except the puzzle root is the same
-    if derivation.prefarm_info != dataclasses.replace(
-        new_derivation.prefarm_info, puzzle_root=derivation.prefarm_info.puzzle_root
-    ):
-        raise ValueError(
-            "This configuration has more changed than the keys."
-            "Please derive a configuration with the same values for everything except key-related info."
-        )
-
     async def do_command():
-        sync_store: SyncStore = await load_db(db_path, derivation.prefarm_info.launcher_id)
+        sync_store: SyncStore = await load_db(db_path)
 
         try:
+            derivation = await sync_store.get_configuration(False, block_outdated=True)
+            new_derivation: RootDerivation = load_root_derivation(new_configuration)
+
+            # Quick sanity check that everything except the puzzle root is the same
+            if not derivation.prefarm_info.is_valid_update(new_derivation.prefarm_info):
+                raise ValueError(
+                    "This configuration has more changed than the keys."
+                    "Please derive a configuration with the same values for everything except key-related info."
+                )
+
             # Collect some relevant information
             current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
             if current_singleton is None:
@@ -891,13 +893,6 @@ def start_rekey_cmd(
 
 @cli.command("clawback", short_help="Clawback a withdrawal or rekey attempt (will be prompted which one)")
 @click.option(
-    "-c",
-    "--configuration",
-    help="The configuration file for the singleton who is handling the payment (default: ./Configuration (******).txt)",
-    default=None,
-    required=True,
-)
-@click.option(
     "-db",
     "--db-path",
     help="The file path to the sync DB (default: ./sync (******).sqlite)",
@@ -911,16 +906,15 @@ def start_rekey_cmd(
     required=True,
 )
 def clawback_cmd(
-    configuration: str,
     db_path: str,
     pubkeys: str,
 ):
-    derivation = load_root_derivation(configuration)
-
     async def do_command():
-        sync_store: SyncStore = await load_db(db_path, derivation.prefarm_info.launcher_id)
+        sync_store: SyncStore = await load_db(db_path)
 
         try:
+            derivation = await sync_store.get_configuration(False, block_outdated=True)
+
             achs: List[ACHRecord] = await sync_store.get_ach_records(include_completed_coins=False)
             rekeys: List[RekeyRecord] = await sync_store.get_rekey_records(include_completed_coins=False)
 
@@ -1020,13 +1014,6 @@ def clawback_cmd(
 
 @cli.command("complete", short_help="Complete a withdrawal or rekey attempt (will be prompted which one)")
 @click.option(
-    "-c",
-    "--configuration",
-    help="The configuration file for the singleton who is handling the payment (default: ./Configuration (******).txt)",
-    default=None,
-    required=True,
-)
-@click.option(
     "-db",
     "--db-path",
     help="The file path to the sync DB (default: ./sync (******).sqlite)",
@@ -1034,15 +1021,14 @@ def clawback_cmd(
     required=True,
 )
 def complete_cmd(
-    configuration: str,
     db_path: str,
 ):
-    derivation = load_root_derivation(configuration)
-
     async def do_command():
-        sync_store: SyncStore = await load_db(db_path, derivation.prefarm_info.launcher_id)
+        sync_store: SyncStore = await load_db(db_path)
 
         try:
+            derivation = await sync_store.get_configuration(False, block_outdated=True)
+
             achs: List[ACHRecord] = await sync_store.get_ach_records(include_completed_coins=False)
             rekeys: List[RekeyRecord] = await sync_store.get_rekey_records(include_completed_coins=False)
 
@@ -1123,13 +1109,6 @@ def complete_cmd(
 
 @cli.command("increase_security_level", short_help="Initiate an increase of the number of keys required for withdrawal")
 @click.option(
-    "-c",
-    "--configuration",
-    help="The configuration file for the singleton who is handling the payment (default: ./Configuration (******).txt)",
-    default=None,
-    required=True,
-)
-@click.option(
     "-db",
     "--db-path",
     help="The file path to the sync DB (default: ./sync (******).sqlite)",
@@ -1143,15 +1122,14 @@ def complete_cmd(
     required=True,
 )
 def increase_cmd(
-    configuration: str,
     db_path: str,
     pubkeys: str,
 ):
-    derivation = load_root_derivation(configuration)
-
     async def do_command():
-        sync_store: SyncStore = await load_db(db_path, derivation.prefarm_info.launcher_id)
+        sync_store: SyncStore = await load_db(db_path)
         try:
+            derivation = await sync_store.get_configuration(False, block_outdated=True)
+
             current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
             if current_singleton is None:
                 raise RuntimeError("No singleton is found for this configuration.  Try `cic sync` then try again.")

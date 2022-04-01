@@ -1,8 +1,9 @@
 import aiosqlite
+import dataclasses
 
 from blspy import G1Element
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import SerializedProgram
@@ -13,6 +14,8 @@ from chia.wallet.lineage_proof import LineageProof
 
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
 from cic.drivers.prefarm import SpendType
+from cic.drivers.prefarm_info import PrefarmInfo
+from cic.drivers.puzzle_root_construction import RootDerivation
 
 
 class SyncStore:
@@ -80,6 +83,14 @@ class SyncStore:
             "   confirmed_at_time bigint,"
             "   spent_at_height bigint,"
             "   completed tinyint"
+            ")"
+        )
+
+        await self.db_connection.execute(
+            "CREATE TABLE IF NOT EXISTS configuration_info("
+            "   launcher_id blob PRIMARY KEY,"  # This table should only ever have one entry
+            "   info blob,"
+            "   outdated tinyint"
             ")"
         )
         await self.db_connection.commit()
@@ -274,3 +285,88 @@ class SyncStore:
         await cursor.close()
 
         return [Coin(coin[1], coin[2], uint64(coin[3])) for coin in coins]
+
+    async def add_configuration(self, configuration: Union[PrefarmInfo, RootDerivation]) -> None:
+        # Validate this is not a second configuration
+        cursor = await self.db_connection.execute("SELECT * FROM configuration_info")
+        info = await cursor.fetchone()
+        await cursor.close()
+        if info is not None:
+            try:
+                valid = PrefarmInfo.from_bytes(info[1]).is_valid_update(configuration)
+            except AssertionError:
+                valid = RootDerivation.from_bytes(info[1]).prefarm_info.is_valid_update(configuration)
+            if not valid:
+                raise ValueError("The specified configuration cannot be a valid update of the existing configuration")
+
+        # Now add it to the DB
+        try:
+            launcher_id = configuration.launcher_id  # type: ignore
+        except AttributeError:
+            launcher_id = configuration.prefarm_info.launcher_id  # type: ignore
+        cursor = await self.db_connection.execute(
+            "INSERT OR REPLACE INTO configuration_info VALUES(?, ?, ?)", (launcher_id, bytes(configuration), 0)
+        )
+        await cursor.close()
+
+    async def get_configuration(
+        self, public: bool, block_outdated: bool = False
+    ) -> Optional[Union[PrefarmInfo, RootDerivation]]:
+        cursor = await self.db_connection.execute("SELECT * FROM configuration_info")
+        info = await cursor.fetchone()
+        await cursor.close()
+
+        if info is None:
+            return None
+
+        if block_outdated and info[2] == 1:
+            raise ValueError("Configuration is outdated")
+
+        try:
+            derivation = RootDerivation.from_bytes(info[1])
+            if public:
+                return derivation.prefarm_info
+            else:
+                return derivation
+        except AssertionError:
+            if not public:
+                raise ValueError("The configuration file is not a public configuration file")
+            else:
+                return PrefarmInfo.from_bytes(info[1])
+
+    async def is_configuration_outdated(self) -> bool:
+        cursor = await self.db_connection.execute("SELECT * FROM configuration_info")
+        info = await cursor.fetchone()
+        await cursor.close()
+
+        if info is None:
+            raise ValueError("No configuration present")
+
+        return True if info[2] == 1 else False
+
+    async def update_config_puzzle_root(self, puzzle_root: bytes32, outdate_private: bool = True) -> bool:
+        cursor = await self.db_connection.execute("SELECT * FROM configuration_info")
+        info = await cursor.fetchone()
+        await cursor.close()
+
+        if info is None:
+            raise ValueError("No configuration present")
+
+        try:
+            derivation = RootDerivation.from_bytes(info[1])
+            new_configuration = dataclasses.replace(
+                derivation, prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=puzzle_root)
+            )
+            public = False
+        except AssertionError:
+            prefarm_info = PrefarmInfo.from_bytes(info[1])
+            new_configuration = dataclasses.replace(prefarm_info, puzzle_root=puzzle_root)
+            public = True
+
+        cursor = await self.db_connection.execute(
+            "INSERT OR REPLACE INTO configuration_info VALUES(?, ?, ?)",
+            (info[0], bytes(new_configuration), 1 if outdate_private and not public else info[2]),
+        )
+        await cursor.close()
+
+        return (outdate_private and not public) or info[2] == 1
