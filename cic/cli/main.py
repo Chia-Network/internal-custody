@@ -6,13 +6,14 @@ import os
 import time
 
 from blspy import PrivateKey, G1Element, G2Element
+from clvm.casts import int_to_bytes
 from operator import attrgetter
 from pathlib import Path
 from typing import List, Optional
 
 from chia.consensus.default_constants import DEFAULT_CONSTANTS
 from chia.types.blockchain_format.coin import Coin
-from chia.types.blockchain_format.program import Program
+from chia.types.blockchain_format.program import Program, INFINITE_COST
 from chia.types.blockchain_format.sized_bytes import bytes32
 from chia.types.announcement import Announcement
 from chia.types.coin_record import CoinRecord
@@ -569,6 +570,90 @@ def sync_cmd(
 def address_cmd(configuration: str, prefix: str):
     prefarm_info = load_prefarm_info(configuration)
     print(encode_puzzle_hash(construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash(), prefix))
+
+
+@cli.command("push_tx", short_help="Push a signed spend bundle to the network")
+@click.option(
+    "-b",
+    "--spend-bundle",
+    help="The signed spend bundle",
+    required=True,
+)
+@click.option(
+    "-wp",
+    "--wallet-rpc-port",
+    help="Set the port where the Wallet is hosting the RPC interface. See the rpc_port under wallet in config.yaml",
+    type=int,
+    default=None,
+)
+@click.option("-f", "--fingerprint", help="Set the fingerprint to specify which wallet to use", type=int, default=None)
+@click.option(
+    "-np",
+    "--node-rpc-port",
+    help="Set the port where the Node is hosting the RPC interface. See the rpc_port under full_node in config.yaml",
+    type=int,
+    default=None,
+)
+@click.option(
+    "-m",
+    "--fee",
+    help="The fee to attach to this spend (in mojos)",
+    type=int,
+    default=0,
+)
+def push_cmd(
+    spend_bundle: str,
+    wallet_rpc_port: Optional[int],
+    fingerprint: Optional[int],
+    node_rpc_port: Optional[int],
+    fee: int,
+):
+    async def do_command():
+        try:
+            node_client, wallet_client = await get_wallet_and_node_clients(node_rpc_port, wallet_rpc_port, fingerprint)
+
+            try:
+                push_bundle = SpendBundle.from_bytes(bytes.fromhex(spend_bundle))
+            except:
+                print("Spend bundle cannot be recognized.  Please make sure this spend bundle is signed and try again.")
+                return
+
+            spends: List[SpendBundle] = [push_bundle]
+
+            if fee > 0:
+                fee_announcement: Optional[Announcement] = None
+                for coin_spend in push_bundle.coin_spends:
+                    _, conditions = coin_spend.puzzle_reveal.run_with_cost(INFINITE_COST, coin_spend.solution)
+                    for condition in conditions.as_python():
+                        if condition[0] == int_to_bytes(60):  # CREATE_COIN_ANNOUNCEMENT
+                            fee_announcement = Announcement(coin_spend.coin.name(), condition[1])
+                            break
+                if fee_announcement is None:
+                    print("Cannot find a way to link fee to this transaction. Please specify 0 fee and try again.")
+                    return
+                else:
+                    spends.append(
+                        (
+                            await wallet_client.create_signed_transaction(
+                                [
+                                    {"puzzle_hash": bytes32([0] * 32), "amount": 0}
+                                ],  # This is dust but the RPC requires it
+                                fee=uint64(fee),
+                                coin_announcements=[fee_announcement],
+                            )
+                        ).spend_bundle
+                    )
+
+            result = await node_client.push_tx(SpendBundle.aggregate(spends))
+            print(result)
+
+        finally:
+            node_client.close()
+            wallet_client.close()
+            await node_client.await_closed()
+            await wallet_client.await_closed()
+
+    asyncio.get_event_loop().run_until_complete(do_command())
 
 
 @cli.command("payment", short_help="Absorb/Withdraw money into/from the singleton")

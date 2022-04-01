@@ -294,17 +294,17 @@ def test_init():
         signed_withdrawal_bundle = SpendBundle.from_bytes(bytes(_hsms_bundle))  # gotta convert from the hsms here
 
         # Push the tx
-        async def push_withdrawal_spend():
-            try:
-                sim = await SpendSim.create(db_path="./sim.db")
-                sim_client = SimClient(sim)
-                result = await sim_client.push_tx(signed_withdrawal_bundle)
-                assert result[0] == MempoolInclusionStatus.SUCCESS
-                await sim.farm_block()
-            finally:
-                await sim.close()
-
-        asyncio.get_event_loop().run_until_complete(push_withdrawal_spend())
+        result = runner.invoke(
+            cli,
+            [
+                "push_tx",
+                "--spend-bundle",
+                bytes(signed_withdrawal_bundle).hex(),
+                "--fee",
+                100,
+            ]
+        )
+        assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
 
         # Sync up
         result = runner.invoke(
@@ -375,19 +375,27 @@ def test_init():
         signed_rekey_bundle = SpendBundle.from_bytes(bytes(_hsms_bundle))  # gotta convert from the hsms here
 
         # Push the tx
-        async def push_start_rekey_spend():
+        async def fast_forward():
             try:
                 sim = await SpendSim.create(db_path="./sim.db")
-                sim_client = SimClient(sim)
                 sim.pass_time(prefarm_info.rekey_increments)
-                await sim.farm_block()
-                result = await sim_client.push_tx(signed_rekey_bundle)
-                assert result[0] == MempoolInclusionStatus.SUCCESS
                 await sim.farm_block()
             finally:
                 await sim.close()
 
-        asyncio.get_event_loop().run_until_complete(push_start_rekey_spend())
+        asyncio.get_event_loop().run_until_complete(fast_forward())
+
+        result = runner.invoke(
+            cli,
+            [
+                "push_tx",
+                "--spend-bundle",
+                bytes(signed_rekey_bundle).hex(),
+                "--fee",
+                100,
+            ]
+        )
+        assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
 
         # Sync up
         result = runner.invoke(
@@ -461,17 +469,17 @@ def test_init():
             signed_clawback_bundle = SpendBundle.from_bytes(bytes(_hsms_bundle))  # gotta convert from the hsms here
 
             # Push the tx
-            async def push_clawback_spend():
-                try:
-                    sim = await SpendSim.create(db_path="./sim.db")
-                    sim_client = SimClient(sim)
-                    result = await sim_client.push_tx(signed_clawback_bundle)
-                    assert result[0] == MempoolInclusionStatus.SUCCESS
-                    await sim.farm_block()
-                finally:
-                    await sim.close()
-
-            asyncio.get_event_loop().run_until_complete(push_clawback_spend())
+            result = runner.invoke(
+                cli,
+                [
+                    "push_tx",
+                    "--spend-bundle",
+                    bytes(signed_clawback_bundle).hex(),
+                    "--fee",
+                    100,
+                ]
+            )
+            assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
 
             # Sync up
             result = runner.invoke(
@@ -532,17 +540,17 @@ def test_init():
             completion_bundle = SpendBundle.from_bytes(bytes.fromhex(spend_hex))
 
             # Push the tx
-            async def push_completion_spend():
-                try:
-                    sim = await SpendSim.create(db_path="./sim.db")
-                    sim_client = SimClient(sim)
-                    result = await sim_client.push_tx(completion_bundle)
-                    assert result[0] == MempoolInclusionStatus.SUCCESS
-                    await sim.farm_block()
-                finally:
-                    await sim.close()
-
-            asyncio.get_event_loop().run_until_complete(push_completion_spend())
+            result = runner.invoke(
+                cli,
+                [
+                    "push_tx",
+                    "--spend-bundle",
+                    bytes(completion_bundle).hex(),
+                    "--fee",
+                    100,
+                ]
+            )
+            assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
 
             # Sync up
             result = runner.invoke(
@@ -606,14 +614,14 @@ def test_init():
         signed_lock_bundle = SpendBundle.from_bytes(bytes(_hsms_bundle))  # gotta convert from the hsms here
 
         # Push the tx
-        async def push_lock_spend():
-            try:
-                sim = await SpendSim.create(db_path="./sim.db")
-                sim_client = SimClient(sim)
-                result = await sim_client.push_tx(signed_lock_bundle)
-                assert result[0] == MempoolInclusionStatus.SUCCESS
-                await sim.farm_block()
-            finally:
-                await sim.close()
-
-        asyncio.get_event_loop().run_until_complete(push_lock_spend())
+        result = runner.invoke(
+            cli,
+            [
+                "push_tx",
+                "--spend-bundle",
+                bytes(signed_lock_bundle).hex(),
+                "--fee",
+                100,
+            ]
+        )
+        assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
