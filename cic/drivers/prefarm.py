@@ -155,7 +155,7 @@ def get_withdrawal_spend_info(
     filter_puzzle: Program = construct_payment_and_rekey_filter(
         derivation.prefarm_info,
         simplify_merkle_proof(inner_puzzle.get_tree_hash(), leaf_proof),
-        derivation.prefarm_info.rekey_increments,
+        derivation.rekey_increments,
     )
 
     # Construct ACH creation solution
@@ -236,7 +236,7 @@ def get_ach_clawback_spend_info(
     filter_puzzle: Program = construct_payment_and_rekey_filter(
         derivation.prefarm_info,
         simplify_merkle_proof(inner_puzzle.get_tree_hash(), leaf_proof),
-        derivation.prefarm_info.rekey_increments,
+        derivation.rekey_increments,
     )
 
     # Construct inner solution
@@ -325,7 +325,7 @@ def calculate_rekey_args(
             timelock,
         )
     elif len(pubkeys) == derivation.required_pubkeys:
-        timelock = derivation.prefarm_info.rekey_increments
+        timelock = derivation.rekey_increments
         filter_puzzle = construct_payment_and_rekey_filter(
             derivation.prefarm_info,
             simplify_merkle_proof(inner_puzzle.get_tree_hash(), leaf_proof),
@@ -334,7 +334,7 @@ def calculate_rekey_args(
     elif len(pubkeys) < derivation.required_pubkeys:
         timelock = uint64(
             derivation.slow_rekey_timelock
-            + (derivation.prefarm_info.rekey_increments * (derivation.required_pubkeys - len(pubkeys)))
+            + (derivation.rekey_increments * (derivation.required_pubkeys - len(pubkeys)))
         )
         filter_puzzle = construct_rekey_filter(
             derivation.prefarm_info,

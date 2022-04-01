@@ -61,7 +61,6 @@ def test_init():
         uint64(30),
         uint64(90),
         uint64(30),
-        uint64(15),
     )
 
     with runner.isolated_filesystem():
@@ -84,8 +83,6 @@ def test_init():
                 prefarm_info.starting_amount,  # 1 XCH
                 "--withdrawal-timelock",
                 prefarm_info.withdrawal_timelock,
-                "--rekey-timelock",
-                prefarm_info.rekey_increments,
                 "--payment-clawback",
                 prefarm_info.payment_clawback_period,
                 "--rekey-cancel",
@@ -112,6 +109,7 @@ def test_init():
             uint32(5),
             uint32(1),
             uint64(45),
+            uint64(15),
         )
 
         result = runner.invoke(
@@ -126,6 +124,8 @@ def test_init():
                 uint32(3),
                 "--slow-penalty",
                 uint64(45),
+                "--rekey-timelock",
+                uint64(15),
             ],
         )
 
@@ -339,6 +339,7 @@ def test_init():
             uint32(4),
             uint32(2),
             derivation.slow_rekey_timelock,
+            derivation.rekey_increments,
         )
         new_derivation_filepath: str = "./new_derivation.txt"
         with open(new_derivation_filepath, "wb") as file:
@@ -370,7 +371,7 @@ def test_init():
         async def fast_forward():
             try:
                 sim = await SpendSim.create(db_path="./sim.db")
-                sim.pass_time(prefarm_info.rekey_increments)
+                sim.pass_time(derivation.rekey_increments)
                 await sim.farm_block()
             finally:
                 await sim.close()

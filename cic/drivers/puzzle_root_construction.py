@@ -30,6 +30,7 @@ class RootDerivation(Streamable):
     maximum_pubkeys: uint32
     minimum_pubkeys: uint32
     slow_rekey_timelock: uint64
+    rekey_increments: uint64
     next_root: Optional[bytes32]
     filter_proofs: ProofType
     leaf_proofs: ProofType
@@ -63,7 +64,7 @@ class RootDerivation(Streamable):
 
         # First, we're going to try to use the rnp filter
         filter_hash: bytes32 = construct_payment_and_rekey_filter(
-            self.prefarm_info, innermost_tree_root, self.prefarm_info.rekey_increments
+            self.prefarm_info, innermost_tree_root, self.rekey_increments
         ).get_tree_hash()
         if filter_hash in filter_proofs:
             return {filter_hash: filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
@@ -80,7 +81,7 @@ class RootDerivation(Streamable):
                 innermost_tree_root,
                 uint64(
                     self.slow_rekey_timelock
-                    + (self.prefarm_info.rekey_increments * (self.required_pubkeys - i))
+                    + (self.rekey_increments * (self.required_pubkeys - i))
                 ),
             ).get_tree_hash()
             if filter_hash in filter_proofs:
@@ -118,6 +119,7 @@ def calculate_puzzle_root(
     maximum_pubkeys: uint32,
     minimum_pubkeys: uint32,
     slow_rekey_timelock: uint64,
+    rekey_increments: uint64,
 ) -> RootDerivation:
     sorted_pubkey_list = [G1Element.from_bytes(b) for b in sorted([bytes(pk) for pk in pubkey_list])]
     assert minimum_pubkeys > 0 and maximum_pubkeys > 0 and required_pubkeys > 0
@@ -129,6 +131,7 @@ def calculate_puzzle_root(
             maximum_pubkeys,
             minimum_pubkeys,
             slow_rekey_timelock,
+            rekey_increments,
         ).prefarm_info.puzzle_root
     else:
         next_puzzle_root = None
@@ -141,7 +144,7 @@ def calculate_puzzle_root(
     all_standard_phs: List[bytes32] = [puzzle_for_pk(pk).get_tree_hash() for pk in standard_pk_list]
     rnp_root, rnp_proofs = build_merkle_tree(all_standard_phs)
     rnp_filter: bytes32 = construct_payment_and_rekey_filter(
-        prefarm_info, rnp_root, prefarm_info.rekey_increments
+        prefarm_info, rnp_root, rekey_increments
     ).get_tree_hash()
     all_filters.append(rnp_filter)
     all_inner_proofs = all_inner_proofs | rnp_proofs
@@ -165,7 +168,7 @@ def calculate_puzzle_root(
             construct_rekey_filter(
                 prefarm_info,
                 slower_root,
-                uint64(slow_rekey_timelock + (prefarm_info.rekey_increments * (required_pubkeys - i))),
+                uint64(slow_rekey_timelock + (rekey_increments * (required_pubkeys - i))),
             ).get_tree_hash()
         )
         all_inner_proofs = all_inner_proofs | slower_proofs
@@ -178,6 +181,7 @@ def calculate_puzzle_root(
         maximum_pubkeys,
         minimum_pubkeys,
         slow_rekey_timelock,
+        rekey_increments,
         next_puzzle_root,
         list(filter_proofs.items()),  # type: ignore
         list(all_inner_proofs.items()),  # type: ignore

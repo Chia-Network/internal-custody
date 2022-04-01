@@ -138,12 +138,6 @@ def cli(ctx: click.Context) -> None:
     required=True,
 )
 @click.option(
-    "-rt",
-    "--rekey-timelock",
-    help="The amount of time where nothing has happened before a standard rekey can be initiated (in seconds)",
-    required=True,
-)
-@click.option(
     "-pc",
     "--payment-clawback",
     help="The amount of time to clawback a payment before it's completed (in seconds)",
@@ -161,7 +155,6 @@ def init_cmd(
     rate: int,
     amount: int,
     withdrawal_timelock: int,
-    rekey_timelock: int,
     payment_clawback: int,
     rekey_cancel: int,
 ):
@@ -174,7 +167,6 @@ def init_cmd(
         uint64(withdrawal_timelock),
         uint64(payment_clawback),
         uint64(rekey_cancel),
-        uint64(rekey_timelock),
     )
 
     path = Path(filepath)
@@ -213,12 +205,19 @@ def init_cmd(
     default=1,
     required=True,
 )
+@click.option(
+    "-rt",
+    "--rekey-timelock",
+    help="The amount of time where nothing has happened before a standard rekey can be initiated (in seconds)",
+    required=True,
+)
 @click.option("-sp", "--slow-penalty", help="The time penalty for performing a slow rekey (in seconds)", required=True)
 def derive_cmd(
     configuration: str,
     pubkeys: str,
     initial_lock_level: int,
     minimum_pks: int,
+    rekey_timelock: int,
     slow_penalty: int,
     maximum_lock_level: Optional[int] = None,
 ):
@@ -233,6 +232,7 @@ def derive_cmd(
         uint32(len(pubkey_list) if maximum_lock_level is None else maximum_lock_level),
         uint32(minimum_pks),
         slow_penalty,
+        rekey_timelock,
     )
 
     with open(Path(configuration), "wb") as file:
@@ -295,6 +295,7 @@ def launch_cmd(
                 derivation.maximum_pubkeys,
                 derivation.minimum_pubkeys,
                 derivation.slow_rekey_timelock,
+                derivation.rekey_increments,
             )
             _, launch_spend = generate_launch_conditions_and_coin_spend(
                 fund_coin, construct_singleton_inner_puzzle(new_derivation.prefarm_info), uint64(1)
@@ -962,12 +963,12 @@ def clawback_cmd(
                 # Validate we have enough keys
                 timelock: uint64 = rekey_record.timelock
                 required_pubkeys: Optional[int] = None
-                if timelock == derivation.prefarm_info.rekey_increments:
+                if timelock == derivation.rekey_increments:
                     required_pubkeys = derivation.required_pubkeys
                 else:
                     for i in range(derivation.minimum_pubkeys, derivation.required_pubkeys):
                         if timelock == derivation.slow_rekey_timelock + (
-                            derivation.prefarm_info.rekey_increments * (derivation.required_pubkeys - i)
+                            derivation.rekey_increments * (derivation.required_pubkeys - i)
                         ):
                             required_pubkeys = i
                             break
