@@ -806,6 +806,12 @@ def push_cmd(
     required=True,
 )
 @click.option(
+    "-f",
+    "--filename",
+    help="The filepath to dump the spend bundle into",
+    default=None,
+)
+@click.option(
     "-pks",
     "--pubkeys",
     help="A comma separated list of pubkeys that will be signing this spend.",
@@ -851,6 +857,7 @@ def payments_cmd(
     absorb_available_payments: bool,
     maximum_extra_cost: Optional[int],
     amount_threshold: int,
+    filename: Optional[str],
 ):
     # Check to make sure we've been given a correct set of parameters
     if amount > 0 and recipient_address is None:
@@ -920,7 +927,11 @@ def payments_cmd(
             )
 
             # Print the result
-            print(bytes(unsigned_spend).hex())
+            if filename is not None:
+                with open(filename, "w") as file:
+                    file.write(bytes(unsigned_spend).hex())
+            else:
+                print(bytes(unsigned_spend).hex())
         finally:
             await sync_store.db_connection.close()
 
@@ -934,6 +945,12 @@ def payments_cmd(
     help="The file path to the sync DB (default: ./sync (******).sqlite)",
     default="./",
     required=True,
+)
+@click.option(
+    "-f",
+    "--filename",
+    help="The filepath to dump the spend bundle into",
+    default=None,
 )
 @click.option(
     "-pks",
@@ -951,6 +968,7 @@ def start_rekey_cmd(
     db_path: str,
     pubkeys: str,
     new_configuration: str,
+    filename: Optional[str],
 ):
     async def do_command():
         sync_store: SyncStore = await load_db(db_path)
@@ -1003,6 +1021,9 @@ def start_rekey_cmd(
             )
 
             # Print the result
+            if filename is not None:
+                with open(filename, "w") as file:
+                    file.write(bytes(unsigned_spend).hex())
             print(bytes(unsigned_spend).hex())
         finally:
             await sync_store.db_connection.close()
@@ -1019,6 +1040,12 @@ def start_rekey_cmd(
     required=True,
 )
 @click.option(
+    "-f",
+    "--filename",
+    help="The filepath to dump the spend bundle into",
+    default=None,
+)
+@click.option(
     "-pks",
     "--pubkeys",
     help="A comma separated list of pubkeys that will be signing this spend.",
@@ -1027,6 +1054,7 @@ def start_rekey_cmd(
 def clawback_cmd(
     db_path: str,
     pubkeys: str,
+    filename: Optional[str],
 ):
     async def do_command():
         sync_store: SyncStore = await load_db(db_path)
@@ -1123,7 +1151,9 @@ def clawback_cmd(
                 [],
                 DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA,  # TODO
             )
-
+            if filename is not None:
+                with open(filename, "w") as file:
+                    file.write(bytes(unsigned_spend).hex())
             print(bytes(unsigned_spend).hex())
         finally:
             await sync_store.db_connection.close()
@@ -1139,8 +1169,15 @@ def clawback_cmd(
     default="./",
     required=True,
 )
+@click.option(
+    "-f",
+    "--filename",
+    help="The filepath to dump the spend bundle into",
+    default=None,
+)
 def complete_cmd(
     db_path: str,
+    filename: Optional[str],
 ):
     async def do_command():
         sync_store: SyncStore = await load_db(db_path)
@@ -1219,6 +1256,9 @@ def complete_cmd(
                     ),
                 )
 
+            if filename is not None:
+                with open(filename, "w") as file:
+                    file.write(bytes(completion_bundle).hex())
             print(bytes(completion_bundle).hex())
         finally:
             await sync_store.db_connection.close()
@@ -1240,9 +1280,16 @@ def complete_cmd(
     help="A comma separated list of pubkeys that will be signing this spend.",
     required=True,
 )
+@click.option(
+    "-f",
+    "--filename",
+    help="The filepath to dump the spend bundle into",
+    default=None,
+)
 def increase_cmd(
     db_path: str,
     pubkeys: str,
+    filename: Optional[str],
 ):
     async def do_command():
         sync_store: SyncStore = await load_db(db_path)
@@ -1281,6 +1328,9 @@ def increase_cmd(
                 DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA,  # TODO
             )
 
+            if filename is not None:
+                with open(filename, "w") as file:
+                    file.write(bytes(unsigned_spend).hex())
             print(bytes(unsigned_spend).hex())
         finally:
             await sync_store.db_connection.close()

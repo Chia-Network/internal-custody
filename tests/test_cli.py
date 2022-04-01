@@ -295,10 +295,13 @@ def test_init():
 
         asyncio.get_event_loop().run_until_complete(check_for_singleton_record_and_payments())
 
+        spend_bundle_out_path: str = "./unsigned_bundle"
         result = runner.invoke(
             cli,
             [
                 "payment",
+                "--filename",
+                spend_bundle_out_path,
                 "--db-path",
                 sync_db_path,
                 "--pubkeys",
@@ -314,7 +317,8 @@ def test_init():
         )
 
         # Do a little bit of a signing cermony
-        withdrawal_bundle = UnsignedSpend.from_bytes(bytes.fromhex(result.output))
+        with open(spend_bundle_out_path, "r") as file:
+            withdrawal_bundle = UnsignedSpend.from_bytes(bytes.fromhex(file.read()))
         sigs: List[BLSSignature] = []
         for key in range(0, 3):
             se = BLSSecretExponent(secret_key_for_index(key))
@@ -383,6 +387,8 @@ def test_init():
             cli,
             [
                 "start_rekey",
+                "--filename",
+                spend_bundle_out_path,
                 "--db-path",
                 sync_db_path,
                 "--pubkeys",
@@ -393,7 +399,8 @@ def test_init():
         )
 
         # Do a little bit of a signing cermony
-        rekey_bundle = UnsignedSpend.from_bytes(bytes.fromhex(result.output))
+        with open(spend_bundle_out_path, "r") as file:
+            rekey_bundle = UnsignedSpend.from_bytes(bytes.fromhex(file.read()))
         sigs: List[BLSSignature] = [
             si.signature
             for si in sign(rekey_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
@@ -472,6 +479,8 @@ def test_init():
                 cli,
                 [
                     "clawback",
+                    "--filename",
+                    spend_bundle_out_path,
                     "--db-path",
                     sync_db_path,
                     "--pubkeys",
@@ -480,10 +489,9 @@ def test_init():
                 input="1\n",
             )
 
-            end_of_output_hex = re.compile("[a-f0-9]+$")
-            spend_hex = re.search(end_of_output_hex, result.output).group(0)
             # Do a little bit of a signing cermony
-            clawback_bundle = UnsignedSpend.from_bytes(bytes.fromhex(spend_hex))
+            with open(spend_bundle_out_path, "r") as file:
+                clawback_bundle = UnsignedSpend.from_bytes(bytes.fromhex(file.read()))
             sigs: List[BLSSignature] = [
                 si.signature
                 for si in sign(clawback_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
@@ -548,15 +556,16 @@ def test_init():
                 cli,
                 [
                     "complete",
+                    "--filename",
+                    spend_bundle_out_path,
                     "--db-path",
                     sync_db_path,
                 ],
                 input="1\n",
             )
 
-            end_of_output_hex = re.compile("[a-f0-9]+$")
-            spend_hex = re.search(end_of_output_hex, result.output).group(0)
-            completion_bundle = SpendBundle.from_bytes(bytes.fromhex(spend_hex))
+            with open(spend_bundle_out_path, "r") as file:
+                completion_bundle = SpendBundle.from_bytes(bytes.fromhex(file.read()))
 
             # Push the tx
             result = runner.invoke(
@@ -637,6 +646,8 @@ def test_init():
             cli,
             [
                 "increase_security_level",
+                "--filename",
+                spend_bundle_out_path,
                 "--db-path",
                 sync_db_path,
                 "--pubkeys",
@@ -645,7 +656,8 @@ def test_init():
         )
 
         # Do a little bit of a signing cermony
-        lock_bundle = UnsignedSpend.from_bytes(bytes.fromhex(result.output))
+        with open(spend_bundle_out_path, "r") as file:
+            lock_bundle = UnsignedSpend.from_bytes(bytes.fromhex(file.read()))
         sigs: List[BLSSignature] = [
             si.signature
             for si in sign(lock_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
