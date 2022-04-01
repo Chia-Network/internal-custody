@@ -74,7 +74,6 @@ async def setup_info():
         uint64(0),  # doesn't matter
         uint64(0),  # doesn't matter
         uint64(0),  # doesn't matter
-        uint64(0),  # doesn't matter
     )
 
     # Construct the two filters

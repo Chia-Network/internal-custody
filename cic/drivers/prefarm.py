@@ -333,7 +333,7 @@ def calculate_rekey_args(
         )
     elif len(pubkeys) < derivation.required_pubkeys:
         timelock = uint64(
-            derivation.prefarm_info.slow_rekey_timelock
+            derivation.slow_rekey_timelock
             + (derivation.prefarm_info.rekey_increments * (derivation.required_pubkeys - len(pubkeys)))
         )
         filter_puzzle = construct_rekey_filter(

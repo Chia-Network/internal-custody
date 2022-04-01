@@ -61,7 +61,6 @@ def test_init():
         uint64(30),
         uint64(90),
         uint64(30),
-        uint64(45),
         uint64(15),
     )
 
@@ -87,8 +86,6 @@ def test_init():
                 prefarm_info.withdrawal_timelock,
                 "--rekey-timelock",
                 prefarm_info.rekey_increments,
-                "--slow-penalty",
-                prefarm_info.slow_rekey_timelock,
                 "--payment-clawback",
                 prefarm_info.payment_clawback_period,
                 "--rekey-cancel",
@@ -114,6 +111,7 @@ def test_init():
             uint32(3),
             uint32(5),
             uint32(1),
+            uint64(45),
         )
 
         result = runner.invoke(
@@ -126,6 +124,8 @@ def test_init():
                 ",".join(pubkeys_as_hex),
                 "--initial-lock-level",
                 uint32(3),
+                "--slow-penalty",
+                uint64(45),
             ],
         )
 
@@ -338,6 +338,7 @@ def test_init():
             uint32(2),
             uint32(4),
             uint32(2),
+            derivation.slow_rekey_timelock,
         )
         new_derivation_filepath: str = "./new_derivation.txt"
         with open(new_derivation_filepath, "wb") as file:
