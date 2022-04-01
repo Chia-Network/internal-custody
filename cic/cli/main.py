@@ -927,7 +927,7 @@ def payments_cmd(
     asyncio.get_event_loop().run_until_complete(do_command())
 
 
-@cli.command("start_rekey", short_help="Absorb/Withdraw money into/from the singleton")
+@cli.command("start_rekey", short_help="Rekey the singleton to a new set of keys/options")
 @click.option(
     "-db",
     "--db-path",
