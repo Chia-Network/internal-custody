@@ -11,7 +11,6 @@ from operator import attrgetter
 from pathlib import Path
 from typing import List, Optional
 
-from chia.consensus.default_constants import DEFAULT_CONSTANTS
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program, INFINITE_COST
 from chia.types.blockchain_format.sized_bytes import bytes32
@@ -29,7 +28,7 @@ from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
 )
 
 from cic import __version__
-from cic.cli.clients import get_wallet_and_node_clients, get_node_client
+from cic.cli.clients import get_wallet_and_node_clients, get_node_client, get_additional_data
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
 from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm_info import PrefarmInfo
@@ -183,8 +182,10 @@ def init_cmd(
 @click.option(
     "-c",
     "--configuration",
-    help="The configuration file with which to derive the root (default: ./Configuration (needs derivation).txt)",
-    default=None,
+    help="The configuration file with which to derive the root (or the filepath to create it at if using --db-path)",
+    default="./Configuration (needs derivation).txt",
+    show_default=True,
+    required=True,
 )
 @click.option(
     "-db",
@@ -226,7 +227,7 @@ def init_cmd(
     default=None,
 )
 def derive_cmd(
-    configuration: Optional[str],
+    configuration: str,
     db_path: Optional[str],
     pubkeys: str,
     initial_lock_level: int,
@@ -236,19 +237,22 @@ def derive_cmd(
     validate_against: Optional[str],
     maximum_lock_level: Optional[int] = None,
 ):
-    if configuration is not None:
+    if db_path is None:
         with open(Path(configuration), "rb") as file:
             prefarm_info = PrefarmInfo.from_bytes(file.read())
-    elif db_path is not None:
+    else:
+
         async def get_prefarm_info() -> PrefarmInfo:
+            assert db_path is not None
             sync_store = await load_db(db_path)
             try:
-                return await sync_store.get_configuration(True, block_outdated=False)
+                prefarm_info = await sync_store.get_configuration(True, block_outdated=False)
+                assert isinstance(prefarm_info, PrefarmInfo)
+                return prefarm_info
             finally:
                 await sync_store.db_connection.close()
+
         prefarm_info = asyncio.get_event_loop().run_until_complete(get_prefarm_info())
-    else:
-        raise ValueError("A configuration or DB path is required.")
 
     pubkey_list: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
     derivation: RootDerivation = calculate_puzzle_root(
@@ -257,15 +261,16 @@ def derive_cmd(
         uint32(initial_lock_level),
         uint32(len(pubkey_list) if maximum_lock_level is None else maximum_lock_level),
         uint32(minimum_pks),
-        slow_penalty,
-        rekey_timelock,
+        uint64(slow_penalty),
+        uint64(rekey_timelock),
     )
 
     if validate_against is None:
-        with open(Path(configuration), "wb") as file:
-            file.write(bytes(derivation))
+        with open(Path(configuration), "wb") as new_file:
+            new_file.write(bytes(derivation))
         if "needs derivation" in configuration:
             os.rename(Path(configuration), Path("awaiting launch".join(configuration.split("needs derivation"))))
+
     else:
         validation_info = load_prefarm_info(validate_against)
         if validation_info.puzzle_root == derivation.prefarm_info.puzzle_root:
@@ -433,16 +438,18 @@ def export_cmd(
         sync_store: SyncStore = await load_db(db_path)
         try:
             try:
-                configuration = sync_store.get_configuration(False, block_outdated=False)
-                puzzle_root = db_config.prefarm_info.puzzle_root
+                configuration = await sync_store.get_configuration(False, block_outdated=False)
+                puzzle_root = configuration.prefarm_info.puzzle_root
             except ValueError:
-                configuration = sync_store.get_configuration(True, block_outdated=False)
-                puzzle_root = db_config.puzzle_root
+                configuration = await sync_store.get_configuration(True, block_outdated=False)
+                puzzle_root = configuration.puzzle_root
             if filename is None:
-                filename = f"Configuration ({puzzle_root[0:3].hex()}).txt"
-            with open(Path(filename), "wb") as file:
+                _filename = f"Configuration ({puzzle_root[0:3].hex()}).txt"
+            else:
+                _filename = filename
+            with open(Path(_filename), "wb") as file:
                 file.write(bytes(configuration))
-            print(f"Config successfully exported to {filename}")
+            print(f"Config successfully exported to {_filename}")
         finally:
             await sync_store.db_connection.close()
 
@@ -923,7 +930,7 @@ def payments_cmd(
                 coin_spends,
                 [SumHint(as_bls_pubkey_list, synth_sk)],
                 [],
-                DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA,  # TODO
+                get_additional_data(),
             )
 
             # Print the result
@@ -1017,7 +1024,7 @@ def start_rekey_cmd(
                 coin_spends,
                 [SumHint(as_bls_pubkey_list, synth_sk)],
                 [],
-                DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA,  # TODO
+                get_additional_data(),
             )
 
             # Print the result
@@ -1149,7 +1156,7 @@ def clawback_cmd(
                 coin_spends,
                 [SumHint(as_bls_pubkey_list, synth_sk)],
                 [],
-                DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA,  # TODO
+                get_additional_data(),
             )
             if filename is not None:
                 with open(filename, "w") as file:
@@ -1325,7 +1332,7 @@ def increase_cmd(
                 coin_spends,
                 [SumHint(as_bls_pubkey_list, BLSSecretExponent.zero())],
                 [],
-                DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA,  # TODO
+                get_additional_data(),
             )
 
             if filename is not None:

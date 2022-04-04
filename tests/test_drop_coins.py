@@ -67,8 +67,6 @@ async def setup_info():
     START_DATE = uint64(0)  # pointless for this test
     DRAIN_RATE = uint64(0)  # pointless for this test
     WITHDRAWAL_TIMELOCK = uint64(0)  # pointless for this test
-    SLOW_REKEY_TIMELOCK = uint64(0)  # pointless for this test
-    REKEY_INCREMENTS = uint64(0)  # pointless for this test
     PAYMENT_CLAWBACK_PERIOD = uint64(90)
     REKEY_CLAWBACK_PERIOD = uint64(60)
     PUZZLE_HASHES = [ACS_PH]

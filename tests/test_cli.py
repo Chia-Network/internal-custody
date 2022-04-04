@@ -1,6 +1,5 @@
 import asyncio
 import os
-import re
 
 from blspy import BasicSchemeMPL, PrivateKey, G2Element
 from click.testing import CliRunner, Result
@@ -207,17 +206,18 @@ def test_init():
         )
         assert "Configuration successfully validated" in result.output
 
+        config_export_path = Path("./export.config")
         result = runner.invoke(
             cli,
             [
-                "export_root",
+                "export_config",
                 "--filename",
-                config_path,
+                config_export_path,
                 "--db-path",
                 sync_db_path,
             ],
         )
-        with open(config_path, "rb") as file:
+        with open(config_export_path, "rb") as file:
             assert RootDerivation.from_bytes(file.read()) == derivation
 
         # Test our p2_singleton address creator

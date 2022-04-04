@@ -1,6 +1,7 @@
 from blspy import G2Element
 from typing import Any, Dict, List, Optional
 
+from chia.consensus.default_constants import DEFAULT_CONSTANTS
 from chia.clvm.spend_sim import SpendSim, SimClient
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program
@@ -101,3 +102,7 @@ async def get_node_client(node_rpc_port: int):
     sim = await SpendSim.create(db_path="./sim.db")
     await sim.farm_block(ACS_PH)
     return FullNodeClientMock(sim)
+
+
+def get_additional_data():
+    return DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA
