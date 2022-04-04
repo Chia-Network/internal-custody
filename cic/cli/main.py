@@ -1,4 +1,5 @@
 import asyncio
+import binascii
 import click
 import dataclasses
 import math
@@ -9,7 +10,7 @@ from blspy import PrivateKey, G1Element, G2Element
 from clvm.casts import int_to_bytes
 from operator import attrgetter
 from pathlib import Path
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program, INFINITE_COST
@@ -115,6 +116,12 @@ async def load_db(db_path: str, launcher_id: Optional[bytes32] = None) -> SyncSt
     return await SyncStore.create(path)
 
 
+def load_pubkeys(pubkey_files_str: str) -> Iterable[G1Element]:
+    for filepath in pubkey_files_str.split(","):
+        with open(Path(filepath), "r") as file:
+            yield BLSPublicKey.from_bech32m(file.read().strip())._g1
+
+
 @click.group(
     help="\n  Commands to control a prefarm singleton \n",
     context_settings=CONTEXT_SETTINGS,
@@ -127,7 +134,11 @@ def cli(ctx: click.Context) -> None:
 
 @cli.command("init", short_help="Create a configuration file for the prefarm")
 @click.option(
-    "-d", "--directory", help="The directory in which to create the configuration file", default=".", required=True
+    "-d",
+    "--directory",
+    help="The directory in which to create the configuration file",
+    default=".",
+    show_default=True,
 )
 @click.option("-d", "--date", help="Unix time at which withdrawals become possible", required=True)
 @click.option("-r", "--rate", help="Mojos that can be withdrawn per second", required=True)
@@ -181,6 +192,8 @@ def init_cmd(
     with open(path_2, "wb") as file:
         file.write(bytes(prefarm_info))
 
+    print(f"Created a configuration file: {path_1}")
+
 
 @cli.command("derive_root", short_help="Take an existing configuration and pubkey set to derive a puzzle root")
 @click.option(
@@ -189,7 +202,6 @@ def init_cmd(
     help="The configuration file with which to derive the root (or the filepath to create it at if using --db-path)",
     default="./Configuration (needs derivation).txt",
     show_default=True,
-    required=True,
 )
 @click.option(
     "-db",
@@ -197,7 +209,9 @@ def init_cmd(
     help="Optionally specify a DB path to find the configuration from",
     default=None,
 )
-@click.option("-pks", "--pubkeys", help="A comma separated list of pubkeys to derive a puzzle for", required=True)
+@click.option(
+    "-pks", "--pubkeys", help="A comma separated list of pubkey files that will control this money", required=True
+)
 @click.option(
     "-m",
     "--initial-lock-level",
@@ -215,7 +229,7 @@ def init_cmd(
     "--minimum-pks",
     help="The minimum number of pubkeys required to initiate a slow rekey",
     default=1,
-    required=True,
+    show_default=True,
 )
 @click.option(
     "-rt",
@@ -257,8 +271,7 @@ def derive_cmd(
                 await sync_store.db_connection.close()
 
         prefarm_info = asyncio.get_event_loop().run_until_complete(get_prefarm_info())
-
-    pubkey_list: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
+    pubkey_list: List[G1Element] = list(load_pubkeys(pubkeys))
     derivation: RootDerivation = calculate_puzzle_root(
         prefarm_info,
         pubkey_list,
@@ -274,6 +287,8 @@ def derive_cmd(
             new_file.write(bytes(derivation))
         if "needs derivation" in configuration:
             os.rename(Path(configuration), Path("awaiting launch".join(configuration.split("needs derivation"))))
+
+        print("Custody rules successfully added to configuration")
 
     else:
         validation_info = load_prefarm_info(validate_against)
@@ -365,6 +380,8 @@ def launch_cmd(
                         new_derivation.prefarm_info.puzzle_root[0:3].hex().join(configuration.split("awaiting launch"))
                     ),
                 )
+
+            print("Singleton successfully launched")
         finally:
             node_client.close()
             wallet_client.close()
@@ -378,13 +395,13 @@ def launch_cmd(
 @click.option(
     "-c",
     "--configuration",
-    help="The configuration file with which to initialize a sync database (default: ./Configuration (******).txt)",
+    help="The configuration file update the sync database with (default: ./Configuration (******).txt)",
     default=None,
 )
 @click.option(
     "-db",
     "--db-path",
-    help="The file path to initialize/find the sync database at (default: ./sync (******).sqlite)",
+    help="The file path to find the sync database at (default: ./sync (******).sqlite)",
     default="./",
     required=True,
 )
@@ -424,7 +441,7 @@ def update_cmd(
 @click.option(
     "-f",
     "--filename",
-    help="The file path to export the config to (default: ./Configuration (******).sqlite)",
+    help="The file path to export the config to (default: ./Configuration Export (******).sqlite)",
     default=None,
 )
 @click.option(
@@ -434,21 +451,32 @@ def update_cmd(
     default="./",
     required=True,
 )
+@click.option(
+    "-p",
+    "--public",
+    help="Export the public information only",
+    is_flag=True,
+)
 def export_cmd(
     filename: Optional[str],
     db_path: str,
+    public: bool,
 ):
     async def do_command():
         sync_store: SyncStore = await load_db(db_path)
         try:
-            try:
-                configuration = await sync_store.get_configuration(False, block_outdated=False)
-                puzzle_root = configuration.prefarm_info.puzzle_root
-            except ValueError:
+            if not public:
+                try:
+                    configuration = await sync_store.get_configuration(False, block_outdated=False)
+                    puzzle_root = configuration.prefarm_info.puzzle_root
+                except ValueError:
+                    configuration = await sync_store.get_configuration(True, block_outdated=False)
+                    puzzle_root = configuration.puzzle_root
+            else:
                 configuration = await sync_store.get_configuration(True, block_outdated=False)
                 puzzle_root = configuration.puzzle_root
             if filename is None:
-                _filename = f"Configuration ({puzzle_root[0:3].hex()}).txt"
+                _filename = f"Configuration Export ({puzzle_root[0:3].hex()}).txt"
             else:
                 _filename = filename
             with open(Path(_filename), "wb") as file:
@@ -538,7 +566,7 @@ def sync_cmd(
                     if current_singleton.puzzle_root != prefarm_info.puzzle_root:
                         outdated: bool = await sync_store.update_config_puzzle_root(current_singleton.puzzle_root)
                         if outdated:
-                            print("Configuration is outdated, please update it with command <TODO>")
+                            print("Configuration is outdated, please update it with command cic update_config")
                     break
 
                 # Fill in all of the information about the spent singleton
@@ -765,7 +793,12 @@ def push_cmd(
             node_client, wallet_client = await get_node_and_wallet_clients(node_rpc_port, wallet_rpc_port, fingerprint)
 
             try:
-                push_bundle = SpendBundle.from_bytes(bytes.fromhex(spend_bundle))
+                if "." in spend_bundle:
+                    with open(Path(spend_bundle), "r") as file:
+                        spend_hex = file.read()
+                else:
+                    spend_hex = spend_bundle
+                push_bundle = SpendBundle.from_bytes(bytes.fromhex(spend_hex))
             except Exception:
                 print("Spend bundle cannot be recognized.  Please make sure this spend bundle is signed and try again.")
                 return
@@ -831,7 +864,7 @@ def push_cmd(
 @click.option(
     "-a",
     "--amount",
-    help="The outgoing amount (in mojos) to pay.  Can be zero to make no payment.",
+    help="The outgoing amount (in mojos) to pay",
     default=0,
     show_default=True,
 )
@@ -839,6 +872,7 @@ def push_cmd(
     "-t",
     "--recipient-address",
     help="The address that can claim the money after the clawback period is over (must be supplied if amount is > 0)",
+    required=True,
 )
 @click.option(
     "-ap",
@@ -864,15 +898,13 @@ def payments_cmd(
     db_path: str,
     pubkeys: str,
     amount: int,
-    recipient_address: Optional[str],
+    recipient_address: str,
     absorb_available_payments: bool,
     maximum_extra_cost: Optional[int],
     amount_threshold: int,
     filename: Optional[str],
 ):
     # Check to make sure we've been given a correct set of parameters
-    if amount > 0 and recipient_address is None:
-        raise ValueError("You must specify a recipient address for outgoing payments")
     if amount % 2 == 1:
         raise ValueError("You can not make payments of an odd amount")
 
@@ -884,7 +916,7 @@ def payments_cmd(
             current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
             if current_singleton is None:
                 raise RuntimeError("No singleton is found for this configuration.  Try `cic sync` then try again.")
-            pubkey_list: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
+            pubkey_list: List[G1Element] = list(load_pubkeys(pubkeys))
             clawforward_ph: bytes32 = decode_puzzle_hash(recipient_address)
             fee_conditions: List[Program] = [Program.to([60, b"$"])]
 
@@ -901,7 +933,9 @@ def payments_cmd(
             withdrawn_amount: int = derivation.prefarm_info.starting_amount - (
                 current_singleton.coin.amount - (amount - sum(c.amount for c in p2_singletons))
             )
-            time_to_use: int = math.ceil(withdrawn_amount / derivation.prefarm_info.mojos_per_second)
+            time_to_use: int = derivation.prefarm_info.start_date + math.ceil(
+                withdrawn_amount / derivation.prefarm_info.mojos_per_second
+            )
             if time_to_use > int(time.time() - 600):  # subtract 10 minutes to allow for weird block timestamps
                 raise ValueError("That much cannot be withdrawn at this time.")
 
@@ -938,11 +972,13 @@ def payments_cmd(
             )
 
             # Print the result
+            base64_spend = binascii.b2a_base64(bytes(unsigned_spend)).decode()
             if filename is not None:
                 with open(filename, "w") as file:
-                    file.write(bytes(unsigned_spend).hex())
+                    file.write(base64_spend)
+                print(f"Successfully wrote spend to {filename}")
             else:
-                print(bytes(unsigned_spend).hex())
+                print(base64_spend)
         finally:
             await sync_store.db_connection.close()
 
@@ -999,7 +1035,7 @@ def start_rekey_cmd(
             current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
             if current_singleton is None:
                 raise RuntimeError("No singleton is found for this configuration.  Try `cic sync` then try again.")
-            pubkey_list: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
+            pubkey_list: List[G1Element] = list(load_pubkeys(pubkeys))
             fee_conditions: List[Program] = [Program.to([60, b"$"])]
 
             # Get the spend bundle
@@ -1032,10 +1068,13 @@ def start_rekey_cmd(
             )
 
             # Print the result
+            base64_spend = binascii.b2a_base64(bytes(unsigned_spend)).decode()
             if filename is not None:
                 with open(filename, "w") as file:
-                    file.write(bytes(unsigned_spend).hex())
-            print(bytes(unsigned_spend).hex())
+                    file.write(base64_spend)
+                print(f"Successfully wrote spend to {filename}")
+            else:
+                print(base64_spend)
         finally:
             await sync_store.db_connection.close()
 
@@ -1095,7 +1134,7 @@ def clawback_cmd(
                 return
 
             # Construct the spend for the selected index
-            pubkey_list: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
+            pubkey_list: List[G1Element] = list(load_pubkeys(pubkeys))
             fee_conditions: List[Program] = [Program.to([60, b"$"])]
             if selected_action <= len(achs):
                 ach_record: ACHRecord = achs[selected_action - 1]
@@ -1162,10 +1201,13 @@ def clawback_cmd(
                 [],
                 get_additional_data(),
             )
+            base64_spend = binascii.b2a_base64(bytes(unsigned_spend)).decode()
             if filename is not None:
                 with open(filename, "w") as file:
-                    file.write(bytes(unsigned_spend).hex())
-            print(bytes(unsigned_spend).hex())
+                    file.write(base64_spend)
+                print(f"Successfully wrote spend to {filename}")
+            else:
+                print(base64_spend)
         finally:
             await sync_store.db_connection.close()
 
@@ -1270,7 +1312,9 @@ def complete_cmd(
             if filename is not None:
                 with open(filename, "w") as file:
                     file.write(bytes(completion_bundle).hex())
-            print(bytes(completion_bundle).hex())
+                print(f"Successfully wrote spend to {filename}")
+            else:
+                print(bytes(completion_bundle).hex())
         finally:
             await sync_store.db_connection.close()
 
@@ -1310,7 +1354,7 @@ def increase_cmd(
             current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
             if current_singleton is None:
                 raise RuntimeError("No singleton is found for this configuration.  Try `cic sync` then try again.")
-            pubkey_list: List[G1Element] = [G1Element.from_bytes(bytes.fromhex(pk)) for pk in pubkeys.split(",")]
+            pubkey_list: List[G1Element] = list(load_pubkeys(pubkeys))
             fee_conditions: List[Program] = [Program.to([60, b"$"])]
 
             # Validate we have enough pubkeys
@@ -1339,10 +1383,13 @@ def increase_cmd(
                 get_additional_data(),
             )
 
+            base64_spend = binascii.b2a_base64(bytes(unsigned_spend)).decode()
             if filename is not None:
                 with open(filename, "w") as file:
-                    file.write(bytes(unsigned_spend).hex())
-            print(bytes(unsigned_spend).hex())
+                    file.write(base64_spend)
+                print(f"Successfully wrote spend to {filename}")
+            else:
+                print(base64_spend)
         finally:
             await sync_store.db_connection.close()
 

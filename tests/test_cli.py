@@ -1,4 +1,5 @@
 import asyncio
+import binascii
 import os
 
 from blspy import BasicSchemeMPL, PrivateKey, G2Element
@@ -23,7 +24,7 @@ from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
 from cic.drivers.singleton import construct_p2_singleton
 
-from hsms.bls12_381 import BLSSecretExponent, BLSSignature
+from hsms.bls12_381 import BLSPublicKey, BLSSecretExponent, BLSSignature
 from hsms.cmds.hsmmerge import create_spend_bundle
 from hsms.process.sign import sign
 from hsms.process.unsigned_spend import UnsignedSpend
@@ -100,7 +101,13 @@ def test_init():
             secret_key_for_index(3).get_g1(),
             secret_key_for_index(4).get_g1(),
         ]
-        pubkeys_as_hex = [bytes(pk).hex() for pk in pubkeys]
+        pubkeys_as_blspk = [BLSPublicKey(pk) for pk in pubkeys]
+        pubkey_files: List[str] = []
+        for i in range(0, len(pubkeys_as_blspk)):
+            filename = f"{i}.pk"
+            with open(filename, "w") as file:
+                file.write(pubkeys_as_blspk[i].as_bech32m())
+            pubkey_files.append(filename)
         derivation: RootDerivation = calculate_puzzle_root(
             prefarm_info,
             pubkeys,
@@ -118,7 +125,7 @@ def test_init():
                 "--configuration",
                 "./infos/Configuration (needs derivation).txt",
                 "--pubkeys",
-                ",".join(pubkeys_as_hex),
+                ",".join(pubkey_files),
                 "--initial-lock-level",
                 uint32(3),
                 "--slow-penalty",
@@ -190,7 +197,7 @@ def test_init():
                 "--db-path",
                 sync_db_path,
                 "--pubkeys",
-                ",".join(pubkeys_as_hex),
+                ",".join(pubkey_files),
                 "--initial-lock-level",
                 uint32(3),
                 "--slow-penalty",
@@ -302,7 +309,7 @@ def test_init():
                 "--db-path",
                 sync_db_path,
                 "--pubkeys",
-                ",".join(pubkeys_as_hex[0:3]),
+                ",".join(pubkey_files[0:3]),
                 "--amount",
                 2,
                 "--recipient-address",
@@ -315,7 +322,7 @@ def test_init():
 
         # Do a little bit of a signing cermony
         with open(spend_bundle_out_path, "r") as file:
-            withdrawal_bundle = UnsignedSpend.from_bytes(bytes.fromhex(file.read()))
+            withdrawal_bundle = UnsignedSpend.from_bytes(binascii.a2b_base64(file.read()))
         sigs: List[BLSSignature] = []
         for key in range(0, 3):
             se = BLSSecretExponent(secret_key_for_index(key))
@@ -389,7 +396,7 @@ def test_init():
                 "--db-path",
                 sync_db_path,
                 "--pubkeys",
-                ",".join(pubkeys_as_hex[0:3]),
+                ",".join(pubkey_files[0:3]),
                 "--new-configuration",
                 new_derivation_filepath,
             ],
@@ -397,7 +404,7 @@ def test_init():
 
         # Do a little bit of a signing cermony
         with open(spend_bundle_out_path, "r") as file:
-            rekey_bundle = UnsignedSpend.from_bytes(bytes.fromhex(file.read()))
+            rekey_bundle = UnsignedSpend.from_bytes(binascii.a2b_base64(file.read()))
         sigs: List[BLSSignature] = [
             si.signature
             for si in sign(rekey_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
@@ -481,14 +488,14 @@ def test_init():
                     "--db-path",
                     sync_db_path,
                     "--pubkeys",
-                    ",".join(pubkeys_as_hex[0:3]),
+                    ",".join(pubkey_files[0:3]),
                 ],
                 input="1\n",
             )
 
             # Do a little bit of a signing cermony
             with open(spend_bundle_out_path, "r") as file:
-                clawback_bundle = UnsignedSpend.from_bytes(bytes.fromhex(file.read()))
+                clawback_bundle = UnsignedSpend.from_bytes(binascii.a2b_base64(file.read()))
             sigs: List[BLSSignature] = [
                 si.signature
                 for si in sign(clawback_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
@@ -648,13 +655,13 @@ def test_init():
                 "--db-path",
                 sync_db_path,
                 "--pubkeys",
-                ",".join(pubkeys_as_hex[0:3]),
+                ",".join(pubkey_files[0:3]),
             ],
         )
 
         # Do a little bit of a signing cermony
         with open(spend_bundle_out_path, "r") as file:
-            lock_bundle = UnsignedSpend.from_bytes(bytes.fromhex(file.read()))
+            lock_bundle = UnsignedSpend.from_bytes(binascii.a2b_base64(file.read()))
         sigs: List[BLSSignature] = [
             si.signature
             for si in sign(lock_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])

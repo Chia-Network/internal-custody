@@ -66,4 +66,4 @@ async def get_node_and_wallet_clients(
 def get_additional_data():
     config = load_config(DEFAULT_ROOT_PATH, "config.yaml")
     selected_network = config["farmer"]["selected_network"]
-    return config["farmer"]["network_overrides"]["constants"][selected_network]["GENESIS_CHALLENGE"]
+    return bytes.fromhex(config["farmer"]["network_overrides"]["constants"][selected_network]["GENESIS_CHALLENGE"])
