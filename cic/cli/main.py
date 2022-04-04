@@ -28,7 +28,6 @@ from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
 )
 
 from cic import __version__
-from cic.cli.clients import get_wallet_and_node_clients, get_node_client, get_additional_data
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
 from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm_info import PrefarmInfo
@@ -56,6 +55,11 @@ from hsms.bls12_381 import BLSPublicKey, BLSSecretExponent
 from hsms.process.signing_hints import SumHint
 from hsms.process.unsigned_spend import UnsignedSpend
 from hsms.streamables.coin_spend import CoinSpend as HSMCoinSpend
+
+if os.environ.get("TESTING_CIC_CLI", "FALSE") == "TRUE":
+    from tests.cli_clients import get_node_and_wallet_clients, get_node_client, get_additional_data
+else:
+    from cic.cli.clients import get_node_and_wallet_clients, get_node_client, get_additional_data
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
@@ -322,7 +326,7 @@ def launch_cmd(
         derivation = RootDerivation.from_bytes(file.read())
 
     async def do_command():
-        node_client, wallet_client = await get_wallet_and_node_clients(node_rpc_port, wallet_rpc_port, fingerprint)
+        node_client, wallet_client = await get_node_and_wallet_clients(node_rpc_port, wallet_rpc_port, fingerprint)
         try:
             fund_coin: Coin = (await wallet_client.select_coins(amount=1, wallet_id=1))[0]
             launcher_coin = Coin(fund_coin.name(), SINGLETON_LAUNCHER_HASH, 1)
@@ -758,7 +762,7 @@ def push_cmd(
 ):
     async def do_command():
         try:
-            node_client, wallet_client = await get_wallet_and_node_clients(node_rpc_port, wallet_rpc_port, fingerprint)
+            node_client, wallet_client = await get_node_and_wallet_clients(node_rpc_port, wallet_rpc_port, fingerprint)
 
             try:
                 push_bundle = SpendBundle.from_bytes(bytes.fromhex(spend_bundle))

@@ -164,10 +164,7 @@ def test_init():
 
         asyncio.get_event_loop().run_until_complete(check_for_launcher())
 
-        result = runner.invoke(
-            cli,
-            ["sync", "--configuration", config_path, "--db-path", "./infos/"],
-        )
+        result = runner.invoke(cli, ["sync", "--configuration", config_path, "--db-path", "./infos/"])
 
         sync_db_path = next(Path("./infos/").glob("sync (*).sqlite"))
         assert sync_db_path.exists()
