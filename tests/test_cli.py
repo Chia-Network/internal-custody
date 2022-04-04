@@ -526,7 +526,7 @@ def test_init():
                 ],
             )
 
-            async def check_for_spent_record():
+            async def check_for_spent_clawback():
                 sync_store = await SyncStore.create(sync_db_path)
                 try:
                     if i == 0:
@@ -538,7 +538,7 @@ def test_init():
                 finally:
                     await sync_store.db_connection.close()
 
-            asyncio.get_event_loop().run_until_complete(check_for_spent_record())
+            asyncio.get_event_loop().run_until_complete(check_for_spent_clawback())
 
         async def rewind():
             try:
@@ -594,7 +594,7 @@ def test_init():
                 ],
             )
 
-            async def check_for_spent_record():
+            async def check_for_spent_completion():
                 sync_store = await SyncStore.create(sync_db_path)
                 try:
                     if i == 0:
@@ -606,7 +606,7 @@ def test_init():
                 finally:
                     await sync_store.db_connection.close()
 
-            asyncio.get_event_loop().run_until_complete(check_for_spent_record())
+            asyncio.get_event_loop().run_until_complete(check_for_spent_completion())
 
         # Check to see that updating the config works
         result = runner.invoke(
@@ -633,7 +633,7 @@ def test_init():
         )
         assert "The configuration of this sync DB is not outdated" in result.output
 
-        async def rewind():
+        async def rewind_again():
             try:
                 sim = await SpendSim.create(db_path="./sim.db")
                 await sim.rewind(REWIND_HERE)
@@ -643,7 +643,7 @@ def test_init():
             finally:
                 await sim.close()
 
-        asyncio.get_event_loop().run_until_complete(rewind())
+        asyncio.get_event_loop().run_until_complete(rewind_again())
 
         # Try a lock level increase
         result = runner.invoke(
