@@ -2,6 +2,7 @@ Internal Custody
 =======
 
 ## Install
+You need a running full node and wallet for these commands to work.  Here are the instructions for this piece:
 ```
 git clone https://github.com/Chia-Network/internal-custody.git
 cd ./internal-custody
