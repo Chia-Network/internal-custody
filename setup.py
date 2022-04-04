@@ -6,9 +6,9 @@ with open("README.md", "rt") as fh:
     long_description = fh.read()
 
 dependencies = [
-    "chia-blockchain@git+https://github.com/Chia-Network/chia-blockchain.git@main#c7ea56114d6302ff73b91a001be12147e3a6e03d",  # noqa
-    "clvm_tools_rs==0.1.5",
-    "click",
+    "chia-blockchain@git+https://github.com/Chia-Network/chia-blockchain.git@spend_sim_fix#2bbb7e1e94267f6ce716bd3dcec820c806cc577c",  # noqa
+    "clvm_tools_rs==0.1.7",
+    "click==7.1.2",
 ]
 
 dev_dependencies = [
@@ -17,6 +17,7 @@ dev_dependencies = [
     "black==21.12b0",
     "pytest",
     "pytest-asyncio",
+    "pytest-env",
 ]
 
 setup(
@@ -25,7 +26,7 @@ setup(
     packages=find_packages(exclude=("tests",)),
     author="Quexington",
     entry_points={
-        "console_scripts": ["cic = cli.main:main"],
+        "console_scripts": ["cic = cic.cli.main:main"],
     },
     package_data={
         "": ["*.clvm.hex", "*.clsp.hex"],

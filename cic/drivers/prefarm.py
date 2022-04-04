@@ -1,7 +1,9 @@
 import dataclasses
 import enum
+import math
 
 from blspy import G1Element, G2Element
+from clvm.casts import int_from_bytes
 from typing import List, Optional, Tuple
 
 from chia.types.blockchain_format.coin import Coin
@@ -18,6 +20,7 @@ from chia.util.ints import uint64
 
 from cic.drivers.drop_coins import (
     construct_rekey_puzzle,
+    construct_rekey_clawback,
     construct_ach_puzzle,
     curry_rekey_puzzle,
     curry_ach_puzzle,
@@ -152,11 +155,11 @@ def get_withdrawal_spend_info(
     filter_puzzle: Program = construct_payment_and_rekey_filter(
         derivation.prefarm_info,
         simplify_merkle_proof(inner_puzzle.get_tree_hash(), leaf_proof),
-        derivation.prefarm_info.rekey_increments,
+        derivation.rekey_increments,
     )
 
     # Construct ACH creation solution
-    if payment_amount < 0:
+    if amount == 0:
         ach_conditions: List[Program] = []
     else:
         ach_conditions = [
@@ -233,7 +236,7 @@ def get_ach_clawback_spend_info(
     filter_puzzle: Program = construct_payment_and_rekey_filter(
         derivation.prefarm_info,
         simplify_merkle_proof(inner_puzzle.get_tree_hash(), leaf_proof),
-        derivation.prefarm_info.rekey_increments,
+        derivation.rekey_increments,
     )
 
     # Construct inner solution
@@ -322,7 +325,7 @@ def calculate_rekey_args(
             timelock,
         )
     elif len(pubkeys) == derivation.required_pubkeys:
-        timelock = derivation.prefarm_info.rekey_increments
+        timelock = derivation.rekey_increments
         filter_puzzle = construct_payment_and_rekey_filter(
             derivation.prefarm_info,
             simplify_merkle_proof(inner_puzzle.get_tree_hash(), leaf_proof),
@@ -330,8 +333,8 @@ def calculate_rekey_args(
         )
     elif len(pubkeys) < derivation.required_pubkeys:
         timelock = uint64(
-            derivation.prefarm_info.slow_rekey_timelock
-            + (derivation.prefarm_info.rekey_increments * (derivation.required_pubkeys - len(pubkeys)))
+            derivation.slow_rekey_timelock
+            + (derivation.rekey_increments * (derivation.required_pubkeys - len(pubkeys)))
         )
         filter_puzzle = construct_rekey_filter(
             derivation.prefarm_info,
@@ -381,6 +384,14 @@ def calculate_rekey_args(
     data_to_sign: bytes = signed_message + coin.name() + DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA  # TODO
 
     return timelock, new_puzzle_root, filter_puzzle, Program.to(filter_proof), filter_solution, data_to_sign
+
+
+# when we do rekeys we don't care about the current time so this calculates the lowest possible value to satisfy the RL
+def calculate_lowest_rl_time(prefarm_info: PrefarmInfo, singleton_amount: uint64) -> uint64:
+    return uint64(
+        prefarm_info.start_date
+        + math.ceil((prefarm_info.starting_amount - singleton_amount) / prefarm_info.mojos_per_second)
+    )
 
 
 def get_rekey_spend_info(
@@ -440,7 +451,7 @@ def get_rekey_spend_info(
                     ),
                     singleton.amount,
                     solve_rate_limiting_puzzle(
-                        uint64(0),
+                        calculate_lowest_rl_time(derivation.prefarm_info, singleton.amount),
                         solve_prefarm_inner(
                             SpendType.FINISH_REKEY,
                             singleton.amount,
@@ -462,7 +473,7 @@ def get_rekey_spend_info(
                         lineage_proof,
                         singleton.amount,
                         solve_rate_limiting_puzzle(
-                            uint64(0),
+                            calculate_lowest_rl_time(derivation.prefarm_info, singleton.amount),
                             solve_prefarm_inner(
                                 SpendType.START_REKEY,
                                 singleton.amount,
@@ -483,7 +494,7 @@ def get_rekey_spend_info(
     )
 
 
-def get_rekey_clawback_spend_bundle(
+def get_rekey_clawback_spend_info(
     rekey_coin: Coin,
     pubkeys: List[G1Element],
     derivation: RootDerivation,
@@ -551,7 +562,7 @@ def get_rekey_completion_spend(
                     singleton_lineage,
                     singleton.amount,
                     solve_rate_limiting_puzzle(
-                        uint64(0),
+                        calculate_lowest_rl_time(derivation.prefarm_info, singleton.amount),
                         solve_prefarm_inner(
                             SpendType.FINISH_REKEY,
                             singleton.amount,
@@ -573,3 +584,57 @@ def get_rekey_completion_spend(
         ],
         G2Element(),
     )
+
+
+def get_new_puzzle_root_from_solution(solution: Program) -> bytes32:
+    rl_solution = solution.at("rrf")
+    prefarm_inner_solution = rl_solution.at("rf")
+    spend_solution = prefarm_inner_solution.at("rrf")
+    new_puzzle_root = spend_solution.at("rf")
+    return bytes32(new_puzzle_root.as_python())
+
+
+def get_spend_type_for_solution(solution: Program) -> SpendType:
+    rl_solution = solution.at("rrf")
+    prefarm_inner_solution = rl_solution.at("rf")
+    spend_type = prefarm_inner_solution.at("rf")
+    return SpendType(int_from_bytes(spend_type.as_python()))
+
+
+def get_spending_pubkey_for_solution(solution: Program) -> G1Element:
+    if get_spend_type_for_solution(solution) == SpendType.FINISH_REKEY:
+        return None
+    else:
+        rl_solution = solution.at("rrf")
+        prefarm_inner_solution = rl_solution.at("rf")
+        filter_solution = prefarm_inner_solution.at("rrrrrf")
+        leaf_reveal = filter_solution.at("f")
+        pubkey = list(leaf_reveal.uncurry())[1].as_python()[0]
+        return G1Element.from_bytes(pubkey)
+
+
+def get_spend_params_for_ach_creation(solution: Program) -> Tuple[uint64, uint64, bytes32]:
+    rl_solution = solution.at("rrf")
+    prefarm_inner_solution = rl_solution.at("rf")
+    spend_solution = prefarm_inner_solution.at("rrf")
+    out_amount = uint64(int_from_bytes(spend_solution.at("f").as_python()))
+    in_amount = uint64(int_from_bytes(spend_solution.at("rf").as_python()))
+    p2_ph = bytes32(spend_solution.at("rrf").as_python())
+    return out_amount, in_amount, p2_ph
+
+
+def get_spend_params_for_rekey_creation(solution: Program) -> Tuple[uint64, bytes32]:
+    rl_solution = solution.at("rrf")
+    prefarm_inner_solution = rl_solution.at("rf")
+    spend_solution = prefarm_inner_solution.at("rrf")
+    timelock = uint64(int_from_bytes(spend_solution.at("f").as_python()))
+    new_root = bytes32(spend_solution.at("rf").as_python())
+    return timelock, new_root
+
+
+def was_rekey_completed(solution: Program) -> bool:
+    puzzle_reveal = solution.at("f")
+    if puzzle_reveal == construct_rekey_clawback():
+        return False
+    else:
+        return True

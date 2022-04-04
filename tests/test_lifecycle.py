@@ -38,7 +38,7 @@ from cic.drivers.prefarm import (
     get_ach_clawforward_spend_bundle,
     get_ach_clawback_spend_info,
     get_rekey_spend_info,
-    get_rekey_clawback_spend_bundle,
+    get_rekey_clawback_spend_info,
     get_rekey_completion_spend,
     calculate_rekey_args,
 )
@@ -138,13 +138,13 @@ async def setup_info():
             WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
             PAYMENT_CLAWBACK_PERIOD,  # payment_clawback_period: uint64
             REKEY_CLAWBACK_PERIOD,  # rekey_clawback_period: uint64
-            SLOW_REKEY_TIMELOCK,  # slow_rekey_timelock: uint64
-            REKEY_INCREMENTS,  # rekey_increments: uint64
         ),
         PUBKEY_LIST,
         uint32(3),
         uint32(5),
         uint32(1),
+        SLOW_REKEY_TIMELOCK,
+        REKEY_INCREMENTS,
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
         big_coin, construct_singleton_inner_puzzle(derivation.prefarm_info), starting_amount
@@ -197,11 +197,18 @@ async def test_puzzle_root_derivation(setup_info):
         n = uint32(5)
         for i in range(0, 5):
             pubkeys.append(secret_key_for_index(i).get_g1())
-        derivation: RootDerivation = calculate_puzzle_root(setup_info.prefarm_info, pubkeys, m, n, 1)
+        derivation: RootDerivation = calculate_puzzle_root(
+            setup_info.prefarm_info, pubkeys, m, n, 1, uint64(0), uint64(0)
+        )
         root: bytes32 = derivation.prefarm_info.puzzle_root
         # Test a few iterations to make sure ordering doesn't matter
         for subset in list(itertools.permutations(pubkeys))[0:5]:
-            assert root == calculate_puzzle_root(setup_info.prefarm_info, subset, m, n, 1).prefarm_info.puzzle_root
+            assert (
+                root
+                == calculate_puzzle_root(
+                    setup_info.prefarm_info, subset, m, n, 1, uint64(0), uint64(0)
+                ).prefarm_info.puzzle_root
+            )
 
         for agg_pk in get_all_aggregate_pubkey_combinations(pubkeys, m):
             for lock in (True, True):
@@ -306,7 +313,7 @@ async def test_payments(setup_info, cost_logger):
         filter_puzzle: Program = construct_rekey_filter(
             setup_info.prefarm_info,
             simplify_merkle_proof(inner_puzzle.get_tree_hash(), leaf_proof),
-            setup_info.prefarm_info.rekey_increments,
+            setup_info.derivation.rekey_increments,
         )
         delegated_puzzle: Program = puzzle_for_conditions(
             [[51, construct_p2_singleton(setup_info.prefarm_info.launcher_id), ach_coin.amount]]
@@ -611,6 +618,8 @@ async def test_rekeys(setup_info, cost_logger):
             uint32(4),  # lock level 4
             uint32(5),
             uint32(1),
+            setup_info.derivation.slow_rekey_timelock,
+            setup_info.derivation.rekey_increments,
         )
         ephemeral_singleton = Coin(
             setup_info.singleton.name(),
@@ -659,6 +668,8 @@ async def test_rekeys(setup_info, cost_logger):
             uint32(5),  # lock level 5
             uint32(5),
             uint32(1),
+            setup_info.derivation.slow_rekey_timelock,
+            setup_info.derivation.rekey_increments,
         )
         ephemeral_singleton = Coin(
             new_singleton.name(),
@@ -691,6 +702,8 @@ async def test_rekeys(setup_info, cost_logger):
             uint64(3),
             uint64(5),
             uint64(1),
+            new_derivation.slow_rekey_timelock,
+            new_derivation.rekey_increments,
         )
         start_slow_rekey_bundle, data_to_sign = get_rekey_spend_info(
             new_singleton,
@@ -709,10 +722,8 @@ async def test_rekeys(setup_info, cost_logger):
         aggregate_bundle = SpendBundle.aggregate([start_slow_rekey_bundle, SpendBundle([], signature)])
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
-        timelock: uint64 = setup_info.prefarm_info.slow_rekey_timelock + setup_info.prefarm_info.rekey_increments * 2
-        setup_info.sim.pass_time(
-            setup_info.prefarm_info.slow_rekey_timelock + setup_info.prefarm_info.rekey_increments * 2
-        )
+        timelock: uint64 = setup_info.derivation.slow_rekey_timelock + setup_info.derivation.rekey_increments * 2
+        setup_info.sim.pass_time(setup_info.derivation.slow_rekey_timelock + setup_info.derivation.rekey_increments * 2)
         await setup_info.sim.farm_block()
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result[0] == MempoolInclusionStatus.SUCCESS
@@ -726,7 +737,7 @@ async def test_rekeys(setup_info, cost_logger):
             construct_singleton_inner_puzzle(new_derivation.prefarm_info).get_tree_hash(),
             new_singleton.amount,
         )
-        too_few_cancel_bundle, data_to_sign = get_rekey_clawback_spend_bundle(
+        too_few_cancel_bundle, data_to_sign = get_rekey_clawback_spend_info(
             rekey_coin,
             [ONE_PUBKEY],
             new_derivation,
@@ -750,7 +761,7 @@ async def test_rekeys(setup_info, cost_logger):
 
         # Cancel with the 3 keys
         REWIND_HERE: uint32 = setup_info.sim.block_height
-        same_number_cancel_bundle, data_to_sign = get_rekey_clawback_spend_bundle(
+        same_number_cancel_bundle, data_to_sign = get_rekey_clawback_spend_info(
             rekey_coin,
             THREE_PUBKEYS,
             new_derivation,
@@ -830,7 +841,7 @@ async def test_rekeys(setup_info, cost_logger):
         aggregate_bundle = SpendBundle.aggregate([start_fast_rekey_bundle, SpendBundle([], signature)])
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
-        setup_info.sim.pass_time(setup_info.prefarm_info.rekey_increments)
+        setup_info.sim.pass_time(setup_info.derivation.rekey_increments)
         await setup_info.sim.farm_block()
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result[0] == MempoolInclusionStatus.SUCCESS
@@ -863,11 +874,11 @@ async def test_rekeys(setup_info, cost_logger):
             setup_info.derivation,
         )
 
-        malicious_rekey_clawback_bundle, data_to_sign = get_rekey_clawback_spend_bundle(
+        malicious_rekey_clawback_bundle, data_to_sign = get_rekey_clawback_spend_info(
             rekey_coin,
             THREE_NEW_PUBKEYS,
             new_derivation,
-            setup_info.prefarm_info.rekey_increments,
+            setup_info.derivation.rekey_increments,
             setup_info.derivation,
             additional_conditions=[Program.to([62, "rekey"])],
         )

@@ -27,6 +27,7 @@
         (list ASSERT_MY_PARENT_ID (sha256 parent_parent parent_puzzle parent_amount))
         (list ASSERT_PUZZLE_ANNOUNCEMENT (sha256 parent_puzzle REKEY_KW))
         (list CREATE_PUZZLE_ANNOUNCEMENT REKEY_KW)
+        (list CREATE_COIN_ANNOUNCEMENT '$') ; for fees
     )
   )
 

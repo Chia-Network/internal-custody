@@ -1,7 +1,7 @@
 (mod
   (
-      REKEY_MOD_HASH
       PUBKEY
+      REKEY_MOD_HASH
       NEW_PUZZLE_ROOT
       old_puzzle_root
       (singleton_inner . singleton_amount)

@@ -71,8 +71,6 @@ async def setup_info():
     DRAIN_RATE = uint64(0)  # pointless for this test
     PAYMENT_CLAWBACK_PERIOD = uint64(0)  # pointless for this test
     REKEY_CLAWBACK_PERIOD = uint64(0)  # pointless for this test
-    SLOW_REKEY_TIMELOCK = uint64(0)  # pointless for this test
-    REKEY_INCREMENTS = uint64(0)  # pointless for this test
     WITHDRAWAL_TIMELOCK = uint64(60)
     PUZZLE_HASHES = [ACS_PH]
 
@@ -93,8 +91,6 @@ async def setup_info():
         WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
         PAYMENT_CLAWBACK_PERIOD,  # payment_clawback_period: uint64
         REKEY_CLAWBACK_PERIOD,  # rekey_clawback_period: uint64
-        SLOW_REKEY_TIMELOCK,  # slow_rekey_timelock: uint64
-        REKEY_INCREMENTS,  # rekey_increments: uint64
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
         big_coin, construct_prefarm_inner_puzzle(prefarm_info), starting_amount
