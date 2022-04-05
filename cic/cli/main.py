@@ -8,6 +8,7 @@ import time
 
 from blspy import PrivateKey, G1Element, G2Element
 from clvm.casts import int_to_bytes
+from datetime import datetime
 from operator import attrgetter
 from pathlib import Path
 from typing import Iterable, List, Optional
@@ -509,10 +510,17 @@ def export_cmd(
     type=int,
     default=None,
 )
+@click.option(
+    "-s",
+    "--show",
+    help="Show a summary of the singleton after sync is complete",
+    is_flag=True,
+)
 def sync_cmd(
     configuration: Optional[str],
     db_path: str,
     node_rpc_port: Optional[int],
+    show: bool,
 ):
     # Start sync
     async def do_sync():
@@ -723,6 +731,9 @@ def sync_cmd(
         await sync_store.db_connection.close()
 
     asyncio.get_event_loop().run_until_complete(do_sync())
+
+    if show:
+        show_cmd(db_path, False, False)
 
 
 @cli.command("p2_address", short_help="Print the address to pay to the singleton")
@@ -936,7 +947,7 @@ def payments_cmd(
             time_to_use: int = derivation.prefarm_info.start_date + math.ceil(
                 withdrawn_amount / derivation.prefarm_info.mojos_per_second
             )
-            if time_to_use > int(time.time() - 600):  # subtract 10 minutes to allow for weird block timestamps
+            if time_to_use > int(time.time()):
                 raise ValueError("That much cannot be withdrawn at this time.")
 
             # Get the spend bundle
@@ -1390,6 +1401,119 @@ def increase_cmd(
                 print(f"Successfully wrote spend to {filename}")
             else:
                 print(base64_spend)
+        finally:
+            await sync_store.db_connection.close()
+
+    asyncio.get_event_loop().run_until_complete(do_command())
+
+
+@cli.command("show", short_help="Show the status of the singleton, payments, and rekeys")
+@click.option(
+    "-db",
+    "--db-path",
+    help="The file path to the sync DB (default: ./sync (******).sqlite)",
+    default="./",
+    required=True,
+)
+@click.option(
+    "-c",
+    "--config",
+    help="Display the details of the public config",
+    is_flag=True,
+)
+@click.option(
+    "-d",
+    "--derivation",
+    help="Display the private details of the private config",
+    is_flag=True,
+)
+def _show_cmd(
+    db_path: str,
+    config: bool,
+    derivation: bool,
+):
+    show_cmd(db_path, config, derivation)
+
+
+def show_cmd(
+    db_path: str,
+    config: bool,
+    derivation: bool,
+):
+    async def do_command():
+        sync_store: SyncStore = await load_db(db_path)
+        try:
+            current_time = int(time.time())
+            latest_singleton = await sync_store.get_latest_singleton()
+            p2_singletons = await sync_store.get_p2_singletons()
+            ach_records = await sync_store.get_ach_records()
+            rekey_records = await sync_store.get_rekey_records()
+            prefarm_info = await sync_store.get_configuration(True, block_outdated=False)
+
+            # Calculate available balance
+            elapsed_time: int = current_time - prefarm_info.start_date
+            amount_available: int = prefarm_info.mojos_per_second * elapsed_time - (
+                prefarm_info.starting_amount - latest_singleton.coin.amount
+            )
+
+            print()
+            print(
+                f"Current time: {current_time} ({datetime.fromtimestamp(current_time).strftime('%m/%d/%Y, %H:%M:%S')})"
+            )
+            print()
+            print(f"Config up to date: {not (await sync_store.is_configuration_outdated())}")
+            print()
+            print("Singleton:")
+            print(f"  - launcher ID: {prefarm_info.launcher_id}")
+            print(f"  - amount left: {latest_singleton.coin.amount - 1}")
+            print(f"  - amount available: {min(amount_available, prefarm_info.starting_amount) - 1}")
+            print(f"  - amount to claim: {sum(c.amount for c in p2_singletons)}")
+            print()
+            print("Outstanding events:")
+            print("  PAYMENTS:")
+            for ach in ach_records:
+                ach_ready_date: int = ach.confirmed_at_time + prefarm_info.payment_clawback_period
+                ach_time_left: int = ach_ready_date - current_time
+                if ach_time_left > 0:
+                    ready_str = f"(Ready at: {datetime.fromtimestamp(ach_ready_date).strftime('%m/%d/%Y, %H:%M:%S')})"
+                else:
+                    ready_str = "(Ready)"
+                print(f"- PAYMENT to {encode_puzzle_hash(ach.p2_ph, 'xch')} of amount {ach.coin.amount} {ready_str}")
+            print("  REKEYS:")
+            for rekey in rekey_records:
+                rekey_ready_date: int = rekey.confirmed_at_time + prefarm_info.rekey_clawback_period
+                rekey_time_left: int = rekey_ready_date - current_time
+                if rekey_time_left > 0:
+                    ready_str = f"(Ready at: {datetime.fromtimestamp(rekey_ready_date).strftime('%m/%d/%Y, %H:%M:%S')})"
+                else:
+                    ready_str = "(Ready)"
+                print(f"- REKEY from {rekey.from_root} to {rekey.to_root} {ready_str}")
+
+            if config:
+                print()
+                print("Config:")
+                print(f" - started: {datetime.fromtimestamp(prefarm_info.start_date).strftime('%m/%d/%Y, %H:%M:%S')}")
+                print(f" - initial amount: {prefarm_info.starting_amount}")
+                print(f" - mojos available per second: {prefarm_info.mojos_per_second}")
+                print(f" - current root: {prefarm_info.puzzle_root}")
+                print(f" - withdrawal timelock: {prefarm_info.withdrawal_timelock} seconds")
+                print(f" - payment clawback period: {prefarm_info.payment_clawback_period} seconds")
+                print(f" - rekey cancellation period: {prefarm_info.rekey_clawback_period} seconds")
+
+            if derivation:
+                print()
+                root_derivation = await sync_store.get_configuration(False, block_outdated=False)
+                print("Derivation Info:")
+                print(f" - lock level: {root_derivation.required_pubkeys}")
+                print(f" - max lock level: {root_derivation.maximum_pubkeys}")
+                print(f" - min keys to rekey: {root_derivation.minimum_pubkeys}")
+                print(f" - standard rekey timelock: {root_derivation.rekey_increments} seconds")
+                print(f" - slow rekey penalty: {root_derivation.slow_rekey_timelock} seconds")
+                print(" - pubkeys: ")
+                for pk in root_derivation.pubkey_list:
+                    as_bech32m: str = BLSPublicKey(pk).as_bech32m()
+                    print(f"    - {as_bech32m}")
+
         finally:
             await sync_store.db_connection.close()
 
