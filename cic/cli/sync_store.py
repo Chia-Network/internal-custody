@@ -180,6 +180,10 @@ class SyncStore:
         if len(coins) > 0:
             await cursor.close()
 
+    async def set_p2_singleton_spent(self, coin_id: bytes32) -> None:
+        cursor = await self.db_connection.execute("UPDATE p2_singletons SET spent = 1 WHERE coin_id==?", (coin_id,))
+        await cursor.close()
+
     async def get_latest_singleton(self) -> Optional[SingletonRecord]:
         cursor = await self.db_connection.execute("SELECT * from singletons ORDER BY generation DESC LIMIT 1")
         record = await cursor.fetchone()

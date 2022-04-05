@@ -651,7 +651,15 @@ def sync_cmd(
                 # Loop with the next coin
                 current_coin_record = next_coin_record
                 current_singleton = next_singleton
-            # Quickly request all of the p2_singletons
+            # Mark any p2_singletons spent
+            unspent_p2_singletons: List[bytes32] = [c.name() for c in (await sync_store.get_p2_singletons())]
+            p2_singleton_records: List[CoinRecord] = await node_client.get_coin_records_by_names(
+                unspent_p2_singletons, include_spent_coins=True
+            )
+            for p2_singleton in p2_singleton_records:
+                if p2_singleton.spent_block_index > 0:
+                    await sync_store.set_p2_singleton_spent(p2_singleton.coin.name())
+            # Quickly request all of the new p2_singletons
             p2_singleton_ph: bytes32 = construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash()
             await sync_store.add_p2_singletons(
                 [
