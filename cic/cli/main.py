@@ -936,7 +936,7 @@ def payments_cmd(
             time_to_use: int = derivation.prefarm_info.start_date + math.ceil(
                 withdrawn_amount / derivation.prefarm_info.mojos_per_second
             )
-            if time_to_use > int(time.time() - 600):  # subtract 10 minutes to allow for weird block timestamps
+            if time_to_use > int(time.time()):
                 raise ValueError("That much cannot be withdrawn at this time.")
 
             # Get the spend bundle
