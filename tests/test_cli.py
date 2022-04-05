@@ -363,7 +363,12 @@ def test_init():
                 assert singleton_record != latest_singleton_record
                 # +1 from the launch, -2 from the payment
                 assert singleton_record.coin.amount == prefarm_info.starting_amount - 1
+
+                p2_singletons: List[Coin] = await sync_store.get_p2_singletons()
+                assert len(p2_singletons) == 1
+
                 ach_record: ACHRecord = (await sync_store.get_ach_records(include_completed_coins=False))[0]
+
                 return singleton_record, ach_record
             finally:
                 await sync_store.db_connection.close()
