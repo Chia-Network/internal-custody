@@ -184,16 +184,12 @@ def init_cmd(
         uint64(rekey_cancel),
     )
 
-    path = Path(directory)
-    path_1 = path.joinpath("Configuration (needs derivation).txt")
-    path_2 = path.joinpath("Observer Info.txt")
+    path = Path(directory).joinpath("Configuration (needs derivation).txt")
 
-    with open(path_1, "wb") as file:
-        file.write(bytes(prefarm_info))
-    with open(path_2, "wb") as file:
+    with open(path, "wb") as file:
         file.write(bytes(prefarm_info))
 
-    print(f"Created a configuration file: {path_1}")
+    print(f"Created a configuration file: {path}")
 
 
 @cli.command("derive_root", short_help="Take an existing configuration and pubkey set to derive a puzzle root")
