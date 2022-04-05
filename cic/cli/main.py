@@ -1434,6 +1434,7 @@ def _show_cmd(
 ):
     show_cmd(db_path, config, derivation)
 
+
 def show_cmd(
     db_path: str,
     config: bool,
@@ -1474,24 +1475,18 @@ def show_cmd(
                 ach_ready_date: int = ach.confirmed_at_time + prefarm_info.payment_clawback_period
                 ach_time_left: int = ach_ready_date - current_time
                 if ach_time_left > 0:
-                    ready_str = (
-                        f"(Ready at: {datetime.fromtimestamp(ach_ready_date).strftime('%m/%d/%Y, %H:%M:%S')})"
-                    )
+                    ready_str = f"(Ready at: {datetime.fromtimestamp(ach_ready_date).strftime('%m/%d/%Y, %H:%M:%S')})"
                 else:
-                    ready_str = f"(Ready)"
-                print(
-                    f"- PAYMENT to {encode_puzzle_hash(ach.p2_ph, 'xch')} of amount {ach.coin.amount} {ready_str}"
-                )
+                    ready_str = "(Ready)"
+                print(f"- PAYMENT to {encode_puzzle_hash(ach.p2_ph, 'xch')} of amount {ach.coin.amount} {ready_str}")
             print("  REKEYS:")
             for rekey in rekey_records:
                 rekey_ready_date: int = rekey.confirmed_at_time + prefarm_info.rekey_clawback_period
                 rekey_time_left: int = rekey_ready_date - current_time
                 if rekey_time_left > 0:
-                    ready_str = (
-                        f"(Ready at: {datetime.fromtimestamp(rekey_ready_date).strftime('%m/%d/%Y, %H:%M:%S')})"
-                    )
+                    ready_str = f"(Ready at: {datetime.fromtimestamp(rekey_ready_date).strftime('%m/%d/%Y, %H:%M:%S')})"
                 else:
-                    ready_str = f"(Ready)"
+                    ready_str = "(Ready)"
                 print(f"- REKEY from {rekey.from_root} to {rekey.to_root} {ready_str}")
 
             if config:
@@ -1514,7 +1509,7 @@ def show_cmd(
                 print(f" - min keys to rekey: {root_derivation.minimum_pubkeys}")
                 print(f" - standard rekey timelock: {root_derivation.rekey_increments} seconds")
                 print(f" - slow rekey penalty: {root_derivation.slow_rekey_timelock} seconds")
-                print(f" - pubkeys: ")
+                print(" - pubkeys: ")
                 for pk in root_derivation.pubkey_list:
                     as_bech32m: str = BLSPublicKey(pk).as_bech32m()
                     print(f"    - {as_bech32m}")
