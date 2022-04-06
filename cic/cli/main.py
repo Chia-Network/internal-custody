@@ -38,6 +38,7 @@ from cic.drivers.prefarm import (
     SpendType,
     construct_full_singleton,
     construct_singleton_inner_puzzle,
+    get_puzzle_root_from_puzzle,
     get_new_puzzle_root_from_solution,
     get_withdrawal_spend_info,
     get_rekey_spend_info,
@@ -544,11 +545,19 @@ def sync_cmd(
             if current_singleton is None:
                 launcher_coin = await node_client.get_coin_record_by_name(prefarm_info.launcher_id)
                 current_coin_record = (await node_client.get_coin_records_by_parent_ids([prefarm_info.launcher_id]))[0]
-                if construct_full_singleton(prefarm_info).get_tree_hash() != current_coin_record.coin.puzzle_hash:
-                    raise ValueError("The specified config has the incorrect puzzle root")
+                if current_coin_record.spent_block_index == 0:
+                    if construct_full_singleton(prefarm_info).get_tree_hash() != current_coin_record.coin.puzzle_hash:
+                        raise ValueError("The specified config has the incorrect puzzle root")
+                    else:
+                        puzzle_root = prefarm_info.puzzle_root
+                else:
+                    initial_spend = await node_client.get_puzzle_and_solution(
+                        current_coin_record.coin.name(), current_coin_record.spent_block_index
+                    )
+                    puzzle_root = get_puzzle_root_from_puzzle(initial_spend.puzzle_reveal.to_program())
                 current_singleton = SingletonRecord(
                     current_coin_record.coin,
-                    prefarm_info.puzzle_root,
+                    puzzle_root,
                     LineageProof(parent_name=launcher_coin.coin.parent_coin_info, amount=launcher_coin.coin.amount),
                     current_coin_record.timestamp,
                     uint32(0),
