@@ -1604,8 +1604,10 @@ def audit_cmd(
                     }
                 )
 
+            sorted_audit_dict = sorted(audit_dict, key=lambda e: e["time"])
+
             with open(filepath, "w") as file:
-                file.write(json.dumps(audit_dict))
+                file.write(json.dumps(sorted_audit_dict))
 
         finally:
             await sync_store.db_connection.close()
