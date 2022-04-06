@@ -184,53 +184,39 @@ class SyncStore:
         cursor = await self.db_connection.execute("UPDATE p2_singletons SET spent = 1 WHERE coin_id==?", (coin_id,))
         await cursor.close()
 
+    def _singleton_record_from_row(self, record) -> SingletonRecord:
+        return SingletonRecord(
+            Coin(
+                record[1],
+                record[2],
+                uint64(record[3]),
+            ),
+            record[4],
+            LineageProof.from_bytes(record[5]),
+            uint64(record[6]),
+            uint32(record[7]),
+            None if record[8] == bytes([0]) else SerializedProgram.from_bytes(record[8]),
+            None if record[9] == bytes([0]) else SerializedProgram.from_bytes(record[9]),
+            None if record[10] == 0 else SpendType(record[10]),
+            None if record[11] == bytes([0]) else G1Element.from_bytes(record[11]),
+        )
+
     async def get_latest_singleton(self) -> Optional[SingletonRecord]:
         cursor = await self.db_connection.execute("SELECT * from singletons ORDER BY generation DESC LIMIT 1")
         record = await cursor.fetchone()
         await cursor.close()
-        return (
-            SingletonRecord(
-                Coin(
-                    record[1],
-                    record[2],
-                    uint64(record[3]),
-                ),
-                record[4],
-                LineageProof.from_bytes(record[5]),
-                uint64(record[6]),
-                uint32(record[7]),
-                None if record[8] == bytes([0]) else SerializedProgram.from_bytes(record[8]),
-                None if record[9] == bytes([0]) else SerializedProgram.from_bytes(record[9]),
-                None if record[10] == 0 else SpendType(record[10]),
-                None if record[11] == bytes([0]) else G1Element.from_bytes(record[11]),
-            )
-            if record is not None
-            else None
-        )
+        return self._singleton_record_from_row(record) if record is not None else None
 
     async def get_singleton_record(self, coin_id: bytes32) -> Optional[SingletonRecord]:
         cursor = await self.db_connection.execute("SELECT * from singletons WHERE coin_id=?", (coin_id,))
         record = await cursor.fetchone()
         await cursor.close()
-        return (
-            SingletonRecord(
-                Coin(
-                    record[1],
-                    record[2],
-                    uint64(record[3]),
-                ),
-                record[4],
-                LineageProof.from_bytes(record[5]),
-                uint64(record[6]),
-                uint32(record[7]),
-                None if record[8] == bytes([0]) else SerializedProgram.from_bytes(record[8]),
-                None if record[9] == bytes([0]) else SerializedProgram.from_bytes(record[9]),
-                None if record[10] == 0 else SpendType(record[10]),
-                None if record[11] == bytes([0]) else G1Element.from_bytes(record[11]),
-            )
-            if record is not None
-            else None
-        )
+        return self._singleton_record_from_row(record) if record is not None else None
+
+    async def get_all_singletons(self) -> List[SingletonRecord]:
+        cursor = await self.db_connection.execute("SELECT * from singletons")
+        records = await cursor.fetchall()
+        return [self._singleton_record_from_row(record) for record in records]
 
     async def get_ach_records(self, include_completed_coins: bool = False) -> List[ACHRecord]:
         optional_unspent_str: str = "" if include_completed_coins else " WHERE completed==0"
