@@ -2,6 +2,7 @@ import asyncio
 import binascii
 import click
 import dataclasses
+import json
 import math
 import os
 import time
@@ -11,7 +12,7 @@ from clvm.casts import int_to_bytes
 from datetime import datetime
 from operator import attrgetter
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Union
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program, INFINITE_COST
@@ -1517,6 +1518,96 @@ def show_cmd(
                 for pk in root_derivation.pubkey_list:
                     as_bech32m: str = BLSPublicKey(pk).as_bech32m()
                     print(f"    - {as_bech32m}")
+
+        finally:
+            await sync_store.db_connection.close()
+
+    asyncio.get_event_loop().run_until_complete(do_command())
+
+
+@cli.command("audit", short_help="Export a history of the singleton to a CSV")
+@click.option(
+    "-db",
+    "--db-path",
+    help="The file path to the sync DB (default: ./sync (******).sqlite)",
+    default="./",
+    required=True,
+)
+@click.option(
+    "-f",
+    "--filepath",
+    help="The file path the dump the audit log",
+    required=True,
+)
+def audit_cmd(
+    db_path: str,
+    filepath: bool,
+):
+    async def do_command():
+        sync_store: SyncStore = await load_db(db_path)
+        try:
+            singletons: List[SingletonRecord] = await sync_store.get_all_singletons()
+            achs: List[ACHRecord] = await sync_store.get_ach_records(include_completed_coins=True)
+            rekeys: List[RekeyRecord] = await sync_store.get_rekey_records(include_completed_coins=True)
+
+            # Make dictionaries for easy lookup of coins from the singleton that created them
+            singleton_parent_dict: Dict[bytes32, SingletonRecord] = {}
+            singleton_dict: Dict[bytes32, SingletonRecord] = {}
+            for singleton in singletons:
+                singleton_parent_dict[singleton.coin.parent_coin_info] = singleton
+                singleton_dict[singleton.coin.name()] = singleton
+            ach_dict: Dict[bytes32, ACHRecord] = {}
+            for ach in achs:
+                ach_dict[ach.coin.parent_coin_info] = ach
+            rekey_dict: Dict[bytes32, RekeyRecord] = {}
+            for rekey in rekeys:
+                rekey_dict[rekey.coin.parent_coin_info] = rekey
+
+            audit_dict: List[Dict[str, Union[str, Dict[str, Union[str, int, bool]]]]] = []
+            for singleton in singletons:
+                coin_id = singleton.coin.name()
+                if singleton.spend_type is None:
+                    continue
+                if singleton.spend_type == SpendType.HANDLE_PAYMENT:
+                    params: Dict[str, Union[str, int, bool]] = {}
+                    out_amount, in_amount, p2_ph = get_spend_params_for_ach_creation(singleton.solution.to_program())
+                    if out_amount > 0:
+                        params["out_amount"] = out_amount
+                        params["recipient_ph"] = p2_ph.hex()
+                    if in_amount > 0:
+                        params["in_amount"] = in_amount
+                    if coin_id in ach_dict:
+                        ach_record: ACHRecord = ach_dict[coin_id]
+                        if ach_record.completed is not None:
+                            params["completed"] = ach_record.completed
+                            params["completed_at_height"] = ach_record.spent_at_height
+                elif singleton.spend_type == SpendType.START_REKEY:
+                    params = {}
+                    timelock, new_root = get_spend_params_for_rekey_creation(singleton.solution.to_program())
+                    rekey_record: RekeyRecord = rekey_dict[coin_id]
+                    params["from_root"] = rekey_record.from_root.hex()
+                    params["to_root"] = rekey_record.to_root.hex()
+                    if rekey_record.completed is not None:
+                        params["completed"] = rekey_record.completed
+                        params["completed_at_height"] = rekey_record.spent_at_height
+                elif singleton.spend_type == SpendType.FINISH_REKEY:
+                    params = {
+                        "from_root": singleton_dict[singleton.coin.parent_coin_info].puzzle_root.hex(),
+                        "to_root": singleton.puzzle_root.hex(),
+                    }
+
+                audit_dict.append(
+                    {
+                        "time": singleton_parent_dict[coin_id].confirmed_at_time,
+                        "action": singleton.spend_type.name,
+                        "params": params,
+                    }
+                )
+
+            sorted_audit_dict = sorted(audit_dict, key=lambda e: e["time"])
+
+            with open(filepath, "w") as file:
+                file.write(json.dumps(sorted_audit_dict))
 
         finally:
             await sync_store.db_connection.close()
