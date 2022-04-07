@@ -69,6 +69,7 @@ async def setup_info():
     WITHDRAWAL_TIMELOCK = uint64(0)  # pointless for this test
     PAYMENT_CLAWBACK_PERIOD = uint64(90)
     REKEY_CLAWBACK_PERIOD = uint64(60)
+    REKEY_INCREMENTS = uint64(15)
     PUZZLE_HASHES = [ACS_PH]
 
     # Identify the prefarm coins
@@ -88,6 +89,7 @@ async def setup_info():
         WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
         PAYMENT_CLAWBACK_PERIOD,  # payment_clawback_period: uint64
         REKEY_CLAWBACK_PERIOD,  # rekey_clawback_period: uint64
+        REKEY_INCREMENTS,  # rekey_increments: uint64
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(big_coin, ACS, starting_amount)
     creation_bundle = SpendBundle(
