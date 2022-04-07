@@ -77,7 +77,10 @@ class RootDerivation(Streamable):
             filter_hash = construct_rekey_filter(
                 self.prefarm_info,
                 innermost_tree_root,
-                uint64(self.prefarm_info.slow_rekey_timelock + (self.prefarm_info.rekey_increments * (self.required_pubkeys - i))),
+                uint64(
+                    self.prefarm_info.slow_rekey_timelock
+                    + (self.prefarm_info.rekey_increments * (self.required_pubkeys - i))
+                ),
             ).get_tree_hash()
             if filter_hash in filter_proofs:
                 return {filter_hash: filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
@@ -134,7 +137,9 @@ def calculate_puzzle_root(
     standard_pk_list: List[G1Element] = get_all_aggregate_pubkey_combinations(sorted_pubkey_list, required_pubkeys)
     all_standard_phs: List[bytes32] = [puzzle_for_pk(pk).get_tree_hash() for pk in standard_pk_list]
     rnp_root, rnp_proofs = build_merkle_tree(all_standard_phs)
-    rnp_filter: bytes32 = construct_payment_and_rekey_filter(prefarm_info, rnp_root, prefarm_info.rekey_increments).get_tree_hash()
+    rnp_filter: bytes32 = construct_payment_and_rekey_filter(
+        prefarm_info, rnp_root, prefarm_info.rekey_increments
+    ).get_tree_hash()
     all_filters.append(rnp_filter)
     all_inner_proofs = all_inner_proofs | rnp_proofs
 

@@ -197,18 +197,11 @@ async def test_puzzle_root_derivation(setup_info):
         n = uint32(5)
         for i in range(0, 5):
             pubkeys.append(secret_key_for_index(i).get_g1())
-        derivation: RootDerivation = calculate_puzzle_root(
-            setup_info.prefarm_info, pubkeys, m, n, 1
-        )
+        derivation: RootDerivation = calculate_puzzle_root(setup_info.prefarm_info, pubkeys, m, n, 1)
         root: bytes32 = derivation.prefarm_info.puzzle_root
         # Test a few iterations to make sure ordering doesn't matter
         for subset in list(itertools.permutations(pubkeys))[0:5]:
-            assert (
-                root
-                == calculate_puzzle_root(
-                    setup_info.prefarm_info, subset, m, n, 1
-                ).prefarm_info.puzzle_root
-            )
+            assert root == calculate_puzzle_root(setup_info.prefarm_info, subset, m, n, 1).prefarm_info.puzzle_root
 
         for agg_pk in get_all_aggregate_pubkey_combinations(pubkeys, m):
             for lock in (True, True):
@@ -717,7 +710,9 @@ async def test_rekeys(setup_info, cost_logger):
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
         timelock: uint64 = setup_info.prefarm_info.slow_rekey_timelock + setup_info.prefarm_info.rekey_increments * 2
-        setup_info.sim.pass_time(setup_info.prefarm_info.slow_rekey_timelock + setup_info.prefarm_info.rekey_increments * 2)
+        setup_info.sim.pass_time(
+            setup_info.prefarm_info.slow_rekey_timelock + setup_info.prefarm_info.rekey_increments * 2
+        )
         await setup_info.sim.farm_block()
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result[0] == MempoolInclusionStatus.SUCCESS
