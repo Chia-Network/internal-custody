@@ -13,7 +13,7 @@ from chia.types.mempool_inclusion_status import MempoolInclusionStatus
 from chia.types.spend_bundle import SpendBundle
 from chia.types.coin_spend import CoinSpend
 from chia.util.errors import Err
-from chia.util.ints import uint64
+from chia.util.ints import uint8, uint64
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
 
@@ -143,7 +143,7 @@ def get_proof_of_inclusion(num_puzzles: int) -> Tuple[int, List[bytes32]]:
 @pytest.mark.asyncio
 async def test_rekey(setup_info, cost_logger):
     try:
-        TIMELOCK = uint64(60)  # one minute
+        TIMELOCK = uint8(1)  # one minute
         new_prefarm_info: PrefarmInfo = dataclasses.replace(
             setup_info.prefarm_info,
             puzzle_root=build_merkle_tree([ACS_PH, ACS_PH])[0],
@@ -205,7 +205,7 @@ async def test_rekey(setup_info, cost_logger):
         honest_rekey_spend: SpendBundle = start_rekey_spend(False)
         result = await setup_info.sim_client.push_tx(honest_rekey_spend)
         assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
-        setup_info.sim.pass_time(TIMELOCK)
+        setup_info.sim.pass_time(TIMELOCK * setup_info.prefarm_info.rekey_increments)
         await setup_info.sim.farm_block()
 
         result = await setup_info.sim_client.push_tx(honest_rekey_spend)

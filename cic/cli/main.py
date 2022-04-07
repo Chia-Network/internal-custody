@@ -22,7 +22,7 @@ from chia.types.coin_record import CoinRecord
 from chia.types.coin_spend import CoinSpend
 from chia.types.spend_bundle import SpendBundle
 from chia.util.bech32m import decode_puzzle_hash, encode_puzzle_hash
-from chia.util.ints import uint32, uint64
+from chia.util.ints import uint8, uint32, uint64
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
 from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
@@ -1181,13 +1181,11 @@ def clawback_cmd(
                 # Validate we have enough keys
                 timelock: uint64 = rekey_record.timelock
                 required_pubkeys: Optional[int] = None
-                if timelock == derivation.prefarm_info.rekey_increments:
+                if timelock == uint8(1):
                     required_pubkeys = derivation.required_pubkeys
                 else:
                     for i in range(derivation.minimum_pubkeys, derivation.required_pubkeys):
-                        if timelock == derivation.prefarm_info.slow_rekey_timelock + (
-                            derivation.prefarm_info.rekey_increments * (derivation.required_pubkeys - i)
-                        ):
+                        if timelock == uint8(1 + derivation.required_pubkeys - i):
                             required_pubkeys = i
                             break
                 if required_pubkeys is None or len(pubkey_list) != required_pubkeys:

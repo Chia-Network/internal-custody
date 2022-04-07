@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
-from chia.util.ints import uint32, uint64
+from chia.util.ints import uint8, uint32, uint64
 from chia.util.streamable import Streamable, streamable
 from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import puzzle_for_pk
 
@@ -62,13 +62,13 @@ class RootDerivation(Streamable):
 
         # First, we're going to try to use the rnp filter
         filter_hash: bytes32 = construct_payment_and_rekey_filter(
-            self.prefarm_info, innermost_tree_root, self.prefarm_info.rekey_increments
+            self.prefarm_info, innermost_tree_root, uint8(1)
         ).get_tree_hash()
         if filter_hash in filter_proofs:
             return {filter_hash: filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
 
         # Then, we're going to try the lock filter
-        filter_hash = construct_rekey_filter(self.prefarm_info, innermost_tree_root, uint64(0)).get_tree_hash()
+        filter_hash = construct_rekey_filter(self.prefarm_info, innermost_tree_root, uint8(0)).get_tree_hash()
         if filter_hash in filter_proofs:
             return {filter_hash: filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
 
@@ -77,10 +77,7 @@ class RootDerivation(Streamable):
             filter_hash = construct_rekey_filter(
                 self.prefarm_info,
                 innermost_tree_root,
-                uint64(
-                    self.prefarm_info.slow_rekey_timelock
-                    + (self.prefarm_info.rekey_increments * (self.required_pubkeys - i))
-                ),
+                uint8(1 + self.required_pubkeys - i),
             ).get_tree_hash()
             if filter_hash in filter_proofs:
                 return {filter_hash: filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
@@ -137,9 +134,7 @@ def calculate_puzzle_root(
     standard_pk_list: List[G1Element] = get_all_aggregate_pubkey_combinations(sorted_pubkey_list, required_pubkeys)
     all_standard_phs: List[bytes32] = [puzzle_for_pk(pk).get_tree_hash() for pk in standard_pk_list]
     rnp_root, rnp_proofs = build_merkle_tree(all_standard_phs)
-    rnp_filter: bytes32 = construct_payment_and_rekey_filter(
-        prefarm_info, rnp_root, prefarm_info.rekey_increments
-    ).get_tree_hash()
+    rnp_filter: bytes32 = construct_payment_and_rekey_filter(prefarm_info, rnp_root, uint8(1)).get_tree_hash()
     all_filters.append(rnp_filter)
     all_inner_proofs = all_inner_proofs | rnp_proofs
 
@@ -149,7 +144,7 @@ def calculate_puzzle_root(
             construct_lock_puzzle(pk, prefarm_info, next_puzzle_root).get_tree_hash() for pk in standard_pk_list
         ]
         lock_root, lock_proofs = build_merkle_tree(all_lock_phs)
-        lock_filter: bytes32 = construct_rekey_filter(prefarm_info, lock_root, uint64(0)).get_tree_hash()
+        lock_filter: bytes32 = construct_rekey_filter(prefarm_info, lock_root, uint8(0)).get_tree_hash()
         all_filters.append(lock_filter)
         all_inner_proofs = all_inner_proofs | lock_proofs
 
@@ -162,7 +157,7 @@ def calculate_puzzle_root(
             construct_rekey_filter(
                 prefarm_info,
                 slower_root,
-                uint64(prefarm_info.slow_rekey_timelock + (prefarm_info.rekey_increments * (required_pubkeys - i))),
+                uint8(1 + required_pubkeys - i),
             ).get_tree_hash()
         )
         all_inner_proofs = all_inner_proofs | slower_proofs

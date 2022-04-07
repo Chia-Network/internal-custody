@@ -21,9 +21,9 @@
      )
   )
 
-  (defun main (SINGLETON_STRUCT TIMELOCK parent_parent parent_puzzle parent_amount)
+  (defun main (SINGLETON_STRUCT FINISHING_TIMELOCK parent_parent parent_puzzle parent_amount)
     (list
-        (list ASSERT_SECONDS_RELATIVE TIMELOCK)
+        (list ASSERT_SECONDS_RELATIVE FINISHING_TIMELOCK)
         (list ASSERT_MY_PARENT_ID (sha256 parent_parent parent_puzzle parent_amount))
         (list ASSERT_PUZZLE_ANNOUNCEMENT (sha256 parent_puzzle REKEY_KW))
         (list CREATE_PUZZLE_ANNOUNCEMENT REKEY_KW)
@@ -33,7 +33,7 @@
 
   (main
     SINGLETON_STRUCT
-    (if TIMELOCK FINISHING_TIMELOCK 0)
+    (if TIMELOCK FINISHING_TIMELOCK 0)  ; We use the finishing timelock in all circumstances except TIMELOCK == 0 (lock)
     parent_parent
     (calculate_full_puzzle_hash SINGLETON_STRUCT parent_inner_puz)
     parent_amount

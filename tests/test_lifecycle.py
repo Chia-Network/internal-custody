@@ -17,7 +17,7 @@ from chia.types.spend_bundle import SpendBundle
 from chia.types.coin_spend import CoinSpend
 from chia.util.errors import Err
 from chia.util.hash import std_hash
-from chia.util.ints import uint32, uint64
+from chia.util.ints import uint8, uint32, uint64
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.p2_conditions import puzzle_for_conditions
 from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
@@ -306,7 +306,7 @@ async def test_payments(setup_info, cost_logger):
         filter_puzzle: Program = construct_rekey_filter(
             setup_info.prefarm_info,
             simplify_merkle_proof(inner_puzzle.get_tree_hash(), leaf_proof),
-            setup_info.prefarm_info.rekey_increments,
+            uint64(1),
         )
         delegated_puzzle: Program = puzzle_for_conditions(
             [[51, construct_p2_singleton(setup_info.prefarm_info.launcher_id), ach_coin.amount]]
@@ -709,9 +709,8 @@ async def test_rekeys(setup_info, cost_logger):
         aggregate_bundle = SpendBundle.aggregate([start_slow_rekey_bundle, SpendBundle([], signature)])
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
-        timelock: uint64 = setup_info.prefarm_info.slow_rekey_timelock + setup_info.prefarm_info.rekey_increments * 2
         setup_info.sim.pass_time(
-            setup_info.prefarm_info.slow_rekey_timelock + setup_info.prefarm_info.rekey_increments * 2
+            setup_info.prefarm_info.slow_rekey_timelock + setup_info.prefarm_info.rekey_increments * 3
         )
         await setup_info.sim.farm_block()
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
@@ -730,7 +729,7 @@ async def test_rekeys(setup_info, cost_logger):
             rekey_coin,
             [ONE_PUBKEY],
             new_derivation,
-            timelock,
+            uint8(3),
             re_derivation,
         )
         synth_pk: G1Element = get_synthetic_pubkey(ONE_PUBKEY)
@@ -754,7 +753,7 @@ async def test_rekeys(setup_info, cost_logger):
             rekey_coin,
             THREE_PUBKEYS,
             new_derivation,
-            timelock,
+            uint8(3),
             re_derivation,
         )
         synth_pk: G1Element = get_synthetic_pubkey(AGG_THREE)

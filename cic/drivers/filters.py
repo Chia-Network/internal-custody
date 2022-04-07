@@ -1,6 +1,6 @@
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
-from chia.util.ints import uint64
+from chia.util.ints import uint8
 
 from cic.drivers.drop_coins import (
     P2_MERKLE_MOD,
@@ -18,7 +18,7 @@ FILTER_REKEY_AND_PAYMENT_MOD = load_clvm("rekey_and_payment.clsp", package_or_re
 def construct_payment_and_rekey_filter(
     prefarm_info: PrefarmInfo,
     puzzle_root: bytes32,
-    rekey_timelock: uint64,
+    rekey_timelock: uint8,
 ) -> Program:
     return P2_MERKLE_MOD.curry(
         FILTER_REKEY_AND_PAYMENT_MOD.curry(
@@ -37,7 +37,7 @@ def construct_payment_and_rekey_filter(
 def construct_rekey_filter(
     prefarm_info: PrefarmInfo,
     puzzle_root: bytes32,
-    rekey_timelock: uint64,
+    rekey_timelock: uint8,
 ) -> Program:
     return P2_MERKLE_MOD.curry(
         FILTER_ONLY_REKEY_MOD.curry(
@@ -76,7 +76,7 @@ def solve_filter_for_rekey(
     puzzle_solution: Program,
     old_puzzle_root: bytes32,
     new_puzzle_root: bytes32,
-    timelock: uint64,
+    timelock: uint8,
 ):
     return Program.to(
         [

@@ -62,7 +62,7 @@
     )
   )
 
-  (assert (> TIMELOCK 0)
+  (assert (> TIMELOCK 0)  ; No clawing back locks
     ; then
     (assert (= PUZZLE_ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) merkle_proof))
       ; then
