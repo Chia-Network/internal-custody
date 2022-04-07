@@ -13,7 +13,7 @@ from chia.types.mempool_inclusion_status import MempoolInclusionStatus
 from chia.types.spend_bundle import SpendBundle
 from chia.types.coin_spend import CoinSpend
 from chia.util.errors import Err
-from chia.util.ints import uint32, uint64
+from chia.util.ints import uint8, uint32, uint64
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
 
@@ -69,6 +69,8 @@ async def setup_info():
     WITHDRAWAL_TIMELOCK = uint64(0)  # pointless for this test
     PAYMENT_CLAWBACK_PERIOD = uint64(90)
     REKEY_CLAWBACK_PERIOD = uint64(60)
+    REKEY_INCREMENTS = uint64(15)
+    SLOW_REKEY_TIMELOCK = uint64(45)
     PUZZLE_HASHES = [ACS_PH]
 
     # Identify the prefarm coins
@@ -88,6 +90,8 @@ async def setup_info():
         WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
         PAYMENT_CLAWBACK_PERIOD,  # payment_clawback_period: uint64
         REKEY_CLAWBACK_PERIOD,  # rekey_clawback_period: uint64
+        SLOW_REKEY_TIMELOCK,  # slow_rekey_timelock: uint64
+        REKEY_INCREMENTS,  # rekey_increments: uint64
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(big_coin, ACS, starting_amount)
     creation_bundle = SpendBundle(
@@ -223,7 +227,7 @@ async def test_ach(setup_info, cost_logger):
 @pytest.mark.asyncio
 async def test_rekey(setup_info, cost_logger):
     try:
-        REKEY_TIMELOCK = uint64(60)
+        REKEY_TIMELOCK = uint8(1)
         new_prefarm_info: PrefarmInfo = dataclasses.replace(
             setup_info.prefarm_info, puzzle_root=build_merkle_tree([ACS_PH, ACS_PH])[0]
         )
@@ -347,7 +351,7 @@ async def test_rekey(setup_info, cost_logger):
         # Process spend
         result = await setup_info.sim_client.push_tx(forward_rekey_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
-        setup_info.sim.pass_time(REKEY_TIMELOCK)
+        setup_info.sim.pass_time(setup_info.prefarm_info.rekey_clawback_period)
         await setup_info.sim.farm_block()
         cost_logger.add_cost("Finish Rekey Coin", forward_rekey_bundle)
 

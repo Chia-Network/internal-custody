@@ -13,7 +13,7 @@ from chia.types.mempool_inclusion_status import MempoolInclusionStatus
 from chia.types.spend_bundle import SpendBundle
 from chia.types.coin_spend import CoinSpend
 from chia.util.errors import Err
-from chia.util.ints import uint64
+from chia.util.ints import uint8, uint64
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
 
@@ -72,6 +72,8 @@ async def setup_info():
     PAYMENT_CLAWBACK_PERIOD = uint64(0)  # pointless for this test
     REKEY_CLAWBACK_PERIOD = uint64(0)  # pointless for this test
     WITHDRAWAL_TIMELOCK = uint64(60)
+    REKEY_INCREMENTS = uint64(15)
+    SLOW_REKEY_TIMELOCK = uint64(15)
     PUZZLE_HASHES = [ACS_PH]
 
     # Identify the prefarm coins
@@ -91,6 +93,8 @@ async def setup_info():
         WITHDRAWAL_TIMELOCK,  # withdrawal_timelock: uint64
         PAYMENT_CLAWBACK_PERIOD,  # payment_clawback_period: uint64
         REKEY_CLAWBACK_PERIOD,  # rekey_clawback_period: uint64
+        REKEY_INCREMENTS,  # rekey_increments: uint64
+        SLOW_REKEY_TIMELOCK,  # slow_rekey_timelock: uint64
     )
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
         big_coin, construct_prefarm_inner_puzzle(prefarm_info), starting_amount
@@ -139,7 +143,7 @@ def get_proof_of_inclusion(num_puzzles: int) -> Tuple[int, List[bytes32]]:
 @pytest.mark.asyncio
 async def test_rekey(setup_info, cost_logger):
     try:
-        TIMELOCK = uint64(60)  # one minute
+        TIMELOCK = uint8(1)  # one minute
         new_prefarm_info: PrefarmInfo = dataclasses.replace(
             setup_info.prefarm_info,
             puzzle_root=build_merkle_tree([ACS_PH, ACS_PH])[0],
@@ -201,7 +205,7 @@ async def test_rekey(setup_info, cost_logger):
         honest_rekey_spend: SpendBundle = start_rekey_spend(False)
         result = await setup_info.sim_client.push_tx(honest_rekey_spend)
         assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
-        setup_info.sim.pass_time(TIMELOCK)
+        setup_info.sim.pass_time(TIMELOCK * setup_info.prefarm_info.rekey_increments)
         await setup_info.sim.farm_block()
 
         result = await setup_info.sim_client.push_tx(honest_rekey_spend)

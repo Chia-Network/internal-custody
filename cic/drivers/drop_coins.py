@@ -2,7 +2,7 @@ from typing import List, Tuple, Dict
 
 from chia.types.blockchain_format.program import Program
 from chia.types.blockchain_format.sized_bytes import bytes32
-from chia.util.ints import uint64
+from chia.util.ints import uint8, uint64
 from chia.wallet.lineage_proof import LineageProof
 
 from cic.drivers.merkle_utils import build_merkle_tree
@@ -45,12 +45,16 @@ def construct_rekey_puzzle(prefarm_info: PrefarmInfo) -> Program:
     return P2_MERKLE_MOD.curry(DEFAULT_INNER, calculate_rekey_merkle_tree(prefarm_info)[0])
 
 
-def curry_rekey_puzzle(timelock: uint64, old_prefarm_info: PrefarmInfo, new_prefarm_info: PrefarmInfo) -> Program:
+def curry_rekey_puzzle(
+    timelock_multiple: uint8,
+    old_prefarm_info: PrefarmInfo,
+    new_prefarm_info: PrefarmInfo,
+) -> Program:
     return construct_rekey_puzzle(old_prefarm_info).curry(
         [
             new_prefarm_info.puzzle_root,
             old_prefarm_info.puzzle_root,
-            timelock,
+            timelock_multiple,
         ]
     )
 

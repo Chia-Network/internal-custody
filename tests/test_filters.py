@@ -13,7 +13,7 @@ from chia.types.mempool_inclusion_status import MempoolInclusionStatus
 from chia.types.spend_bundle import SpendBundle
 from chia.types.coin_spend import CoinSpend
 from chia.util.errors import Err
-from chia.util.ints import uint64
+from chia.util.ints import uint8, uint64
 
 from cic.drivers.drop_coins import (
     curry_rekey_puzzle,
@@ -63,13 +63,15 @@ async def setup_info():
     prefarm_coins = await sim_client.get_coin_records_by_puzzle_hashes([ACS_PH])
 
     # Construct our prefarm info
-    REKEY_TIMELOCK = uint64(60)  # one minute
+    REKEY_TIMELOCK = uint64(1)  # one minute
     prefarm_info = PrefarmInfo(
         bytes32([0] * 32),  # doesn't matter
         uint64(0),  # doesn't matter
         uint64(0),  # doesn't matter
         uint64(0),  # doesn't matter
         build_merkle_tree([ACS_PH])[0],
+        uint64(0),  # doesn't matter
+        uint64(0),  # doesn't matter
         uint64(0),  # doesn't matter
         uint64(0),  # doesn't matter
         uint64(0),  # doesn't matter
@@ -264,9 +266,9 @@ async def test_rekeys(setup_info, honest, cost_logger):
     try:
         REWIND_HEIGHT = setup_info.sim.block_height
         if honest:
-            REKEY_TIMELOCK: uint64 = setup_info.rekey_timelock
+            REKEY_TIMELOCK: uint8 = setup_info.rekey_timelock
         else:
-            REKEY_TIMELOCK = uint64(setup_info.rekey_timelock - 1)
+            REKEY_TIMELOCK = uint8(0)
         # Try initiating a rekey with the rnp filter
         rnp_bundle = SpendBundle(
             [

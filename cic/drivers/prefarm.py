@@ -16,7 +16,7 @@ from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.p2_conditions import puzzle_for_conditions
 from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import puzzle_for_pk, solution_for_delegated_puzzle
 from chia.util.hash import std_hash
-from chia.util.ints import uint64
+from chia.util.ints import uint8, uint64
 
 from cic.drivers.drop_coins import (
     construct_rekey_puzzle,
@@ -60,6 +60,8 @@ def construct_prefarm_inner_puzzle(prefarm_info: PrefarmInfo) -> Program:
             construct_rekey_puzzle(prefarm_info).get_tree_hash(),
             construct_ach_puzzle(prefarm_info).get_tree_hash(),
             prefarm_info.withdrawal_timelock,
+            prefarm_info.rekey_increments,
+            prefarm_info.slow_rekey_timelock,
         ],
     )
 
@@ -155,7 +157,7 @@ def get_withdrawal_spend_info(
     filter_puzzle: Program = construct_payment_and_rekey_filter(
         derivation.prefarm_info,
         simplify_merkle_proof(inner_puzzle.get_tree_hash(), leaf_proof),
-        derivation.rekey_increments,
+        uint8(1),
     )
 
     # Construct ACH creation solution
@@ -236,7 +238,7 @@ def get_ach_clawback_spend_info(
     filter_puzzle: Program = construct_payment_and_rekey_filter(
         derivation.prefarm_info,
         simplify_merkle_proof(inner_puzzle.get_tree_hash(), leaf_proof),
-        derivation.rekey_increments,
+        uint8(1),
     )
 
     # Construct inner solution
@@ -299,7 +301,7 @@ def calculate_rekey_args(
     derivation: RootDerivation,
     new_derivation: Optional[RootDerivation] = None,  # None means this is a lock level increase
     additional_conditions: List[Program] = [],
-) -> Tuple[uint64, bytes32, Program, Program, Program, bytes]:
+) -> Tuple[uint8, bytes32, Program, Program, Program, bytes]:
     agg_pk = G1Element()
     for pk in pubkeys:
         agg_pk += pk
@@ -318,24 +320,21 @@ def calculate_rekey_args(
         inner_puzzle = puzzle_for_pk(agg_pk)
 
     if new_derivation is None:
-        timelock = uint64(0)
+        timelock = uint8(0)
         filter_puzzle: Program = construct_rekey_filter(
             derivation.prefarm_info,
             simplify_merkle_proof(inner_puzzle.get_tree_hash(), leaf_proof),
             timelock,
         )
     elif len(pubkeys) == derivation.required_pubkeys:
-        timelock = derivation.rekey_increments
+        timelock = uint8(1)
         filter_puzzle = construct_payment_and_rekey_filter(
             derivation.prefarm_info,
             simplify_merkle_proof(inner_puzzle.get_tree_hash(), leaf_proof),
             timelock,
         )
     elif len(pubkeys) < derivation.required_pubkeys:
-        timelock = uint64(
-            derivation.slow_rekey_timelock
-            + (derivation.rekey_increments * (derivation.required_pubkeys - len(pubkeys)))
-        )
+        timelock = uint8(1 + derivation.required_pubkeys - len(pubkeys))
         filter_puzzle = construct_rekey_filter(
             derivation.prefarm_info,
             simplify_merkle_proof(inner_puzzle.get_tree_hash(), leaf_proof),
@@ -415,7 +414,7 @@ def get_rekey_spend_info(
     lock_spends: List[CoinSpend] = []
     if new_derivation is None:
         rekey_puzzle: Program = curry_rekey_puzzle(
-            uint64(0),
+            uint8(0),
             derivation.prefarm_info,
             dataclasses.replace(derivation.prefarm_info, puzzle_root=derivation.next_root),
         )
@@ -498,7 +497,7 @@ def get_rekey_clawback_spend_info(
     rekey_coin: Coin,
     pubkeys: List[G1Element],
     derivation: RootDerivation,
-    rekey_timelock: uint64,
+    timelock_multiple: uint8,
     new_derivation: Optional[RootDerivation] = None,  # None means we're performing a lock
     additional_conditions: List[Program] = [],
 ) -> Tuple[SpendBundle, bytes]:
@@ -517,7 +516,7 @@ def get_rekey_clawback_spend_info(
                 CoinSpend(
                     rekey_coin,
                     curry_rekey_puzzle(
-                        rekey_timelock,
+                        timelock_multiple,
                         derivation.prefarm_info,
                         dataclasses.replace(derivation.prefarm_info, puzzle_root=new_puzzle_root),
                     ),

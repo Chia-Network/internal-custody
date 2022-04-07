@@ -26,8 +26,8 @@ _Either upgrade your shell or find some other way to put the output into a file 
 
 ## Configuration
 ```
-cic init --date <go get the unix time> --rate 100000000 --amount 1000000000000 --withdrawal-timelock 60 --payment-clawback 120 --rekey-cancel 120
-cic derive_root -pks "1.pk,2.pk,3.pk" -m 2 -n 3 -rt 60 -sp 120
+cic init --date <go get the unix time> --rate 1 --amount 100000 --withdrawal-timelock 60 --payment-clawback 120 --rekey-cancel 120 --rekey-timelock 120 --slow-penalty 120
+cic derive_root -pks "1.pk,2.pk,3.pk" -m 2 -n 3
 ```
 
 ## Launch
@@ -39,11 +39,10 @@ cic p2_address --prefix txch
 cic sync
 ```
 
-(You should wait 10 minutes at this point for the singleton to age a bit and make sure some assumptions that the code makes holds)
 
 ## Payment
 ```
-cic payment -f initial_absorb.unsigned -pks "1.pk,2.pk" -a 1000000 -t <own address> -ap -at 0
+cic payment -f initial_absorb.unsigned -pks "1.pk,2.pk" -a 100 -t <own address> -ap -at 0
 cat ./initial_absorb.unsigned | hsms0 1.se
 echo <sig here> > initial_absorb.1.sig
 cat ./initial_absorb.unsigned | hsms0 2.se
@@ -67,7 +66,7 @@ cic sync
 
 ## Re-configure
 ```
-cic derive_root --db-path './sync (<your hex digits>).sqlite' -c './Configuration (new).txt' -pks "1.pk,2.pk" -m 1 -n 2 -rt 30 -sp 60
+cic derive_root --db-path './sync (<your hex digits>).sqlite' -c './Configuration (new).txt' -pks "1.pk,2.pk" -m 1 -n 2
 ```
 
 ## Rekey
@@ -106,6 +105,6 @@ cic sync
 
 ## Update root after lock (WIP)
 ```
-cic derive_root --db-path './sync (<your hex digits>).sqlite' -c './Post Lock Config.txt' -pks "1.pk,2.pk" -m 2 -n 2 -rt 30 -sp 60
+cic derive_root --db-path './sync (<your hex digits>).sqlite' -c './Post Lock Config.txt' -pks "1.pk,2.pk" -m 2 -n 2
 cic update_config -c './Post Lock Config.txt'
 ```

@@ -24,9 +24,13 @@
   ; - REKEY_MOD_HASH
   ; - ACH_MOD_HASH
   ; - ACH_TIMELOCK
+  ; - BASE_REKEY_TIMELOCK
+  ; - SLOW_REKEY_PENALTY
   (defun-inline REKEY_MOD_HASH (STATE) (f STATE))
   (defun-inline ACH_MOD_HASH (STATE) (f (r STATE)))
   (defun-inline ACH_TIMELOCK (STATE) (f (r (r STATE))))
+  (defun-inline BASE_REKEY_TIMELOCK (STATE) (f (r (r (r STATE)))))
+  (defun-inline SLOW_REKEY_PENALTY (STATE) (f (r (r (r (r STATE))))))
 
   ;;; utility functions ;;;
   (defun calculate_our_ph (THIS_MOD_HASH ROOT STATE)
@@ -37,12 +41,12 @@
     )
   )
 
-  (defun-inline calculate_rekey_ph (REKEY_MOD_HASH ROOT timelock new_root)
+  (defun-inline calculate_rekey_ph (REKEY_MOD_HASH ROOT timelock_multiple new_root)
     (puzzle_hash_of_curried_function REKEY_MOD_HASH
       (sha256tree (list
         new_root
         ROOT
-        timelock
+        timelock_multiple
       ))
     )
   )
@@ -51,6 +55,10 @@
     (puzzle_hash_of_curried_function ACH_MOD_HASH
       (sha256tree (c ROOT clawforward_ph))
     )
+  )
+
+  (defun-inline calculate_timelock (BASE_REKEY_TIMELOCK SLOW_REKEY_PENALTY timelock_multiple)
+    (+ (* BASE_REKEY_TIMELOCK timelock_multiple) (if (> timelock_multiple 1) SLOW_REKEY_PENALTY 0))
   )
 
   (defun-inline opcode (condition) (f condition))
@@ -113,13 +121,13 @@
 
   ;;; FINISH REKEY ;;;
   (defun finish_rekey (THIS_MOD_HASH ROOT STATE my_amount (
-    timelock
+    timelock_multiple
     new_root
   ))
     (list
       (list ASSERT_PUZZLE_ANNOUNCEMENT
             (sha256
-              (calculate_rekey_ph (REKEY_MOD_HASH STATE) ROOT timelock new_root)
+              (calculate_rekey_ph (REKEY_MOD_HASH STATE) ROOT timelock_multiple new_root)
               REKEY_KW
             )
       )
@@ -133,14 +141,20 @@
 
   ;;; START REKEY ;;;
   (defun start_rekey (THIS_MOD_HASH ROOT STATE my_amount conditions (
-    timelock
+    timelock_multiple
     new_root_after
   ))
-    ; we assert the singleton has the same relative timelock as the rekey so that faster rekeys can initiate first
-    (c (list ASSERT_SECONDS_RELATIVE timelock)
+    (c
+      (list ASSERT_SECONDS_RELATIVE
+            (calculate_timelock
+              (BASE_REKEY_TIMELOCK STATE)
+              (SLOW_REKEY_PENALTY STATE)
+              timelock_multiple
+            )
+      )
       (check_singleton_and_even conditions
-        (c (calculate_our_ph THIS_MOD_HASH ROOT STATE) my_amount)                       ; singleton info
-        (c (calculate_rekey_ph (REKEY_MOD_HASH STATE) ROOT timelock new_root_after) 0)  ; drop coin info
+        (c (calculate_our_ph THIS_MOD_HASH ROOT STATE) my_amount)                                ; singleton info
+        (c (calculate_rekey_ph (REKEY_MOD_HASH STATE) ROOT timelock_multiple new_root_after) 0)  ; drop coin info
         (c () ())
       )
     )
