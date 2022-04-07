@@ -17,6 +17,7 @@ class PrefarmInfo(Streamable):
     payment_clawback_period: uint64
     rekey_clawback_period: uint64
     rekey_increments: uint64
+    slow_rekey_timelock: uint64
 
     def is_valid_update(self, new: "PrefarmInfo") -> bool:
         return (

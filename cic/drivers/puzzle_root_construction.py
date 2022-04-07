@@ -29,7 +29,6 @@ class RootDerivation(Streamable):
     required_pubkeys: uint32
     maximum_pubkeys: uint32
     minimum_pubkeys: uint32
-    slow_rekey_timelock: uint64
     next_root: Optional[bytes32]
     filter_proofs: ProofType
     leaf_proofs: ProofType
@@ -78,7 +77,7 @@ class RootDerivation(Streamable):
             filter_hash = construct_rekey_filter(
                 self.prefarm_info,
                 innermost_tree_root,
-                uint64(self.slow_rekey_timelock + (self.prefarm_info.rekey_increments * (self.required_pubkeys - i))),
+                uint64(self.prefarm_info.slow_rekey_timelock + (self.prefarm_info.rekey_increments * (self.required_pubkeys - i))),
             ).get_tree_hash()
             if filter_hash in filter_proofs:
                 return {filter_hash: filter_proofs[filter_hash]}, {puzzle_hash: leaf_proof}
@@ -114,7 +113,6 @@ def calculate_puzzle_root(
     required_pubkeys: uint32,
     maximum_pubkeys: uint32,
     minimum_pubkeys: uint32,
-    slow_rekey_timelock: uint64,
 ) -> RootDerivation:
     sorted_pubkey_list = [G1Element.from_bytes(b) for b in sorted([bytes(pk) for pk in pubkey_list])]
     assert minimum_pubkeys > 0 and maximum_pubkeys > 0 and required_pubkeys > 0
@@ -125,7 +123,6 @@ def calculate_puzzle_root(
             uint32(required_pubkeys + 1),
             maximum_pubkeys,
             minimum_pubkeys,
-            slow_rekey_timelock,
         ).prefarm_info.puzzle_root
     else:
         next_puzzle_root = None
@@ -160,7 +157,7 @@ def calculate_puzzle_root(
             construct_rekey_filter(
                 prefarm_info,
                 slower_root,
-                uint64(slow_rekey_timelock + (prefarm_info.rekey_increments * (required_pubkeys - i))),
+                uint64(prefarm_info.slow_rekey_timelock + (prefarm_info.rekey_increments * (required_pubkeys - i))),
             ).get_tree_hash()
         )
         all_inner_proofs = all_inner_proofs | slower_proofs
@@ -172,7 +169,6 @@ def calculate_puzzle_root(
         required_pubkeys,
         maximum_pubkeys,
         minimum_pubkeys,
-        slow_rekey_timelock,
         next_puzzle_root,
         list(filter_proofs.items()),  # type: ignore
         list(all_inner_proofs.items()),  # type: ignore

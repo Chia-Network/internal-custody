@@ -172,6 +172,7 @@ def cli(ctx: click.Context) -> None:
     help="The amount of time where nothing has happened before a standard rekey can be initiated (in seconds)",
     required=True,
 )
+@click.option("-sp", "--slow-penalty", help="The time penalty for performing a slow rekey (in seconds)", required=True)
 def init_cmd(
     directory: str,
     date: int,
@@ -181,6 +182,7 @@ def init_cmd(
     payment_clawback: int,
     rekey_cancel: int,
     rekey_timelock: int,
+    slow_penalty: int,
 ):
     prefarm_info = PrefarmInfo(
         bytes32([0] * 32),
@@ -192,6 +194,7 @@ def init_cmd(
         uint64(payment_clawback),
         uint64(rekey_cancel),
         uint64(rekey_timelock),
+        uint64(slow_penalty),
     )
 
     path = Path(directory).joinpath("Configuration (needs derivation).txt")
@@ -238,7 +241,6 @@ def init_cmd(
     default=1,
     show_default=True,
 )
-@click.option("-sp", "--slow-penalty", help="The time penalty for performing a slow rekey (in seconds)", required=True)
 @click.option(
     "-va",
     "--validate-against",
@@ -251,7 +253,6 @@ def derive_cmd(
     pubkeys: str,
     initial_lock_level: int,
     minimum_pks: int,
-    slow_penalty: int,
     validate_against: Optional[str],
     maximum_lock_level: Optional[int] = None,
 ):
@@ -278,7 +279,6 @@ def derive_cmd(
         uint32(initial_lock_level),
         uint32(len(pubkey_list) if maximum_lock_level is None else maximum_lock_level),
         uint32(minimum_pks),
-        uint64(slow_penalty),
     )
 
     if validate_against is None:
@@ -350,7 +350,6 @@ def launch_cmd(
                 derivation.required_pubkeys,
                 derivation.maximum_pubkeys,
                 derivation.minimum_pubkeys,
-                derivation.slow_rekey_timelock,
             )
             _, launch_spend = generate_launch_conditions_and_coin_spend(
                 fund_coin, construct_singleton_inner_puzzle(new_derivation.prefarm_info), uint64(1)
@@ -1186,7 +1185,7 @@ def clawback_cmd(
                     required_pubkeys = derivation.required_pubkeys
                 else:
                     for i in range(derivation.minimum_pubkeys, derivation.required_pubkeys):
-                        if timelock == derivation.slow_rekey_timelock + (
+                        if timelock == derivation.prefarm_info.slow_rekey_timelock + (
                             derivation.prefarm_info.rekey_increments * (derivation.required_pubkeys - i)
                         ):
                             required_pubkeys = i
@@ -1521,7 +1520,7 @@ def show_cmd(
                 print(f" - max lock level: {root_derivation.maximum_pubkeys}")
                 print(f" - min keys to rekey: {root_derivation.minimum_pubkeys}")
                 print(f" - standard rekey timelock: {root_derivation.prefarm_info.rekey_increments} seconds")
-                print(f" - slow rekey penalty: {root_derivation.slow_rekey_timelock} seconds")
+                print(f" - slow rekey penalty: {root_derivation.prefarm_info.slow_rekey_timelock} seconds")
                 print(" - pubkeys: ")
                 for pk in root_derivation.pubkey_list:
                     as_bech32m: str = BLSPublicKey(pk).as_bech32m()
