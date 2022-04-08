@@ -95,16 +95,12 @@ cic update_config -c './Configuration (new).txt'
 
 ## Increase security
 ```
-cic increase_security_level -f lock.unsigned -pks "1.pk"
+cic increase_security_level -f lock.unsigned -pks "1.pk,2.pk"
 cat ./lock.unsigned | hsms0 1.se
 echo <sig here> > lock.1.sig
-hsmmerge ./lock.unsigned ./lock.1.sig > lock.signed
+cat ./lock.unsigned | hsms0 2.se
+echo <sig here> > lock.2.sig
+hsmmerge ./lock.unsigned ./lock.1.sig ./lock.2.sig > lock.signed
 cic push_tx -b ./lock.signed -m 100000000
 cic sync
-```
-
-## Update root after lock (WIP)
-```
-cic derive_root --db-path './sync (<your hex digits>).sqlite' -c './Post Lock Config.txt' -pks "1.pk,2.pk" -m 2 -n 2
-cic update_config -c './Post Lock Config.txt'
 ```
