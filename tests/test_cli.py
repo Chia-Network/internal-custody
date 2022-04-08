@@ -654,7 +654,7 @@ def test_init():
                 "--db-path",
                 sync_db_path,
                 "--pubkeys",
-                ",".join(pubkey_files[0:3]),
+                ",".join(pubkey_files[0:4]),
             ],
         )
 
@@ -663,7 +663,7 @@ def test_init():
             lock_bundle = UnsignedSpend.from_bytes(binascii.a2b_base64(file.read()))
         sigs: List[BLSSignature] = [
             si.signature
-            for si in sign(lock_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
+            for si in sign(lock_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 4)])
         ]
         _hsms_bundle = create_spend_bundle(lock_bundle, sigs)
         signed_lock_bundle = SpendBundle.from_bytes(bytes(_hsms_bundle))  # gotta convert from the hsms here
@@ -675,6 +675,109 @@ def test_init():
                 "push_tx",
                 "--spend-bundle",
                 bytes(signed_lock_bundle).hex(),
+                "--fee",
+                100,
+            ],
+        )
+        assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
+
+        result = runner.invoke(
+            cli,
+            [
+                "sync",
+                "--db-path",
+                sync_db_path,
+            ],
+        )
+
+        # Try a slow rekey
+        async def fast_forward_slow_rekey():
+            try:
+                sim = await SpendSim.create(db_path="./sim.db")
+                sim.pass_time(prefarm_info.rekey_increments * 2 + prefarm_info.slow_rekey_timelock)
+                await sim.farm_block()
+            finally:
+                await sim.close()
+
+        asyncio.get_event_loop().run_until_complete(fast_forward_slow_rekey())
+
+        result = runner.invoke(
+            cli,
+            [
+                "start_rekey",
+                "--filename",
+                spend_bundle_out_path,
+                "--db-path",
+                sync_db_path,
+                "--pubkeys",
+                ",".join(pubkey_files[0:3]),
+                "--new-configuration",
+                new_derivation_filepath,
+            ],
+        )
+
+        with open(spend_bundle_out_path, "r") as file:
+            slow_bundle = UnsignedSpend.from_bytes(binascii.a2b_base64(file.read()))
+        sigs: List[BLSSignature] = [
+            si.signature
+            for si in sign(slow_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
+        ]
+        _hsms_bundle = create_spend_bundle(slow_bundle, sigs)
+        signed_slow_bundle = SpendBundle.from_bytes(bytes(_hsms_bundle))  # gotta convert from the hsms here
+
+        result = runner.invoke(
+            cli,
+            [
+                "push_tx",
+                "--spend-bundle",
+                bytes(signed_slow_bundle).hex(),
+                "--fee",
+                100,
+            ],
+        )
+        assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
+
+        async def fast_forward_rekey_timelock():
+            try:
+                sim = await SpendSim.create(db_path="./sim.db")
+                sim.pass_time(prefarm_info.rekey_clawback_period)
+                await sim.farm_block()
+            finally:
+                await sim.close()
+
+        asyncio.get_event_loop().run_until_complete(fast_forward_rekey_timelock())
+
+        result = runner.invoke(
+            cli,
+            [
+                "sync",
+                "--db-path",
+                sync_db_path,
+            ],
+        )
+
+        result = runner.invoke(
+            cli,
+            [
+                "complete",
+                "--filename",
+                spend_bundle_out_path,
+                "--db-path",
+                sync_db_path,
+            ],
+            input="2\n",
+        )
+
+        with open(spend_bundle_out_path, "r") as file:
+            completion_bundle = SpendBundle.from_bytes(bytes.fromhex(file.read()))
+
+        # Push the tx
+        result = runner.invoke(
+            cli,
+            [
+                "push_tx",
+                "--spend-bundle",
+                bytes(completion_bundle).hex(),
                 "--fee",
                 100,
             ],

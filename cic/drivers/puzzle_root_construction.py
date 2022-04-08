@@ -140,8 +140,9 @@ def calculate_puzzle_root(
 
     # Construct the lock filter
     if next_puzzle_root is not None:
+        next_pk_list: List[G1Element] = get_all_aggregate_pubkey_combinations(sorted_pubkey_list, required_pubkeys + 1)
         all_lock_phs: List[bytes32] = [
-            construct_lock_puzzle(pk, prefarm_info, next_puzzle_root).get_tree_hash() for pk in standard_pk_list
+            construct_lock_puzzle(pk, prefarm_info, next_puzzle_root).get_tree_hash() for pk in next_pk_list
         ]
         lock_root, lock_proofs = build_merkle_tree(all_lock_phs)
         lock_filter: bytes32 = construct_rekey_filter(prefarm_info, lock_root, uint8(0)).get_tree_hash()

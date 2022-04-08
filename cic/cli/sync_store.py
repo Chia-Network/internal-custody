@@ -15,7 +15,7 @@ from chia.wallet.lineage_proof import LineageProof
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
 from cic.drivers.prefarm import SpendType
 from cic.drivers.prefarm_info import PrefarmInfo
-from cic.drivers.puzzle_root_construction import RootDerivation
+from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
 
 
 class SyncStore:
@@ -348,9 +348,19 @@ class SyncStore:
 
         try:
             derivation = RootDerivation.from_bytes(info[1])
-            new_configuration = dataclasses.replace(
-                derivation, prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=puzzle_root)
-            )
+            if derivation.next_root == puzzle_root:
+                new_configuration = calculate_puzzle_root(
+                    derivation.prefarm_info,
+                    derivation.pubkey_list,
+                    derivation.required_pubkeys + 1,
+                    derivation.maximum_pubkeys,
+                    derivation.minimum_pubkeys,
+                )
+                outdate_private = False
+            else:
+                new_configuration = dataclasses.replace(
+                    derivation, prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=puzzle_root)
+                )
             public = False
         except AssertionError:
             prefarm_info = PrefarmInfo.from_bytes(info[1])

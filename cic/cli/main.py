@@ -596,7 +596,7 @@ def sync_cmd(
 
                 # Create the new singleton's record
                 all_children: List[CoinRecord] = await node_client.get_coin_records_by_parent_ids(
-                    [current_coin_record.coin.name()]
+                    [current_coin_record.coin.name()], include_spent_coins=True
                 )
                 drop_coin: Optional[CoinRecord] = None
                 potential_drop_coins = [cr for cr in all_children if cr.coin.amount % 2 == 0]
@@ -1312,11 +1312,13 @@ def complete_cmd(
                 if parent_singleton is None:
                     raise RuntimeError("Bad sync information. Please try a resync.")
 
+                num_pubkeys: int = derivation.required_pubkeys - (rekey_record.timelock - 1)
+
                 # Get the spend bundle
                 completion_bundle = get_rekey_completion_spend(
                     current_singleton.coin,
                     rekey_record.coin,
-                    derivation.pubkey_list[0 : derivation.required_pubkeys],
+                    derivation.pubkey_list[0:num_pubkeys],
                     derivation,
                     current_singleton.lineage_proof,
                     LineageProof(
@@ -1379,7 +1381,7 @@ def increase_cmd(
             fee_conditions: List[Program] = [Program.to([60, b"$"])]
 
             # Validate we have enough pubkeys
-            if len(pubkey_list) < derivation.required_pubkeys:
+            if len(pubkey_list) < derivation.required_pubkeys + 1:
                 print("Not enough keys to increase the security level")
                 return
 
