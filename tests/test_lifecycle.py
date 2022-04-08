@@ -204,10 +204,14 @@ async def test_puzzle_root_derivation(setup_info):
             assert root == calculate_puzzle_root(setup_info.prefarm_info, subset, m, n, 1).prefarm_info.puzzle_root
 
         for agg_pk in get_all_aggregate_pubkey_combinations(pubkeys, m):
-            for lock in (True, True):
-                filter_proof, _ = derivation.get_proofs_of_inclusion(agg_pk, lock=lock)
-                hash, proof = list(filter_proof.items())[0]
-                assert root == simplify_merkle_proof(hash, proof)
+            filter_proof, _ = derivation.get_proofs_of_inclusion(agg_pk, lock=False)
+            hash, proof = list(filter_proof.items())[0]
+            assert root == simplify_merkle_proof(hash, proof)
+
+        for agg_pk in get_all_aggregate_pubkey_combinations(pubkeys, uint32(m + 1)):
+            filter_proof, _ = derivation.get_proofs_of_inclusion(agg_pk, lock=True)
+            hash, proof = list(filter_proof.items())[0]
+            assert root == simplify_merkle_proof(hash, proof)
 
         for i in range(1, m):
             for agg_pk in get_all_aggregate_pubkey_combinations(pubkeys, 1):
@@ -558,12 +562,12 @@ async def test_rekeys(setup_info, cost_logger):
         # Bump from 3 -> 4
         three_to_four_bundle, data_to_sign = get_rekey_spend_info(
             setup_info.singleton,
-            THREE_PUBKEYS,
+            FOUR_PUBKEYS,
             setup_info.derivation,
             setup_info.first_lineage_proof,
         )
         signature: G2Element = AugSchemeMPL.aggregate(
-            [sign_message_at_index(i, data_to_sign, AGG_THREE) for i in range(0, 3)]
+            [sign_message_at_index(i, data_to_sign, AGG_FOUR) for i in range(0, 4)]
         )
         aggregate_bundle = SpendBundle.aggregate([three_to_four_bundle, SpendBundle([], signature)])
         # Before we actually perform a successful one, let's try to cancel it ephemerally and make sure that fails
@@ -575,7 +579,7 @@ async def test_rekeys(setup_info, cost_logger):
         singleton_spend: CoinSpend = [cs for cs in aggregate_bundle.coin_spends if cs.coin == setup_info.singleton][0]
         _, new_puzzle_root, filter_puzzle, filter_proof, filter_solution, extra_data_to_sign = calculate_rekey_args(
             lock_completion_spend.coin,
-            THREE_PUBKEYS,
+            FOUR_PUBKEYS,
             setup_info.derivation,
         )
         cancellation_spend: CoinSpend = dataclasses.replace(
@@ -589,7 +593,7 @@ async def test_rekeys(setup_info, cost_logger):
             ),
         )
         extra_signature: G2Element = AugSchemeMPL.aggregate(
-            [sign_message_at_index(i, data_to_sign, AGG_THREE) for i in range(0, 3)],
+            [sign_message_at_index(i, data_to_sign, AGG_FOUR) for i in range(0, 4)],
         )
         ephemeral_cancel_bundle = SpendBundle.aggregate(
             [SpendBundle([singleton_spend, cancellation_spend], signature), SpendBundle([], extra_signature)]
@@ -630,7 +634,7 @@ async def test_rekeys(setup_info, cost_logger):
         with pytest.raises(ValueError, match="Could not find a puzzle matching the specified pubkey"):
             _, _ = get_rekey_spend_info(
                 new_singleton,
-                THREE_PUBKEYS,
+                FOUR_PUBKEYS,
                 new_derivation,
                 new_lineage_proof,
             )
@@ -638,12 +642,12 @@ async def test_rekeys(setup_info, cost_logger):
         # Then 4 -> 5
         four_to_five_bundle, data_to_sign = get_rekey_spend_info(
             new_singleton,
-            FOUR_PUBKEYS,
+            FIVE_PUBKEYS,
             new_derivation,
             new_lineage_proof,
         )
         signature: G2Element = AugSchemeMPL.aggregate(
-            [sign_message_at_index(i, data_to_sign, AGG_FOUR) for i in range(0, 4)]
+            [sign_message_at_index(i, data_to_sign, AGG_FIVE) for i in range(0, 5)]
         )
         aggregate_bundle = SpendBundle.aggregate([four_to_five_bundle, SpendBundle([], signature)])
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
@@ -678,7 +682,7 @@ async def test_rekeys(setup_info, cost_logger):
         with pytest.raises(AssertionError):
             _, _ = get_rekey_spend_info(
                 new_singleton,
-                THREE_PUBKEYS,
+                FOUR_PUBKEYS,
                 new_derivation,
                 new_lineage_proof,
             )
