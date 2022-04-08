@@ -91,10 +91,10 @@ def solve_rekey_clawback(
             clawback_puzzle,
             clawback_proof,
             [
+                rekey_ph,
                 puzzle_reveal,
                 proof_of_inclusion,
                 solution,
-                rekey_ph,
             ],
         ]
     )
