@@ -629,13 +629,34 @@ def get_spend_params_for_ach_creation(solution: Program) -> Tuple[uint64, uint64
     return out_amount, in_amount, p2_ph
 
 
-def get_spend_params_for_rekey_creation(solution: Program) -> Tuple[uint64, bytes32]:
+def get_spend_params_for_rekey_creation(solution: Program) -> Tuple[uint8, bytes32]:
     rl_solution = solution.at("rrf")
     prefarm_inner_solution = rl_solution.at("rf")
     spend_solution = prefarm_inner_solution.at("rrf")
-    timelock = uint64(int_from_bytes(spend_solution.at("f").as_python()))
+    timelock = uint8(int_from_bytes(spend_solution.at("f").as_python()))
     new_root = bytes32(spend_solution.at("rf").as_python())
     return timelock, new_root
+
+
+def get_info_for_rekey_drop(puzzle: Program) -> Tuple[bytes32, bytes32, uint8]:
+    curried_args = list(puzzle.uncurry()[1].as_iter())[0]
+    new_root, old_root, timelock = curried_args.as_iter()
+    return bytes32(new_root.as_python()), bytes32(old_root.as_python()), uint8(int_from_bytes(timelock.as_python()))
+
+
+def get_info_for_ach_drop(puzzle: Program) -> Tuple[bytes32, bytes32]:
+    curried_args = list(puzzle.uncurry()[1].as_iter())[0]
+    from_root = curried_args.first()
+    p2_ph = curried_args.rest()
+    return bytes32(from_root.as_python()), bytes32(p2_ph.as_python())
+
+
+def get_spending_pubkey_for_drop_coin(solution: Program) -> G1Element:
+    clawback_solution = solution.at("rrf")
+    filter_solution = clawback_solution.at("rrrf")
+    puzzle_reveal = filter_solution.at("f")
+    pubkey = list(puzzle_reveal.uncurry())[1].as_python()[0]
+    return G1Element.from_bytes(pubkey)
 
 
 def was_rekey_completed(solution: Program) -> bool:

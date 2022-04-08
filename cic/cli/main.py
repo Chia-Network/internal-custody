@@ -48,8 +48,11 @@ from cic.drivers.prefarm import (
     get_rekey_completion_spend,
     get_spend_type_for_solution,
     get_spending_pubkey_for_solution,
+    get_spending_pubkey_for_drop_coin,
     get_spend_params_for_ach_creation,
     get_spend_params_for_rekey_creation,
+    get_info_for_ach_drop,
+    get_info_for_rekey_drop,
     was_rekey_completed,
 )
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
@@ -1620,6 +1623,74 @@ def audit_cmd(
             await sync_store.db_connection.close()
 
     asyncio.get_event_loop().run_until_complete(do_command())
+
+
+@cli.command("examine_spend", short_help="Examine an unsigned spend to see the details before you sign it")
+@click.argument("spend_file", nargs=1, required=True)
+def examine_cmd(
+    spend_file: bool,
+):
+    with open(spend_file, "r") as file:
+        bundle = UnsignedSpend.from_bytes(binascii.a2b_base64(file.read()))
+
+    singleton_spends: List[HSMCoinSpend] = [cs for cs in bundle.coin_spends if cs.coin.amount % 2 == 1]
+    drop_coin_spends: List[HSMCoinSpend] = [cs for cs in bundle.coin_spends if cs.coin.amount % 2 == 0]
+    if len(singleton_spends) > 1:
+        names: List[bytes32] = [cs.coin.name() for cs in singleton_spends]
+        spend: HSMCoinSpend = next(cs for cs in singleton_spends if cs.coin.parent_coin_info not in names)
+        spend_type: str = "LOCK"
+    elif len(singleton_spends) == 1:
+        spend = singleton_spends[0]
+        spend_type = get_spend_type_for_solution(Program.from_bytes(bytes(spend.solution))).name
+    else:
+        spend = drop_coin_spends[0]
+        if spend.coin.amount == 0:
+            spend_type = "REKEY_CANCEL"
+        else:
+            spend_type = "PAYMENT_CLAWBACK"
+
+    # HSM type conversions
+    puzzle = Program.from_bytes(bytes(spend.puzzle_reveal))
+    solution = Program.from_bytes(bytes(spend.solution))
+
+    if spend_type == "HANDLE_PAYMENT":
+        spending_pubkey: G1Element = get_spending_pubkey_for_solution(solution)
+        out_amount, in_amount, p2_ph = get_spend_params_for_ach_creation(solution)
+        print("Type: Payment")
+        print(f"Incoming: {in_amount}")
+        print(f"Outgoing: {out_amount}")
+        print(f"To: {encode_puzzle_hash(p2_ph, 'xch')}")
+        print(f"Spenders: {bytes(spending_pubkey).hex()}")
+    elif spend_type == "LOCK":
+        spending_pubkey = get_spending_pubkey_for_solution(solution)
+        print("Type: Lock level increase")
+        print(f"Spenders: {bytes(spending_pubkey).hex()}")
+    elif spend_type == "START_REKEY":
+        spending_pubkey = get_spending_pubkey_for_solution(solution)
+        from_root = get_puzzle_root_from_puzzle(puzzle)
+        timelock, new_root = get_spend_params_for_rekey_creation(solution)
+        print("Type: Rekey")
+        print(f"From: {from_root}")
+        print(f"To: {new_root}")
+        print(f"Slow factor: {timelock}")
+        print(f"Spenders: {bytes(spending_pubkey).hex()}")
+    elif spend_type == "REKEY_CANCEL":
+        spending_pubkey = get_spending_pubkey_for_drop_coin(solution)
+        new_root, old_root, timelock = get_info_for_rekey_drop(puzzle)
+        print("Type: Rekey Cancel")
+        print(f"From: {old_root}")
+        print(f"To: {new_root}")
+        print(f"Spenders: {bytes(spending_pubkey).hex()}")
+    elif spend_type == "PAYMENT_CLAWBACK":
+        spending_pubkey = get_spending_pubkey_for_drop_coin(solution)
+        _, p2_ph = get_info_for_ach_drop(puzzle)
+        print("Type: Payment Clawback")
+        print(f"Amount: {spend.coin.amount}")
+        print(f"To: {encode_puzzle_hash(p2_ph, 'xch')}")
+        print(f"Spenders: {bytes(spending_pubkey).hex()}")
+    else:
+        print("Spend is not signable")
+        return
 
 
 def main() -> None:

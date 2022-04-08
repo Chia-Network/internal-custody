@@ -1,10 +1,10 @@
 (mod
   (
     (_ PUZZLE_ROOT TIMELOCK)
+    my_puzzle_hash
     puzzle_reveal
     merkle_proof
     puzzle_solution
-    my_puzzle_hash
   )
 
   (include condition_codes.clib)
