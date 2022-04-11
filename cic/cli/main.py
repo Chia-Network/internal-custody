@@ -2,6 +2,7 @@ import asyncio
 import binascii
 import click
 import dataclasses
+import itertools
 import json
 import math
 import os
@@ -1660,11 +1661,11 @@ def examine_cmd(
         print(f"Incoming: {in_amount}")
         print(f"Outgoing: {out_amount}")
         print(f"To: {encode_puzzle_hash(p2_ph, 'xch')}")
-        print(f"Spenders: {bytes(spending_pubkey).hex()}")
+        print(f"Spenders: {BLSPublicKey(spending_pubkey).as_bech32m()}")
     elif spend_type == "LOCK":
         spending_pubkey = get_spending_pubkey_for_solution(solution)
         print("Type: Lock level increase")
-        print(f"Spenders: {bytes(spending_pubkey).hex()}")
+        print(f"Spenders: {BLSPublicKey(spending_pubkey).as_bech32m()}")
     elif spend_type == "START_REKEY":
         spending_pubkey = get_spending_pubkey_for_solution(solution)
         from_root = get_puzzle_root_from_puzzle(puzzle)
@@ -1673,24 +1674,79 @@ def examine_cmd(
         print(f"From: {from_root}")
         print(f"To: {new_root}")
         print(f"Slow factor: {timelock}")
-        print(f"Spenders: {bytes(spending_pubkey).hex()}")
+        print(f"Spenders: {BLSPublicKey(spending_pubkey).as_bech32m()}")
     elif spend_type == "REKEY_CANCEL":
         spending_pubkey = get_spending_pubkey_for_drop_coin(solution)
         new_root, old_root, timelock = get_info_for_rekey_drop(puzzle)
         print("Type: Rekey Cancel")
         print(f"From: {old_root}")
         print(f"To: {new_root}")
-        print(f"Spenders: {bytes(spending_pubkey).hex()}")
+        print(f"Spenders: {BLSPublicKey(spending_pubkey).as_bech32m()}")
     elif spend_type == "PAYMENT_CLAWBACK":
         spending_pubkey = get_spending_pubkey_for_drop_coin(solution)
         _, p2_ph = get_info_for_ach_drop(puzzle)
         print("Type: Payment Clawback")
         print(f"Amount: {spend.coin.amount}")
         print(f"To: {encode_puzzle_hash(p2_ph, 'xch')}")
-        print(f"Spenders: {bytes(spending_pubkey).hex()}")
+        print(f"Spenders: {BLSPublicKey(spending_pubkey).as_bech32m()}")
     else:
         print("Spend is not signable")
         return
+
+
+@cli.command("which_pubkeys", short_help="Determine which pubkeys make up an aggregate pubkey")
+@click.argument("aggregate_pubkey", nargs=1, required=True)
+@click.option(
+    "-pks",
+    "--pubkeys",
+    help="A comma separated list of pubkey files that may be in the aggregate",
+    required=True,
+)
+@click.option(
+    "-m",
+    "--num-pubkeys",
+    help="Check only combinations of a specific number of pubkeys",
+    type=int,
+    required=False,
+)
+@click.option(
+    "--no-offset",
+    help="Do not try the synthetic versions of the pubkeys",
+    is_flag=True,
+)
+def which_pubkeys_cmd(
+    aggregate_pubkey: str,
+    pubkeys: str,
+    num_pubkeys: Optional[int],
+    no_offset: bool,
+):
+    agg_pk: G1Element = list(load_pubkeys(aggregate_pubkey))[0]
+    pubkey_list: List[G1Element] = list(load_pubkeys(pubkeys))
+
+    pubkey_file_dict: Dict[str, str] = {}
+    for pk, file in zip(pubkey_list, pubkeys.split(",")):
+        pubkey_file_dict[str(pk)] = file
+
+    search_range = range(1, len(pubkey_list) + 1) if num_pubkeys is None else range(num_pubkeys, num_pubkeys + 1)
+    for m in search_range:
+        for subset in itertools.combinations(pubkey_list, m):
+            aggregated_pubkey = G1Element()
+            for pk in subset:
+                aggregated_pubkey += pk
+            if aggregated_pubkey == agg_pk or (
+                not no_offset
+                and PrivateKey.from_bytes(
+                    calculate_synthetic_offset(aggregated_pubkey, DEFAULT_HIDDEN_PUZZLE_HASH).to_bytes(32, "big")
+                ).get_g1()
+                + aggregated_pubkey
+                == agg_pk
+            ):
+                print("The following pubkeys match the specified aggregate:")
+                for pk in subset:
+                    print(f" - {pubkey_file_dict[str(pk)]}")
+                return
+
+    print("No combinations were found that matched the aggregate with the specified parameters.")
 
 
 def main() -> None:
