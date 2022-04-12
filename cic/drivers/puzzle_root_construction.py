@@ -21,8 +21,8 @@ P2_NEW_LOCK_LEVEL = load_clvm("p2_new_lock_level.clsp", package_or_requirement="
 ProofType = List[Tuple[bytes32, Tuple[uint32, List[bytes32]]]]
 
 
-@dataclasses.dataclass(frozen=True)
 @streamable
+@dataclasses.dataclass(frozen=True)
 class RootDerivation(Streamable):
     prefarm_info: PrefarmInfo
     pubkey_list: List[G1Element]
