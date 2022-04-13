@@ -4,7 +4,6 @@ import math
 import pytest
 
 from blspy import AugSchemeMPL, BasicSchemeMPL, G1Element, G2Element, PrivateKey
-from clvm.EvalError import EvalError
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -251,7 +250,7 @@ async def test_payments(setup_info, cost_logger):
         )
         result = await setup_info.sim_client.push_tx(too_few_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
-        with pytest.raises(EvalError, match="clvm raise"):
+        with pytest.raises(ValueError, match="clvm raise"):
             too_few_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
                 INFINITE_COST, too_few_bundle.coin_spends[0].solution
             )
@@ -340,7 +339,7 @@ async def test_payments(setup_info, cost_logger):
         )
         result = await setup_info.sim_client.push_tx(not_allowed_clawback)
         assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
-        with pytest.raises(EvalError, match="clvm raise"):
+        with pytest.raises(ValueError, match="clvm raise"):
             not_allowed_clawback.coin_spends[0].puzzle_reveal.run_with_cost(
                 INFINITE_COST, not_allowed_clawback.coin_spends[0].solution
             )
@@ -469,7 +468,7 @@ async def test_rate_limiting(setup_info, cost_logger):
         aggregate_bundle = SpendBundle.aggregate([early_withdrawal_bundle, SpendBundle([], signature)])
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
-        with pytest.raises(EvalError, match="clvm raise"):
+        with pytest.raises(ValueError, match="clvm raise"):
             early_withdrawal_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
                 INFINITE_COST, early_withdrawal_bundle.coin_spends[0].solution
             )
@@ -600,7 +599,7 @@ async def test_rekeys(setup_info, cost_logger):
         )
         result = await setup_info.sim_client.push_tx(ephemeral_cancel_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
-        with pytest.raises(EvalError, match="clvm raise"):
+        with pytest.raises(ValueError, match="clvm raise"):
             cancellation_spend.puzzle_reveal.run_with_cost(INFINITE_COST, cancellation_spend.solution)
         # Now actually push the honest bundle
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
@@ -746,7 +745,7 @@ async def test_rekeys(setup_info, cost_logger):
         aggregate_bundle = SpendBundle.aggregate([too_few_cancel_bundle, SpendBundle([], signature)])
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
-        with pytest.raises(EvalError, match="clvm raise"):
+        with pytest.raises(ValueError, match="clvm raise"):
             aggregate_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
                 INFINITE_COST, aggregate_bundle.coin_spends[0].solution
             )
@@ -886,7 +885,7 @@ async def test_rekeys(setup_info, cost_logger):
         )
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
-        with pytest.raises(EvalError, match="clvm raise"):
+        with pytest.raises(ValueError, match="clvm raise"):
             malicious_rekey_clawback_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
                 INFINITE_COST, malicious_rekey_clawback_bundle.coin_spends[0].solution
             )
@@ -914,7 +913,7 @@ async def test_rekeys(setup_info, cost_logger):
         )
         result = await setup_info.sim_client.push_tx(aggregate_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
-        with pytest.raises(EvalError, match="clvm raise"):
+        with pytest.raises(ValueError, match="clvm raise"):
             malicious_withdrawal_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
                 INFINITE_COST, malicious_withdrawal_bundle.coin_spends[0].solution
             )

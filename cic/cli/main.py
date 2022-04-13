@@ -1757,7 +1757,7 @@ def examine_cmd(
 
     # Transform the bundle in qr codes and then inline them in a div
     all_qr_divs = ""
-    normal_qr_width: Optional[int] = None
+    normal_qr_width: Optional[float] = None
     for segment in bundle.chunk(qr_density):
         if len(segment) < qr_density:
             segment = bytes([segment[0]])
@@ -1765,9 +1765,9 @@ def examine_cmd(
         qr = segno.make_qr(qr_int)
         if len(segment) == qr_density or normal_qr_width is None:
             normal_qr_width = qr.symbol_size()[0]
-            scale = 3
+            scale: float = 3
         else:
-            scale = 3*(normal_qr_width/qr.symbol_size()[0])
+            scale = 3 * (normal_qr_width / qr.symbol_size()[0])
         all_qr_divs += f"<div>{qr.svg_inline(scale=scale)}</div>"
 
     total_doc = f"""

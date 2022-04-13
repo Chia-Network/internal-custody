@@ -2,7 +2,6 @@ import dataclasses
 import pytest
 
 from blspy import G2Element
-from clvm.EvalError import EvalError
 from typing import Tuple, List
 
 from chia.clvm.spend_sim import SpendSim, SimClient
@@ -197,7 +196,7 @@ async def test_rekey(setup_info, cost_logger):
         malicious_rekey_spend: SpendBundle = start_rekey_spend(True)
         result = await setup_info.sim_client.push_tx(malicious_rekey_spend)
         assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
-        with pytest.raises(EvalError, match="clvm raise"):
+        with pytest.raises(ValueError, match="clvm raise"):
             malicious_rekey_spend.coin_spends[0].puzzle_reveal.run_with_cost(
                 INFINITE_COST, malicious_rekey_spend.coin_spends[0].solution
             )
