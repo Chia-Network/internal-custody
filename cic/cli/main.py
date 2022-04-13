@@ -1,5 +1,4 @@
 import asyncio
-import binascii
 import click
 import dataclasses
 import itertools
@@ -66,7 +65,7 @@ from hsms.bls12_381 import BLSPublicKey, BLSSecretExponent
 from hsms.process.signing_hints import SumHint
 from hsms.process.unsigned_spend import UnsignedSpend
 from hsms.streamables.coin_spend import CoinSpend as HSMCoinSpend
-from hsms.util.qrint_encoding import b2a_qrint
+from hsms.util.qrint_encoding import a2b_qrint, b2a_qrint
 
 if os.environ.get("TESTING_CIC_CLI", "FALSE") == "TRUE":
     from tests.cli_clients import get_node_and_wallet_clients, get_node_client, get_additional_data
@@ -1006,13 +1005,13 @@ def payments_cmd(
             )
 
             # Print the result
-            base64_spend = binascii.b2a_base64(bytes(unsigned_spend)).decode()
+            int_spend = b2a_qrint(bytes(unsigned_spend))
             if filename is not None:
                 with open(filename, "w") as file:
-                    file.write(base64_spend)
+                    file.write(int_spend)
                 print(f"Successfully wrote spend to {filename}")
             else:
-                print(base64_spend)
+                print(int_spend)
         finally:
             await sync_store.db_connection.close()
 
@@ -1102,13 +1101,13 @@ def start_rekey_cmd(
             )
 
             # Print the result
-            base64_spend = binascii.b2a_base64(bytes(unsigned_spend)).decode()
+            int_spend = b2a_qrint(bytes(unsigned_spend))
             if filename is not None:
                 with open(filename, "w") as file:
-                    file.write(base64_spend)
+                    file.write(int_spend)
                 print(f"Successfully wrote spend to {filename}")
             else:
-                print(base64_spend)
+                print(int_spend)
         finally:
             await sync_store.db_connection.close()
 
@@ -1233,13 +1232,13 @@ def clawback_cmd(
                 [],
                 get_additional_data(),
             )
-            base64_spend = binascii.b2a_base64(bytes(unsigned_spend)).decode()
+            int_spend = b2a_qrint(bytes(unsigned_spend))
             if filename is not None:
                 with open(filename, "w") as file:
-                    file.write(base64_spend)
+                    file.write(int_spend)
                 print(f"Successfully wrote spend to {filename}")
             else:
-                print(base64_spend)
+                print(int_spend)
         finally:
             await sync_store.db_connection.close()
 
@@ -1417,13 +1416,13 @@ def increase_cmd(
                 get_additional_data(),
             )
 
-            base64_spend = binascii.b2a_base64(bytes(unsigned_spend)).decode()
+            int_spend = b2a_qrint(bytes(unsigned_spend))
             if filename is not None:
                 with open(filename, "w") as file:
-                    file.write(base64_spend)
+                    file.write(int_spend)
                 print(f"Successfully wrote spend to {filename}")
             else:
-                print(base64_spend)
+                print(int_spend)
         finally:
             await sync_store.db_connection.close()
 
@@ -1643,7 +1642,7 @@ def examine_cmd(
     qr_density: int,
 ):
     with open(spend_file, "r") as file:
-        bundle = UnsignedSpend.from_bytes(binascii.a2b_base64(file.read()))
+        bundle = UnsignedSpend.from_bytes(a2b_qrint(file.read()))
 
     singleton_spends: List[HSMCoinSpend] = [cs for cs in bundle.coin_spends if cs.coin.amount % 2 == 1]
     drop_coin_spends: List[HSMCoinSpend] = [cs for cs in bundle.coin_spends if cs.coin.amount % 2 == 0]

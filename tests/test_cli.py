@@ -1,5 +1,4 @@
 import asyncio
-import binascii
 import os
 
 from blspy import BasicSchemeMPL, PrivateKey, G2Element
@@ -28,6 +27,7 @@ from hsms.bls12_381 import BLSPublicKey, BLSSecretExponent, BLSSignature
 from hsms.cmds.hsmmerge import create_spend_bundle
 from hsms.process.sign import sign
 from hsms.process.unsigned_spend import UnsignedSpend
+from hsms.util.qrint_encoding import a2b_qrint
 
 
 # Key functions
@@ -318,7 +318,7 @@ def test_init():
 
         # Do a little bit of a signing cermony
         with open(spend_bundle_out_path, "r") as file:
-            withdrawal_bundle = UnsignedSpend.from_bytes(binascii.a2b_base64(file.read()))
+            withdrawal_bundle = UnsignedSpend.from_bytes(a2b_qrint(file.read()))
         sigs: List[BLSSignature] = []
         for key in range(0, 3):
             se = BLSSecretExponent(secret_key_for_index(key))
@@ -403,7 +403,7 @@ def test_init():
 
         # Do a little bit of a signing cermony
         with open(spend_bundle_out_path, "r") as file:
-            rekey_bundle = UnsignedSpend.from_bytes(binascii.a2b_base64(file.read()))
+            rekey_bundle = UnsignedSpend.from_bytes(a2b_qrint(file.read()))
         sigs: List[BLSSignature] = [
             si.signature
             for si in sign(rekey_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
@@ -494,7 +494,7 @@ def test_init():
 
             # Do a little bit of a signing cermony
             with open(spend_bundle_out_path, "r") as file:
-                clawback_bundle = UnsignedSpend.from_bytes(binascii.a2b_base64(file.read()))
+                clawback_bundle = UnsignedSpend.from_bytes(a2b_qrint(file.read()))
             sigs: List[BLSSignature] = [
                 si.signature
                 for si in sign(clawback_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
@@ -660,7 +660,7 @@ def test_init():
 
         # Do a little bit of a signing cermony
         with open(spend_bundle_out_path, "r") as file:
-            lock_bundle = UnsignedSpend.from_bytes(binascii.a2b_base64(file.read()))
+            lock_bundle = UnsignedSpend.from_bytes(a2b_qrint(file.read()))
         sigs: List[BLSSignature] = [
             si.signature
             for si in sign(lock_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 4)])
@@ -717,7 +717,7 @@ def test_init():
         )
 
         with open(spend_bundle_out_path, "r") as file:
-            slow_bundle = UnsignedSpend.from_bytes(binascii.a2b_base64(file.read()))
+            slow_bundle = UnsignedSpend.from_bytes(a2b_qrint(file.read()))
         sigs: List[BLSSignature] = [
             si.signature
             for si in sign(slow_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
