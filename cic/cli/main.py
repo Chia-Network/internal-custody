@@ -6,7 +6,10 @@ import itertools
 import json
 import math
 import os
+import segno
+import tempfile
 import time
+import webbrowser
 
 from blspy import PrivateKey, G1Element, G2Element
 from clvm.casts import int_to_bytes
@@ -63,6 +66,7 @@ from hsms.bls12_381 import BLSPublicKey, BLSSecretExponent
 from hsms.process.signing_hints import SumHint
 from hsms.process.unsigned_spend import UnsignedSpend
 from hsms.streamables.coin_spend import CoinSpend as HSMCoinSpend
+from hsms.util.qrint_encoding import b2a_qrint
 
 if os.environ.get("TESTING_CIC_CLI", "FALSE") == "TRUE":
     from tests.cli_clients import get_node_and_wallet_clients, get_node_client, get_additional_data
@@ -1631,8 +1635,12 @@ def audit_cmd(
 
 @cli.command("examine_spend", short_help="Examine an unsigned spend to see the details before you sign it")
 @click.argument("spend_file", nargs=1, required=True)
+@click.option(
+    "--qr-density", help="The amount of bytes to pack into a single QR code", default=250, show_default=True, type=int
+)
 def examine_cmd(
     spend_file: bool,
+    qr_density: int,
 ):
     with open(spend_file, "r") as file:
         bundle = UnsignedSpend.from_bytes(binascii.a2b_base64(file.read()))
@@ -1657,6 +1665,7 @@ def examine_cmd(
     puzzle = Program.from_bytes(bytes(spend.puzzle_reveal))
     solution = Program.from_bytes(bytes(spend.solution))
 
+    spend_summary: str
     if spend_type == "HANDLE_PAYMENT":
         spending_pubkey: G1Element = get_spending_pubkey_for_solution(solution)
         out_amount, in_amount, p2_ph = get_spend_params_for_ach_creation(solution)
@@ -1665,10 +1674,29 @@ def examine_cmd(
         print(f"Outgoing: {out_amount}")
         print(f"To: {encode_puzzle_hash(p2_ph, 'xch')}")
         print(f"Spenders: {BLSPublicKey(spending_pubkey).as_bech32m()}")
+        spend_summary = f"""
+        <div>
+          <ul>
+            <li>Type: Payment</li>
+            <li>Incoming: {in_amount}</li>
+            <li>Outgoing: {out_amount}</li>
+            <li>To: {encode_puzzle_hash(p2_ph, 'xch')}</li>
+            <li>Spenders: {BLSPublicKey(spending_pubkey).as_bech32m()}</li>
+          </ul>
+        </div>
+        """
     elif spend_type == "LOCK":
         spending_pubkey = get_spending_pubkey_for_solution(solution)
         print("Type: Lock level increase")
         print(f"Spenders: {BLSPublicKey(spending_pubkey).as_bech32m()}")
+        spend_summary = f"""
+        <div>
+          <ul>
+            <li>Type: Lock level increase</li>
+            <li>Spenders: {BLSPublicKey(spending_pubkey).as_bech32m()}</li>
+          </ul>
+        </div>
+        """
     elif spend_type == "START_REKEY":
         spending_pubkey = get_spending_pubkey_for_solution(solution)
         from_root = get_puzzle_root_from_puzzle(puzzle)
@@ -1678,6 +1706,17 @@ def examine_cmd(
         print(f"To: {new_root}")
         print(f"Slow factor: {timelock}")
         print(f"Spenders: {BLSPublicKey(spending_pubkey).as_bech32m()}")
+        spend_summary = f"""
+        <div>
+          <ul>
+            <li>Type: Rekey</li>
+            <li>From: {from_root}</li>
+            <li>To: {new_root}</li>
+            <li>Slow factor: {timelock}</li>
+            <li>Spenders: {BLSPublicKey(spending_pubkey).as_bech32m()}</li>
+          </ul>
+        </div>
+        """
     elif spend_type == "REKEY_CANCEL":
         spending_pubkey = get_spending_pubkey_for_drop_coin(solution)
         new_root, old_root, timelock = get_info_for_rekey_drop(puzzle)
@@ -1685,6 +1724,16 @@ def examine_cmd(
         print(f"From: {old_root}")
         print(f"To: {new_root}")
         print(f"Spenders: {BLSPublicKey(spending_pubkey).as_bech32m()}")
+        spend_summary = f"""
+        <div>
+          <ul>
+            <li>Type: Rekey Cancel</li>
+            <li>From: {old_root}</li>
+            <li>To: {new_root}</li>
+            <li>Spenders: {BLSPublicKey(spending_pubkey).as_bech32m()}</li>
+          </ul>
+        </div>
+        """
     elif spend_type == "PAYMENT_CLAWBACK":
         spending_pubkey = get_spending_pubkey_for_drop_coin(solution)
         _, p2_ph = get_info_for_ach_drop(puzzle)
@@ -1692,9 +1741,58 @@ def examine_cmd(
         print(f"Amount: {spend.coin.amount}")
         print(f"To: {encode_puzzle_hash(p2_ph, 'xch')}")
         print(f"Spenders: {BLSPublicKey(spending_pubkey).as_bech32m()}")
+        spend_summary = f"""
+        <div>
+          <ul>
+            <li>Type: Payment Clawback</li>
+            <li>Amount: {spend.coin.amount}</li>
+            <li>To: {encode_puzzle_hash(p2_ph, 'xch')}</li>
+            <li>Spenders: {BLSPublicKey(spending_pubkey).as_bech32m()}</li>
+          </ul>
+        </div>
+        """
     else:
         print("Spend is not signable")
         return
+
+    # Transform the bundle in qr codes and then inline them in a div
+    all_qr_divs = ""
+    normal_qr_width: Optional[int] = None
+    for segment in bundle.chunk(qr_density):
+        if len(segment) < qr_density:
+            segment = bytes([segment[0]])
+        qr_int = b2a_qrint(segment)
+        qr = segno.make_qr(qr_int)
+        if len(segment) == qr_density or normal_qr_width is None:
+            normal_qr_width = qr.symbol_size()[0]
+            scale = 3
+        else:
+            scale = 3*(normal_qr_width/qr.symbol_size()[0])
+        all_qr_divs += f"<div>{qr.svg_inline(scale=scale)}</div>"
+
+    total_doc = f"""
+    <html width='100%' height='100%'>
+        <body width='100%' height='100%'>
+            <div width='100%' height='100%'>
+              {spend_summary}
+              <div style='display:flex; flex-wrap: wrap; width:100%;'>
+                {all_qr_divs}
+              </div>
+            </div>
+        </body>
+    </html>
+    """
+
+    # Write to a temporary file and open in a browser
+    tmp = tempfile.NamedTemporaryFile(delete=False)
+    try:
+        tmp_path = Path(tmp.name)
+        tmp.write(bytes(total_doc, "utf-8"))
+        tmp.close()
+        webbrowser.open(f"file://{tmp_path}", new=2)
+        input("Press Enter to exit")
+    finally:
+        os.unlink(tmp.name)
 
 
 @cli.command("which_pubkeys", short_help="Determine which pubkeys make up an aggregate pubkey")

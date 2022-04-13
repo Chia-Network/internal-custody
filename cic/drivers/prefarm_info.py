@@ -6,7 +6,7 @@ from chia.util.streamable import Streamable, streamable
 
 
 @streamable
-@dataclass(frozen=True)
+@dataclass
 class PrefarmInfo(Streamable):
     launcher_id: bytes32
     start_date: uint64

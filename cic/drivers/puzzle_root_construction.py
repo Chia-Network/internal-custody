@@ -22,7 +22,7 @@ ProofType = List[Tuple[bytes32, Tuple[uint32, List[bytes32]]]]
 
 
 @streamable
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass
 class RootDerivation(Streamable):
     prefarm_info: PrefarmInfo
     pubkey_list: List[G1Element]
