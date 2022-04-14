@@ -57,7 +57,7 @@ async def setup_info():
     # Launch it to the starting state
     starting_amount = 18374999999999999999
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
-        coin, construct_rate_limiting_puzzle(START_DATE, starting_amount, DRAIN_RATE, ACS), 18374999999999999999
+        coin, construct_rate_limiting_puzzle(START_DATE, starting_amount, DRAIN_RATE, uint64(1), ACS), 18374999999999999999
     )
     creation_bundle = SpendBundle(
         [
@@ -100,7 +100,7 @@ async def test_draining(setup_info, cost_logger):
 
         # Construct the spend
         initial_rl_puzzle: Program = construct_rate_limiting_puzzle(
-            setup_info.start_date, setup_info.singleton.amount, setup_info.drain_rate, ACS
+            setup_info.start_date, setup_info.singleton.amount, setup_info.drain_rate, uint64(1), ACS
         )
         first_drain_spend = SpendBundle(
             [
@@ -196,7 +196,7 @@ async def test_cant_drain_more(setup_info, cost_logger):
 
         # Construct the spend
         initial_rl_puzzle: Program = construct_rate_limiting_puzzle(
-            setup_info.start_date, setup_info.singleton.amount, setup_info.drain_rate, ACS
+            setup_info.start_date, setup_info.singleton.amount, setup_info.drain_rate, uint64(1), ACS
         )
         drain_spend = SpendBundle(
             [
@@ -238,7 +238,7 @@ async def test_refill_is_ignored(setup_info, cost_logger):
         # Construct a spend without any time having passed
         TO_REFILL = uint64(10)
         initial_rl_puzzle: Program = construct_rate_limiting_puzzle(
-            setup_info.start_date, setup_info.singleton.amount, setup_info.drain_rate, ACS
+            setup_info.start_date, setup_info.singleton.amount, setup_info.drain_rate, uint64(1), ACS
         )
         refill_spend = SpendBundle(
             [

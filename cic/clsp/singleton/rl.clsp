@@ -3,7 +3,8 @@
     MOD_HASH
     START_DATE
     STARTING_AMOUNT
-    RATE  ; mojos per second
+    AMOUNT_PER
+    TIME_INTERVAL
     INNER_PUZZLE
     current_time
     inner_solution
@@ -30,7 +31,8 @@
       MOD_HASH
       START_DATE
       STARTING_AMOUNT
-      RATE
+      AMOUNT_PER
+      TIME_INTERVAL
       current_time
     )
 
@@ -39,7 +41,8 @@
       (c
         (puzzle_hash_of_curried_function MOD_HASH
           (puzzle_hash singleton_condition)
-          (sha256 1 RATE)
+          (sha256 1 TIME_INTERVAL)
+          (sha256 1 AMOUNT_PER)
           (sha256 1 STARTING_AMOUNT)
           (sha256 1 START_DATE)
           (sha256 1 MOD_HASH)
@@ -66,7 +69,8 @@
       MOD_HASH
       START_DATE
       STARTING_AMOUNT
-      RATE
+      AMOUNT_PER
+      TIME_INTERVAL
       current_time
     )
 
@@ -78,15 +82,16 @@
           MOD_HASH
           START_DATE
           STARTING_AMOUNT
-          RATE
+          AMOUNT_PER
+          TIME_INTERVAL
         )
         remaining_conditions
       )
     )
   )
 
-  (defun-inline calculate_possible_withdrawal (START_DATE RATE current_time)
-    (* RATE (max 0 (- current_time START_DATE)))
+  (defun-inline calculate_possible_withdrawal (START_DATE AMOUNT_PER TIME_INTERVAL current_time)
+    (* (f (divmod AMOUNT_PER TIME_INTERVAL)) (max 0 (- current_time START_DATE)))
   )
 
   (defun found_singleton
@@ -97,7 +102,8 @@
         MOD_HASH
         START_DATE
         STARTING_AMOUNT
-        RATE
+        AMOUNT_PER
+        TIME_INTERVAL
         current_time
       )
     )
@@ -106,11 +112,12 @@
       singleton_condition
       remaining_conditions
       (- STARTING_AMOUNT (coin_amount singleton_condition))
-      (calculate_possible_withdrawal START_DATE RATE current_time)
+      (calculate_possible_withdrawal START_DATE AMOUNT_PER TIME_INTERVAL current_time)
       MOD_HASH
       START_DATE
       STARTING_AMOUNT
-      RATE
+      AMOUNT_PER
+      TIME_INTERVAL
       current_time
     )
   )
@@ -139,7 +146,8 @@
       MOD_HASH
       START_DATE
       STARTING_AMOUNT
-      RATE
+      AMOUNT_PER
+      TIME_INTERVAL
       current_time
     )
   )

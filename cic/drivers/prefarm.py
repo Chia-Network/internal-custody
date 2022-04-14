@@ -103,6 +103,7 @@ def construct_singleton_inner_puzzle(prefarm_info: PrefarmInfo) -> Program:
         prefarm_info.start_date,
         prefarm_info.starting_amount,
         prefarm_info.mojos_per_second,
+        uint64(1),
         construct_prefarm_inner_puzzle(prefarm_info),
     )
 
