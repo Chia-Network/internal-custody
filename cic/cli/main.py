@@ -646,6 +646,7 @@ def sync_cmd(
                                 drop_coin.timestamp,
                                 None,
                                 None,
+                                None,
                             )
                         )
                     elif spend_type == SpendType.START_REKEY:
@@ -657,6 +658,7 @@ def sync_cmd(
                                 new_root,
                                 timelock,
                                 drop_coin.timestamp,
+                                None,
                                 None,
                                 None,
                             )
@@ -709,13 +711,22 @@ def sync_cmd(
                         == construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash()
                     ):
                         completed = False
+                        ach_spend: Optional[CoinSpend] = await node_client.get_puzzle_and_solution(
+                            spent_drop_coin.coin.name(), spent_drop_coin.spent_block_index
+                        )
+                        assert ach_spend is not None
+                        spending_pubkey: Optional[G1Element] = get_spending_pubkey_for_drop_coin(
+                            ach_spend.solution.to_program()
+                        )
                     else:
                         completed = True
+                        spending_pubkey = None
                     await sync_store.add_ach_record(
                         dataclasses.replace(
                             current_ach_record,
                             spent_at_height=spent_drop_coin.spent_block_index,
                             completed=completed,
+                            clawback_pubkey=spending_pubkey,
                         )
                     )
                 else:
@@ -727,11 +738,16 @@ def sync_cmd(
                     )
                     assert rekey_spend is not None
                     completed = was_rekey_completed(rekey_spend.solution.to_program())
+                    if completed:
+                        spending_pubkey = None
+                    else:
+                        spending_pubkey = get_spending_pubkey_for_drop_coin(rekey_spend.solution.to_program())
                     await sync_store.add_rekey_record(
                         dataclasses.replace(
                             current_rekey_record,
                             spent_at_height=spent_drop_coin.spent_block_index,
                             completed=completed,
+                            clawback_pubkey=spending_pubkey,
                         )
                     )
             for outdated_rekey in [
@@ -1597,7 +1613,9 @@ def audit_cmd(
                         ach_record: ACHRecord = ach_dict[coin_id]
                         if ach_record.completed is not None:
                             params["completed"] = ach_record.completed
-                            params["completed_at_height"] = ach_record.spent_at_height
+                            params["spent_at_height"] = ach_record.spent_at_height
+                            if not ach_record.completed and ach_record.clawback_pubkey is not None:
+                                params["clawback_pubkey"] = BLSPublicKey(ach_record.clawback_pubkey).as_bech32m()
                 elif singleton.spend_type == SpendType.START_REKEY:
                     params = {}
                     timelock, new_root = get_spend_params_for_rekey_creation(singleton.solution.to_program())
@@ -1606,7 +1624,9 @@ def audit_cmd(
                     params["to_root"] = rekey_record.to_root.hex()
                     if rekey_record.completed is not None:
                         params["completed"] = rekey_record.completed
-                        params["completed_at_height"] = rekey_record.spent_at_height
+                        params["spent_at_height"] = rekey_record.spent_at_height
+                        if not rekey_record.completed and rekey_record.clawback_pubkey is not None:
+                            params["clawback_pubkey"] = BLSPublicKey(rekey_record.clawback_pubkey).as_bech32m()
                 elif singleton.spend_type == SpendType.FINISH_REKEY:
                     params = {
                         "from_root": singleton_dict[singleton.coin.parent_coin_info].puzzle_root.hex(),
@@ -1758,8 +1778,6 @@ def examine_cmd(
     all_qr_divs = ""
     normal_qr_width: Optional[float] = None
     for segment in bundle.chunk(qr_density):
-        if len(segment) < qr_density:
-            segment = bytes([segment[0]])
         qr_int = b2a_qrint(segment)
         qr = segno.make_qr(qr_int)
         if len(segment) == qr_density or normal_qr_width is None:

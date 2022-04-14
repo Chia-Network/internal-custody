@@ -67,7 +67,8 @@ class SyncStore:
             "   p2_ph blob,"
             "   confirmed_at_time bigint,"
             "   spent_at_height bigint,"
-            "   completed tinyint"
+            "   completed tinyint,"
+            "   spending_pubkey blob"
             ")"
         )
 
@@ -82,7 +83,8 @@ class SyncStore:
             "   timelock blob,"
             "   confirmed_at_time bigint,"
             "   spent_at_height bigint,"
-            "   completed tinyint"
+            "   completed tinyint,"
+            "   spending_pubkey blob"
             ")"
         )
 
@@ -125,7 +127,7 @@ class SyncStore:
         else:
             completed_int = -1
         cursor = await self.db_connection.execute(
-            "INSERT OR REPLACE INTO achs VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO achs VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 record.coin.name(),
                 record.coin.parent_coin_info,
@@ -136,6 +138,7 @@ class SyncStore:
                 record.confirmed_at_time,
                 0 if record.spent_at_height is None else record.spent_at_height,
                 completed_int,
+                b"" if record.clawback_pubkey is None else bytes(record.clawback_pubkey),
             ),
         )
         await cursor.close()
@@ -149,7 +152,7 @@ class SyncStore:
         else:
             completed_int = -1
         cursor = await self.db_connection.execute(
-            "INSERT OR REPLACE INTO rekeys VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO rekeys VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 record.coin.name(),
                 record.coin.parent_coin_info,
@@ -161,6 +164,7 @@ class SyncStore:
                 record.confirmed_at_time,
                 0 if record.spent_at_height is None else record.spent_at_height,
                 completed_int,
+                b"" if record.clawback_pubkey is None else bytes(record.clawback_pubkey),
             ),
         )
         await cursor.close()
@@ -237,6 +241,7 @@ class SyncStore:
                 uint64(record[6]),
                 None if record[7] == 0 else uint32(record[7]),
                 None if record[8] == 0 else record[8] == 1,
+                None if record[9] == b"" else G1Element.from_bytes(record[9]),
             )
             for record in records
         ]
@@ -261,6 +266,7 @@ class SyncStore:
                 uint64(record[7]),
                 None if record[8] == 0 else uint32(record[8]),
                 None if record[9] == 0 else record[9] == 1,
+                None if record[10] == b"" else G1Element.from_bytes(record[10]),
             )
             for record in records
         ]
