@@ -1760,7 +1760,7 @@ def examine_cmd(
                 got: bytes32 = re_derivation.prefarm_info.puzzle_root
                 print(f"Configuration does not validate. Expected {expected}, got {got}.")
             else:
-                print(f"Configuration is malformed, could not validate")
+                print("Configuration is malformed, could not validate")
     elif spend_type == "REKEY_CANCEL":
         spending_pubkey = get_spending_pubkey_for_drop_coin(solution)
         new_root, old_root, timelock = get_info_for_rekey_drop(puzzle)

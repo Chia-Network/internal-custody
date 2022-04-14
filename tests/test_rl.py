@@ -57,7 +57,9 @@ async def setup_info():
     # Launch it to the starting state
     starting_amount = 18374999999999999999
     conditions, launch_spend = generate_launch_conditions_and_coin_spend(
-        coin, construct_rate_limiting_puzzle(START_DATE, starting_amount, DRAIN_RATE, uint64(1), ACS), 18374999999999999999
+        coin,
+        construct_rate_limiting_puzzle(START_DATE, starting_amount, DRAIN_RATE, uint64(1), ACS),
+        18374999999999999999,
     )
     creation_bundle = SpendBundle(
         [

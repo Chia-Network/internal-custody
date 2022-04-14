@@ -27,6 +27,7 @@ clvm_include_files = set(
         "cic/clsp/include/curry_and_treehash.clib",
         "cic/clsp/include/merkle_utils.clib",
         "cic/clsp/include/sha256tree.clib",
+        "cic/clsp/include/singleton_truths.clib",
         "cic/clsp/include/utility_macros.clib",
     ]
 )
