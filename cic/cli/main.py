@@ -1657,9 +1657,17 @@ def audit_cmd(
 @click.option(
     "--qr-density", help="The amount of bytes to pack into a single QR code", default=250, show_default=True, type=int
 )
+@click.option(
+    "-va",
+    "--validate-against",
+    help="A new configuration file to check against requests for rekeys",
+    required=False,
+    default=None,
+)
 def examine_cmd(
     spend_file: bool,
     qr_density: int,
+    validate_against: str,
 ):
     with open(spend_file, "r") as file:
         bundle = UnsignedSpend.from_bytes(a2b_qrint(file.read()))
@@ -1736,6 +1744,23 @@ def examine_cmd(
           </ul>
         </div>
         """
+        if validate_against is not None:
+            derivation = load_root_derivation(validate_against)
+            re_derivation = calculate_puzzle_root(
+                derivation.prefarm_info,
+                derivation.pubkey_list,
+                derivation.required_pubkeys,
+                derivation.maximum_pubkeys,
+                derivation.minimum_pubkeys,
+            )
+            if re_derivation.prefarm_info.puzzle_root == new_root and re_derivation == derivation:
+                print(f"Configuration successfully validated against root: {new_root}")
+            elif re_derivation == derivation:
+                expected: bytes32 = new_root
+                got: bytes32 = re_derivation.prefarm_info.puzzle_root
+                print(f"Configuration does not validate. Expected {expected}, got {got}.")
+            else:
+                print(f"Configuration is malformed, could not validate")
     elif spend_type == "REKEY_CANCEL":
         spending_pubkey = get_spending_pubkey_for_drop_coin(solution)
         new_root, old_root, timelock = get_info_for_rekey_drop(puzzle)
