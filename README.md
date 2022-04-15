@@ -9,7 +9,7 @@ cd ./internal-custody
 py -m venv venv
 . ./venv/bin/activate  # ./venv/Scripts/activate for Windows users
 pip install .
-pip install git+https://github.com/Quexington/hsms.git@main#3443d1941190b88a6e0fb37b8c32ab1b83f96c22
+pip install git+https://github.com/Quexington/hsms.git@qrint#a7364da732fa8ab57f61efee49c7184c87557fb9
 ```
 
 ## Key Generation
