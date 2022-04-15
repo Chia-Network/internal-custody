@@ -32,6 +32,7 @@ class ACHRecord:
     confirmed_at_time: uint64
     spent_at_height: Optional[uint32]
     completed: Optional[bool]
+    clawback_pubkey: Optional[G1Element]
 
 
 @dataclass(frozen=True)
@@ -43,3 +44,4 @@ class RekeyRecord:
     confirmed_at_time: uint64
     spent_at_height: Optional[uint32]
     completed: Optional[bool]
+    clawback_pubkey: Optional[G1Element]

@@ -2,7 +2,6 @@ import dataclasses
 import pytest
 
 from blspy import G2Element
-from clvm.EvalError import EvalError
 from typing import Tuple, List
 
 from chia.clvm.spend_sim import SpendSim, SimClient
@@ -197,7 +196,7 @@ async def test_random_create_coins_blocked(setup_info, cost_logger):
         for bundle in [rnp_bundle_even, rnp_bundle_zero, rko_bundle_even, rko_bundle_zero]:
             result = await setup_info.sim_client.push_tx(bundle)
             assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
-            with pytest.raises(EvalError, match="clvm raise"):
+            with pytest.raises(ValueError, match="clvm raise"):
                 bundle.coin_spends[0].puzzle_reveal.run_with_cost(INFINITE_COST, bundle.coin_spends[0].solution)
     finally:
         await setup_info.sim.close()
@@ -307,7 +306,7 @@ async def test_rekeys(setup_info, honest, cost_logger):
         else:
             result = await setup_info.sim_client.push_tx(rnp_bundle)
             assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
-            with pytest.raises(EvalError, match="clvm raise"):
+            with pytest.raises(ValueError, match="clvm raise"):
                 rnp_bundle.coin_spends[0].puzzle_reveal.run_with_cost(INFINITE_COST, rnp_bundle.coin_spends[0].solution)
 
         # Try initiating a rekey with the rko filter
@@ -347,7 +346,7 @@ async def test_rekeys(setup_info, honest, cost_logger):
         else:
             result = await setup_info.sim_client.push_tx(rko_bundle)
             assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
-            with pytest.raises(EvalError, match="clvm raise"):
+            with pytest.raises(ValueError, match="clvm raise"):
                 rko_bundle.coin_spends[0].puzzle_reveal.run_with_cost(INFINITE_COST, rko_bundle.coin_spends[0].solution)
     finally:
         await setup_info.sim.close()
@@ -376,7 +375,7 @@ async def test_wrong_amount_types(setup_info, cost_logger):
         # Process the spend
         result = await setup_info.sim_client.push_tx(bad_payment_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
-        with pytest.raises(EvalError, match="clvm raise"):
+        with pytest.raises(ValueError, match="clvm raise"):
             bad_payment_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
                 INFINITE_COST, bad_payment_bundle.coin_spends[0].solution
             )
@@ -412,7 +411,7 @@ async def test_wrong_amount_types(setup_info, cost_logger):
         # Process the spend
         result = await setup_info.sim_client.push_tx(bad_rnp_rekey_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
-        with pytest.raises(EvalError, match="clvm raise"):
+        with pytest.raises(ValueError, match="clvm raise"):
             bad_rnp_rekey_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
                 INFINITE_COST, bad_rnp_rekey_bundle.coin_spends[0].solution
             )
@@ -448,7 +447,7 @@ async def test_wrong_amount_types(setup_info, cost_logger):
         # Process the spend
         result = await setup_info.sim_client.push_tx(bad_rko_rekey_bundle)
         assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
-        with pytest.raises(EvalError, match="clvm raise"):
+        with pytest.raises(ValueError, match="clvm raise"):
             bad_rko_rekey_bundle.coin_spends[0].puzzle_reveal.run_with_cost(
                 INFINITE_COST, bad_rko_rekey_bundle.coin_spends[0].solution
             )

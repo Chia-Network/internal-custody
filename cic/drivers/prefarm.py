@@ -103,6 +103,7 @@ def construct_singleton_inner_puzzle(prefarm_info: PrefarmInfo) -> Program:
         prefarm_info.start_date,
         prefarm_info.starting_amount,
         prefarm_info.mojos_per_second,
+        uint64(1),
         construct_prefarm_inner_puzzle(prefarm_info),
     )
 
@@ -587,7 +588,7 @@ def get_rekey_completion_spend(
 
 def get_puzzle_root_from_puzzle(puzzle: Program) -> bytes32:
     _, rl_inner_puzzle = puzzle.uncurry()[1].as_iter()
-    _, _, _, _, pf_inner_puzzle = rl_inner_puzzle.uncurry()[1].as_iter()
+    _, _, _, _, _, pf_inner_puzzle = rl_inner_puzzle.uncurry()[1].as_iter()
     _, root, _ = pf_inner_puzzle.uncurry()[1].as_iter()
     return bytes32(root.as_python())
 

@@ -9,14 +9,16 @@ RL_MOD = load_clvm("rl.clsp", package_or_requirement="cic.clsp.singleton")
 def construct_rate_limiting_puzzle(
     start_date: uint64,
     start_amount: uint64,
-    drain_rate: uint64,
+    amount_per: uint64,
+    time_interval: uint64,
     inner_puzzle: Program,
 ) -> Program:
     return RL_MOD.curry(
         RL_MOD.get_tree_hash(),
         start_date,
         start_amount,
-        drain_rate,
+        amount_per,
+        time_interval,
         inner_puzzle,
     )
 
