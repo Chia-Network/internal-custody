@@ -7,7 +7,7 @@ with open("README.md", "rt") as fh:
 
 dependencies = [
     "chia-blockchain@git+https://github.com/Chia-Network/chia-blockchain.git@main#de5ed625bf93dfc52bed9d1fc160b376ace18fa2",  # noqa
-    "clvm_tools_rs==0.1.7",
+    "clvm_tools_rs==0.1.9",
     "click==7.1.2",
     "segno==1.4.1",
 ]

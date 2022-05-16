@@ -1570,11 +1570,11 @@ def show_cmd(
     "-f",
     "--filepath",
     help="The file path the dump the audit log",
-    required=True,
+    required=False,
 )
 def audit_cmd(
     db_path: str,
-    filepath: bool,
+    filepath: Optional[bool],
 ):
     async def do_command():
         sync_store: SyncStore = await load_db(db_path)
@@ -1643,8 +1643,11 @@ def audit_cmd(
 
             sorted_audit_dict = sorted(audit_dict, key=lambda e: e["time"])
 
-            with open(filepath, "w") as file:
-                file.write(json.dumps(sorted_audit_dict))
+            if filepath is None:
+                print(json.dumps(sorted_audit_dict))
+            else:
+                with open(filepath, "w") as file:
+                    file.write(json.dumps(sorted_audit_dict))
 
         finally:
             await sync_store.db_connection.close()
