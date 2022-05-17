@@ -636,6 +636,7 @@ def test_init():
             try:
                 sim = await SpendSim.create(db_path="./sim.db")
                 await sim.rewind(REWIND_HERE)
+                sim.pass_time(prefarm_info.payment_clawback_period)
                 with open(db_backup_path, "rb") as backup:
                     with open(sync_db_path, "wb") as file:
                         file.write(backup.read())
@@ -689,6 +690,56 @@ def test_init():
                 sync_db_path,
             ],
         )
+
+        # Try completing the payment after a rekey
+        result = runner.invoke(
+            cli,
+            [
+                "complete",
+                "--filename",
+                spend_bundle_out_path,
+                "--db-path",
+                sync_db_path,
+            ],
+            input="1\n",
+        )
+
+        with open(spend_bundle_out_path, "r") as file:
+            completion_bundle = SpendBundle.from_bytes(bytes.fromhex(file.read()))
+
+        # Push the tx
+        result = runner.invoke(
+            cli,
+            [
+                "push_tx",
+                "--spend-bundle",
+                bytes(completion_bundle).hex(),
+                "--fee",
+                100,
+            ],
+        )
+        assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
+
+        # Sync up
+        result = runner.invoke(
+            cli,
+            [
+                "sync",
+                "--db-path",
+                sync_db_path,
+            ],
+        )
+
+        async def check_for_spent_completion_again():
+            sync_store = await SyncStore.create(sync_db_path)
+            try:
+                records = await sync_store.get_ach_records(include_completed_coins=True)
+                assert len(records) == 1
+                assert records[0].completed
+            finally:
+                await sync_store.db_connection.close()
+
+        asyncio.get_event_loop().run_until_complete(check_for_spent_completion_again())
 
         # Try a slow rekey
         async def fast_forward_slow_rekey():
@@ -765,7 +816,7 @@ def test_init():
                 "--db-path",
                 sync_db_path,
             ],
-            input="2\n",
+            input="1\n",
         )
 
         with open(spend_bundle_out_path, "r") as file:
