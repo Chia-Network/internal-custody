@@ -12,6 +12,10 @@ pip install .
 pip install git+https://github.com/Quexington/hsms.git@main#f5a78d90dfb88da2d7d91ed61446797618964e98
 ```
 
+If you're on Windows, you need one extra package:
+
+`pip install pyreadline`
+
 ## Key Generation
 ```
 hsmgen > 1.se
