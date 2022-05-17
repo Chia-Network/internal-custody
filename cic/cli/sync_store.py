@@ -35,7 +35,7 @@ class SyncStore:
             "   coin_id blob PRIMARY KEY,"
             "   parent_id blob,"
             "   puzzle_hash blob,"
-            "   amount bigint,"
+            "   amount blob,"
             "   puzzle_root blob,"
             "   lineage_proof blob,"
             "   confirmed_at_time bigint,"
@@ -52,7 +52,7 @@ class SyncStore:
             "   coin_id blob PRIMARY KEY,"
             "   parent_id blob,"
             "   puzzle_hash blob,"
-            "   amount bigint,"
+            "   amount blob,"
             "   spent tinyint"
             ")"
         )
@@ -62,7 +62,7 @@ class SyncStore:
             "   coin_id blob PRIMARY KEY,"
             "   parent_id blob,"
             "   puzzle_hash blob,"
-            "   amount bigint,"
+            "   amount blob,"
             "   from_root blob,"
             "   p2_ph blob,"
             "   confirmed_at_time bigint,"
@@ -77,7 +77,7 @@ class SyncStore:
             "   coin_id blob PRIMARY KEY,"
             "   parent_id blob,"
             "   puzzle_hash blob,"
-            "   amount bigint,"
+            "   amount blob,"
             "   from_root blob,"
             "   to_root blob,"
             "   timelock blob,"
@@ -105,7 +105,7 @@ class SyncStore:
                 record.coin.name(),
                 record.coin.parent_coin_info,
                 record.coin.puzzle_hash,
-                record.coin.amount,
+                bytes(record.coin.amount),
                 record.puzzle_root,
                 bytes(record.lineage_proof),
                 record.confirmed_at_time,
@@ -132,7 +132,7 @@ class SyncStore:
                 record.coin.name(),
                 record.coin.parent_coin_info,
                 record.coin.puzzle_hash,
-                record.coin.amount,
+                bytes(record.coin.amount),
                 record.from_root,
                 record.p2_ph,
                 record.confirmed_at_time,
@@ -157,7 +157,7 @@ class SyncStore:
                 record.coin.name(),
                 record.coin.parent_coin_info,
                 record.coin.puzzle_hash,
-                record.coin.amount,
+                bytes(record.coin.amount),
                 record.from_root,
                 record.to_root,
                 record.timelock,
@@ -177,7 +177,7 @@ class SyncStore:
                     p2_singleton.name(),
                     p2_singleton.parent_coin_info,
                     p2_singleton.puzzle_hash,
-                    p2_singleton.amount,
+                    bytes(p2_singleton.amount),
                     0,
                 ),
             )
@@ -193,7 +193,7 @@ class SyncStore:
             Coin(
                 record[1],
                 record[2],
-                uint64(record[3]),
+                uint64.from_bytes(record[3]),
             ),
             record[4],
             LineageProof.from_bytes(record[5]),
@@ -234,7 +234,7 @@ class SyncStore:
                 Coin(
                     record[1],
                     record[2],
-                    uint64(record[3]),
+                    uint64.from_bytes(record[3]),
                 ),
                 bytes32(record[4]),
                 bytes32(record[5]),
@@ -258,7 +258,7 @@ class SyncStore:
                 Coin(
                     record[1],
                     record[2],
-                    uint64(record[3]),
+                    uint64.from_bytes(record[3]),
                 ),
                 bytes32(record[4]),
                 bytes32(record[5]),
@@ -280,7 +280,7 @@ class SyncStore:
         coins = await cursor.fetchall()
         await cursor.close()
 
-        return [Coin(coin[1], coin[2], uint64(coin[3])) for coin in coins]
+        return [Coin(coin[1], coin[2], uint64.from_bytes(coin[3])) for coin in coins]
 
     async def add_configuration(
         self, configuration: Union[PrefarmInfo, RootDerivation], outdated: bool = False
