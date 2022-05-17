@@ -1324,7 +1324,10 @@ def complete_cmd(
                 # Get the spend bundle
                 completion_bundle = get_ach_clawforward_spend_bundle(
                     ach_record.coin,
-                    derivation,
+                    dataclasses.replace(
+                        derivation,
+                        prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=ach_record.from_root),
+                    ),
                     ach_record.p2_ph,
                 )
             else:
