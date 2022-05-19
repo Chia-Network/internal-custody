@@ -1840,7 +1840,7 @@ def examine_cmd(
     """
 
     # Write to a temporary file and open in a browser
-    tmp = tempfile.NamedTemporaryFile(delete=False)
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".html")
     try:
         tmp_path = Path(tmp.name)
         tmp.write(bytes(total_doc, "utf-8"))
