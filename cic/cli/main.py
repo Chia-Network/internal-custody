@@ -982,13 +982,16 @@ def payments_cmd(
             fee_conditions: List[Program] = [Program.to([60, b"$"])]
 
             # Get any p2_singletons to spend
-            max_num: Optional[uint32] = (
-                uint32(math.floor(maximum_extra_cost / 10)) if maximum_extra_cost is not None else None
-            )
-            p2_singletons: List[Coin] = await sync_store.get_p2_singletons(amount_threshold, max_num)
-            if sum(c.amount for c in p2_singletons) % 2 == 1:
-                smallest_coin: Coin = sorted(p2_singletons, key=attrgetter("amount"))[0]
-                p2_singletons = [c for c in p2_singletons if c.name() != smallest_coin.name()]
+            if absorb_available_payments:
+                max_num: Optional[uint32] = (
+                    uint32(math.floor(maximum_extra_cost / 10)) if maximum_extra_cost is not None else None
+                )
+                p2_singletons: List[Coin] = await sync_store.get_p2_singletons(amount_threshold, max_num)
+                if sum(c.amount for c in p2_singletons) % 2 == 1:
+                    smallest_coin: Coin = sorted(p2_singletons, key=attrgetter("amount"))[0]
+                    p2_singletons = [c for c in p2_singletons if c.name() != smallest_coin.name()]
+            else:
+                p2_singletons = []
 
             # Check that this payment will be legal
             withdrawn_amount: int = derivation.prefarm_info.starting_amount - (
