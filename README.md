@@ -47,9 +47,9 @@ cic sync
 ## Payment
 ```
 cic payment -f initial_absorb.unsigned -pks "1.pk,2.pk" -a 100 -t <own address> -ap -at 0
-cat ./initial_absorb.unsigned | hsms0 1.se
+cat ./initial_absorb.unsigned | hsms 1.se
 echo <sig here> > initial_absorb.1.sig
-cat ./initial_absorb.unsigned | hsms0 2.se
+cat ./initial_absorb.unsigned | hsms 2.se
 echo <sig here> > initial_absorb.2.sig
 hsmmerge ./initial_absorb.unsigned ./initial_absorb.1.sig ./initial_absorb.2.sig > initial_absorb.signed
 cic push_tx -b ./initial_absorb.signed -m 100000000
@@ -59,9 +59,9 @@ cic sync
 ## Clawback
 ````
 cic clawback -f clawback.unsigned -pks "1.pk,2.pk"
-cat ./clawback.unsigned | hsms0 1.se
+cat ./clawback.unsigned | hsms 1.se
 echo <sig here> > clawback.1.sig
-cat ./clawback.unsigned | hsms0 2.se
+cat ./clawback.unsigned | hsms 2.se
 echo <sig here> > clawback.2.sig
 hsmmerge ./clawback.unsigned ./clawback.1.sig ./clawback.2.sig > clawback.signed
 cic push_tx -b ./clawback.signed -m 100000000
@@ -76,9 +76,9 @@ cic derive_root --db-path './sync (<your hex digits>).sqlite' -c './Configuratio
 ## Rekey
 ```
 cic start_rekey -f rekey.unsigned -pks "1.pk,2.pk" -new './Configuration (new).txt'
-cat ./rekey.unsigned | hsms0 1.se
+cat ./rekey.unsigned | hsms 1.se
 echo <sig here> > rekey.1.sig
-cat ./rekey.unsigned | hsms0 2.se
+cat ./rekey.unsigned | hsms 2.se
 echo <sig here> > rekey.2.sig
 hsmmerge ./rekey.unsigned ./rekey.1.sig ./rekey.2.sig > rekey.signed
 cic push_tx -b ./rekey.signed -m 100000000
@@ -100,9 +100,9 @@ cic update_config -c './Configuration (new).txt'
 ## Increase security
 ```
 cic increase_security_level -f lock.unsigned -pks "1.pk,2.pk"
-cat ./lock.unsigned | hsms0 1.se
+cat ./lock.unsigned | hsms 1.se
 echo <sig here> > lock.1.sig
-cat ./lock.unsigned | hsms0 2.se
+cat ./lock.unsigned | hsms 2.se
 echo <sig here> > lock.2.sig
 hsmmerge ./lock.unsigned ./lock.1.sig ./lock.2.sig > lock.signed
 cic push_tx -b ./lock.signed -m 100000000
