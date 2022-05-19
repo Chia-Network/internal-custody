@@ -9,7 +9,7 @@ cd ./internal-custody
 py -m venv venv
 . ./venv/bin/activate  # ./venv/Scripts/activate for Windows users
 pip install .
-pip install git+https://github.com/Chia-Network/hsms.git@main#93f4c2a499c3cbeee4ca167811e2403a06fdbe88
+pip install git+https://github.com/Chia-Network/hsms.git@main#d472877a9c5767f7850dc502e449af18f3984067
 ```
 
 If you're on Windows, you need one extra package:
@@ -47,9 +47,9 @@ cic sync
 ## Payment
 ```
 cic payment -f initial_absorb.unsigned -pks "1.pk,2.pk" -a 100 -t <own address> -ap -at 0
-cat ./initial_absorb.unsigned | hsms 1.se
+cat ./initial_absorb.unsigned | hsms -y 1.se
 echo <sig here> > initial_absorb.1.sig
-cat ./initial_absorb.unsigned | hsms 2.se
+cat ./initial_absorb.unsigned | hsms -y 2.se
 echo <sig here> > initial_absorb.2.sig
 hsmmerge ./initial_absorb.unsigned ./initial_absorb.1.sig ./initial_absorb.2.sig > initial_absorb.signed
 cic push_tx -b ./initial_absorb.signed -m 100000000
@@ -59,9 +59,9 @@ cic sync
 ## Clawback
 ````
 cic clawback -f clawback.unsigned -pks "1.pk,2.pk"
-cat ./clawback.unsigned | hsms 1.se
+cat ./clawback.unsigned | hsms -y 1.se
 echo <sig here> > clawback.1.sig
-cat ./clawback.unsigned | hsms 2.se
+cat ./clawback.unsigned | hsms -y 2.se
 echo <sig here> > clawback.2.sig
 hsmmerge ./clawback.unsigned ./clawback.1.sig ./clawback.2.sig > clawback.signed
 cic push_tx -b ./clawback.signed -m 100000000
@@ -76,9 +76,9 @@ cic derive_root --db-path './sync (<your hex digits>).sqlite' -c './Configuratio
 ## Rekey
 ```
 cic start_rekey -f rekey.unsigned -pks "1.pk,2.pk" -new './Configuration (new).txt'
-cat ./rekey.unsigned | hsms 1.se
+cat ./rekey.unsigned | hsms -y 1.se
 echo <sig here> > rekey.1.sig
-cat ./rekey.unsigned | hsms 2.se
+cat ./rekey.unsigned | hsms -y 2.se
 echo <sig here> > rekey.2.sig
 hsmmerge ./rekey.unsigned ./rekey.1.sig ./rekey.2.sig > rekey.signed
 cic push_tx -b ./rekey.signed -m 100000000
@@ -100,9 +100,9 @@ cic update_config -c './Configuration (new).txt'
 ## Increase security
 ```
 cic increase_security_level -f lock.unsigned -pks "1.pk,2.pk"
-cat ./lock.unsigned | hsms 1.se
+cat ./lock.unsigned | hsms -y 1.se
 echo <sig here> > lock.1.sig
-cat ./lock.unsigned | hsms 2.se
+cat ./lock.unsigned | hsms -y 2.se
 echo <sig here> > lock.2.sig
 hsmmerge ./lock.unsigned ./lock.1.sig ./lock.2.sig > lock.signed
 cic push_tx -b ./lock.signed -m 100000000
