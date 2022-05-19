@@ -16,7 +16,7 @@ from chia.util.bech32m import encode_puzzle_hash
 from chia.util.hash import std_hash
 from chia.util.ints import uint32, uint64
 
-from cic.cli.main import cli
+from cic.cli.main import cli, read_unsigned_spend
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
 from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm_info import PrefarmInfo
@@ -26,8 +26,6 @@ from cic.drivers.singleton import construct_p2_singleton
 from hsms.bls12_381 import BLSPublicKey, BLSSecretExponent, BLSSignature
 from hsms.cmds.hsmmerge import create_spend_bundle
 from hsms.process.sign import sign
-from hsms.process.unsigned_spend import UnsignedSpend
-from hsms.util.qrint_encoding import a2b_qrint
 
 
 # Key functions
@@ -317,8 +315,7 @@ def test_init():
         )
 
         # Do a little bit of a signing cermony
-        with open(spend_bundle_out_path, "r") as file:
-            withdrawal_bundle = UnsignedSpend.from_bytes(a2b_qrint(file.read()))
+        withdrawal_bundle = read_unsigned_spend(spend_bundle_out_path)
         sigs: List[BLSSignature] = []
         for key in range(0, 3):
             se = BLSSecretExponent(secret_key_for_index(key))
@@ -402,8 +399,7 @@ def test_init():
         )
 
         # Do a little bit of a signing cermony
-        with open(spend_bundle_out_path, "r") as file:
-            rekey_bundle = UnsignedSpend.from_bytes(a2b_qrint(file.read()))
+        rekey_bundle = read_unsigned_spend(spend_bundle_out_path)
         sigs: List[BLSSignature] = [
             si.signature
             for si in sign(rekey_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
@@ -493,8 +489,7 @@ def test_init():
             )
 
             # Do a little bit of a signing cermony
-            with open(spend_bundle_out_path, "r") as file:
-                clawback_bundle = UnsignedSpend.from_bytes(a2b_qrint(file.read()))
+            clawback_bundle = read_unsigned_spend(spend_bundle_out_path)
             sigs: List[BLSSignature] = [
                 si.signature
                 for si in sign(clawback_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
@@ -660,8 +655,7 @@ def test_init():
         )
 
         # Do a little bit of a signing cermony
-        with open(spend_bundle_out_path, "r") as file:
-            lock_bundle = UnsignedSpend.from_bytes(a2b_qrint(file.read()))
+        lock_bundle = read_unsigned_spend(spend_bundle_out_path)
         sigs: List[BLSSignature] = [
             si.signature
             for si in sign(lock_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 4)])
@@ -767,8 +761,7 @@ def test_init():
             ],
         )
 
-        with open(spend_bundle_out_path, "r") as file:
-            slow_bundle = UnsignedSpend.from_bytes(a2b_qrint(file.read()))
+        slow_bundle = read_unsigned_spend(spend_bundle_out_path)
         sigs: List[BLSSignature] = [
             si.signature
             for si in sign(slow_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])

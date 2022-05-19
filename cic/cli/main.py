@@ -132,6 +132,18 @@ def load_pubkeys(pubkey_files_str: str) -> Iterable[G1Element]:
             yield BLSPublicKey.from_bech32m(file.read().strip())._g1
 
 
+def write_unsigned_spend(filename: str, spend: UnsignedSpend) -> None:
+    with open(filename, "w") as file:
+        for chunk in spend.chunk(255):
+            file.write(str(b2a_qrint(chunk)) + "\n")
+
+
+def read_unsigned_spend(filename: str) -> UnsignedSpend:
+    with open(filename, "r") as file:
+        stripped_chunks = [a2b_qrint(chunk.strip()) for chunk in file.readlines()]
+        return UnsignedSpend.from_chunks(stripped_chunks)
+
+
 @click.group(
     help="\n  Commands to control a prefarm singleton \n",
     context_settings=CONTEXT_SETTINGS,
@@ -1021,13 +1033,12 @@ def payments_cmd(
             )
 
             # Print the result
-            int_spend = b2a_qrint(bytes(unsigned_spend))
             if filename is not None:
-                with open(filename, "w") as file:
-                    file.write(int_spend)
+                write_unsigned_spend(filename, unsigned_spend)
                 print(f"Successfully wrote spend to {filename}")
             else:
-                print(int_spend)
+                for chunk in unsigned_spend.chunk(255):
+                    print(str(b2a_qrint(chunk)))
         finally:
             await sync_store.db_connection.close()
 
@@ -1117,13 +1128,12 @@ def start_rekey_cmd(
             )
 
             # Print the result
-            int_spend = b2a_qrint(bytes(unsigned_spend))
             if filename is not None:
-                with open(filename, "w") as file:
-                    file.write(int_spend)
+                write_unsigned_spend(filename, unsigned_spend)
                 print(f"Successfully wrote spend to {filename}")
             else:
-                print(int_spend)
+                for chunk in unsigned_spend.chunk(255):
+                    print(str(b2a_qrint(chunk)))
         finally:
             await sync_store.db_connection.close()
 
@@ -1248,13 +1258,13 @@ def clawback_cmd(
                 [],
                 get_additional_data(),
             )
-            int_spend = b2a_qrint(bytes(unsigned_spend))
+
             if filename is not None:
-                with open(filename, "w") as file:
-                    file.write(int_spend)
+                write_unsigned_spend(filename, unsigned_spend)
                 print(f"Successfully wrote spend to {filename}")
             else:
-                print(int_spend)
+                for chunk in unsigned_spend.chunk(255):
+                    print(str(b2a_qrint(chunk)))
         finally:
             await sync_store.db_connection.close()
 
@@ -1435,13 +1445,12 @@ def increase_cmd(
                 get_additional_data(),
             )
 
-            int_spend = b2a_qrint(bytes(unsigned_spend))
             if filename is not None:
-                with open(filename, "w") as file:
-                    file.write(int_spend)
+                write_unsigned_spend(filename, unsigned_spend)
                 print(f"Successfully wrote spend to {filename}")
             else:
-                print(int_spend)
+                for chunk in unsigned_spend.chunk(255):
+                    print(str(b2a_qrint(chunk)))
         finally:
             await sync_store.db_connection.close()
 
@@ -1671,12 +1680,11 @@ def audit_cmd(
     default=None,
 )
 def examine_cmd(
-    spend_file: bool,
+    spend_file: str,
     qr_density: int,
     validate_against: str,
 ):
-    with open(spend_file, "r") as file:
-        bundle = UnsignedSpend.from_bytes(a2b_qrint(file.read()))
+    bundle = read_unsigned_spend(spend_file)
 
     singleton_spends: List[HSMCoinSpend] = [cs for cs in bundle.coin_spends if cs.coin.amount % 2 == 1]
     drop_coin_spends: List[HSMCoinSpend] = [cs for cs in bundle.coin_spends if cs.coin.amount % 2 == 0]
