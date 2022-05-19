@@ -134,14 +134,12 @@ def load_pubkeys(pubkey_files_str: str) -> Iterable[G1Element]:
 
 def write_unsigned_spend(filename: str, spend: UnsignedSpend) -> None:
     with open(filename, "w") as file:
-        for chunk in spend.chunk(255):
-            file.write(str(b2a_qrint(chunk)) + "\n")
+        file.write(b2a_qrint(bytes(spend)))
 
 
 def read_unsigned_spend(filename: str) -> UnsignedSpend:
     with open(filename, "r") as file:
-        stripped_chunks = [a2b_qrint(chunk.strip()) for chunk in file.readlines()]
-        return UnsignedSpend.from_chunks(stripped_chunks)
+        return UnsignedSpend.from_bytes(a2b_qrint(file.read()))
 
 
 @click.group(
