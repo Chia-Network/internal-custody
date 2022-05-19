@@ -134,14 +134,12 @@ def load_pubkeys(pubkey_files_str: str) -> Iterable[G1Element]:
 
 def write_unsigned_spend(filename: str, spend: UnsignedSpend) -> None:
     with open(filename, "w") as file:
-        for chunk in spend.chunk(255):
-            file.write(str(b2a_qrint(chunk)) + "\n")
+        file.write(b2a_qrint(bytes(spend)))
 
 
 def read_unsigned_spend(filename: str) -> UnsignedSpend:
     with open(filename, "r") as file:
-        stripped_chunks = [a2b_qrint(chunk.strip()) for chunk in file.readlines()]
-        return UnsignedSpend.from_chunks(stripped_chunks)
+        return UnsignedSpend.from_bytes(a2b_qrint(file.read()))
 
 
 @click.group(
@@ -982,13 +980,16 @@ def payments_cmd(
             fee_conditions: List[Program] = [Program.to([60, b"$"])]
 
             # Get any p2_singletons to spend
-            max_num: Optional[uint32] = (
-                uint32(math.floor(maximum_extra_cost / 10)) if maximum_extra_cost is not None else None
-            )
-            p2_singletons: List[Coin] = await sync_store.get_p2_singletons(amount_threshold, max_num)
-            if sum(c.amount for c in p2_singletons) % 2 == 1:
-                smallest_coin: Coin = sorted(p2_singletons, key=attrgetter("amount"))[0]
-                p2_singletons = [c for c in p2_singletons if c.name() != smallest_coin.name()]
+            if absorb_available_payments:
+                max_num: Optional[uint32] = (
+                    uint32(math.floor(maximum_extra_cost / 10)) if maximum_extra_cost is not None else None
+                )
+                p2_singletons: List[Coin] = await sync_store.get_p2_singletons(amount_threshold, max_num)
+                if sum(c.amount for c in p2_singletons) % 2 == 1:
+                    smallest_coin: Coin = sorted(p2_singletons, key=attrgetter("amount"))[0]
+                    p2_singletons = [c for c in p2_singletons if c.name() != smallest_coin.name()]
+            else:
+                p2_singletons = []
 
             # Check that this payment will be legal
             withdrawn_amount: int = derivation.prefarm_info.starting_amount - (
@@ -1840,7 +1841,7 @@ def examine_cmd(
     """
 
     # Write to a temporary file and open in a browser
-    tmp = tempfile.NamedTemporaryFile(delete=False)
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".html")
     try:
         tmp_path = Path(tmp.name)
         tmp.write(bytes(total_doc, "utf-8"))

@@ -42,5 +42,5 @@ jobs:
         python3 -m venv venv
         . ./venv/bin/activate
         pip install .[dev]
-        pip install git+https://github.com/Chia-Network/hsms.git@main#d472877a9c5767f7850dc502e449af18f3984067
+        pip install git+https://github.com/Chia-Network/hsms.git@main#1c6122bebf482e8ee777f5c401eb16ac2ffca68c
         ./venv/bin/py.test tests/ -s -v --durations 0
