@@ -1585,10 +1585,21 @@ def show_cmd(
     help="The file path the dump the audit log",
     required=False,
 )
+@click.option(
+    "-d",
+    "--diff",
+    help="A previous audit log to diff against this one",
+    required=False,
+)
 def audit_cmd(
     db_path: str,
-    filepath: Optional[bool],
+    filepath: Optional[str],
+    diff: Optional[str],
 ):
+    if diff is not None:
+        with open(diff, "r") as file:
+            old_dict = json.load(file)
+
     async def do_command():
         sync_store: SyncStore = await load_db(db_path)
         try:
@@ -1656,11 +1667,27 @@ def audit_cmd(
 
             sorted_audit_dict = sorted(audit_dict, key=lambda e: e["time"])
 
+            if diff is not None:
+                diff_dict = []
+                for i in range(0, len(sorted_audit_dict)):
+                    if i >= len(old_dict):
+                        diff_dict.append({"new": sorted_audit_dict[i]})
+                    elif old_dict[i] != sorted_audit_dict[i]:
+                        diff_dict.append(
+                            {
+                                "old": old_dict[i],
+                                "new": sorted_audit_dict[i],
+                            }
+                        )
+                final_dict = diff_dict
+            else:
+                final_dict = sorted_audit_dict
+
             if filepath is None:
-                print(json.dumps(sorted_audit_dict))
+                print(json.dumps(final_dict))
             else:
                 with open(filepath, "w") as file:
-                    file.write(json.dumps(sorted_audit_dict))
+                    file.write(json.dumps(final_dict))
 
         finally:
             await sync_store.db_connection.close()
