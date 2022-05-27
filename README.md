@@ -9,9 +9,15 @@ cd ./internal-custody
 py -m venv venv
 . ./venv/bin/activate  # ./venv/Scripts/activate for Windows users
 pip install .
+```
+
+### HSMS Install
+After running the above commands, install hsms (this command is subject to change as bug fixes are pushed):
+```
 pip install git+https://github.com/Chia-Network/hsms.git@main#1c6122bebf482e8ee777f5c401eb16ac2ffca68c
 ```
 
+### Windows Extra
 If you're on Windows, you need one extra package:
 
 `pip install pyreadline`
