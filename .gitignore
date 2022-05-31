@@ -6,3 +6,4 @@ __pycache__
 *.recompiled
 .mypy_cache
 main.sym
+/build/
