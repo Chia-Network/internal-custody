@@ -9,7 +9,7 @@ dependencies = [
     "chia-blockchain==1.3.5",
     "click==7.1.2",
     "segno==1.4.1",
-    "hsms==0.1.0", # This can be updated to 0.1.1 once chia-blockchain 1.3.6 or 1.4.0 is out with the updated blspy + clvm-tools-rs
+    "hsms==0.1.0",  # This can be updated to 0.1.1 once chia-blockchain 1.3.6 or 1.4.0 is out with the updated blspy + clvm-tools-rs
 ]
 
 dev_dependencies = [
