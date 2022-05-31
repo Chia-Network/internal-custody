@@ -23,7 +23,6 @@ dev_dependencies = [
 
 setup(
     name="chia-internal-custody",
-    version="0.0.1",
     packages=find_packages(exclude=("tests",)),
     author="Quexington",
     entry_points={
