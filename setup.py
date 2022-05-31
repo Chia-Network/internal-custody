@@ -9,6 +9,7 @@ dependencies = [
     "chia-blockchain@git+https://github.com/Chia-Network/chia-blockchain.git@main#de5ed625bf93dfc52bed9d1fc160b376ace18fa2",  # noqa
     "click==7.1.2",
     "segno==1.4.1",
+    "hsms==0.1.1",
 ]
 
 dev_dependencies = [
@@ -21,7 +22,7 @@ dev_dependencies = [
 ]
 
 setup(
-    name="chia_internal_custody",
+    name="chia-internal-custody",
     version="0.0.1",
     packages=find_packages(exclude=("tests",)),
     author="Quexington",
