@@ -8,8 +8,7 @@ git clone https://github.com/Chia-Network/internal-custody.git
 cd ./internal-custody
 py -m venv venv
 . ./venv/bin/activate  # ./venv/Scripts/activate for Windows users
-pip install .
-pip install git+https://github.com/Chia-Network/hsms.git@main#1c6122bebf482e8ee777f5c401eb16ac2ffca68c
+pip install --extra-index-url https://pypi.chia.net/simple/ .
 ```
 
 If you're on Windows, you need one extra package:

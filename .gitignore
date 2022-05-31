@@ -1,8 +1,11 @@
 venv
 .eggs
 chia_internal_custody.egg-info
+chia-internal-custody.egg-info
 .pytest_cache
 __pycache__
 *.recompiled
 .mypy_cache
 main.sym
+/build/
+/dist/
