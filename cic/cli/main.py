@@ -126,10 +126,14 @@ async def load_db(db_path: str, launcher_id: Optional[bytes32] = None) -> SyncSt
     return await SyncStore.create(path)
 
 
-def load_pubkeys(pubkey_files_str: str) -> Iterable[G1Element]:
-    for filepath in pubkey_files_str.split(","):
-        with open(Path(filepath), "r") as file:
-            yield BLSPublicKey.from_bech32m(file.read().strip())._g1
+def load_pubkeys(pubkey_files: List[Path]) -> Iterable[G1Element]:
+    for filepath in pubkey_files:
+        bech32m_string = filepath.read_text().strip()
+        try:
+            public_key = BLSPublicKey.from_bech32m(bech32m_string)._g1
+        except ValueError as e:
+            raise ValueError(f"{e}: {filepath}") from e
+        yield public_key
 
 
 def write_unsigned_spend(filename: str, spend: UnsignedSpend) -> None:
@@ -237,7 +241,12 @@ def init_cmd(
     default=None,
 )
 @click.option(
-    "-pks", "--pubkeys", help="A comma separated list of pubkey files that will control this money", required=True
+    "-pks",
+    "--pubkey",
+    "pubkey_path_strings",
+    help="A comma separated list of pubkey files that will control this money",
+    multiple=True,
+    required=True,
 )
 @click.option(
     "-m",
@@ -267,12 +276,14 @@ def init_cmd(
 def derive_cmd(
     configuration: str,
     db_path: Optional[str],
-    pubkeys: str,
+    pubkey_path_strings: List[str],
     initial_lock_level: int,
     minimum_pks: int,
     validate_against: Optional[str],
     maximum_lock_level: Optional[int] = None,
 ):
+    pubkey_paths = [Path(path) for path in pubkeys]
+
     if db_path is None:
         with open(Path(configuration), "rb") as file:
             prefarm_info = PrefarmInfo.from_bytes(file.read())
@@ -289,7 +300,7 @@ def derive_cmd(
                 await sync_store.db_connection.close()
 
         prefarm_info = asyncio.get_event_loop().run_until_complete(get_prefarm_info())
-    pubkey_list: List[G1Element] = list(load_pubkeys(pubkeys))
+    pubkey_list: List[G1Element] = list(load_pubkeys(pubkey_paths))
     derivation: RootDerivation = calculate_puzzle_root(
         prefarm_info,
         pubkey_list,
