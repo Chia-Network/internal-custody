@@ -1,5 +1,5 @@
 Internal Custody
-=======
+========
 
 ## Install
 You need a running full node and wallet for these commands to work.  Here are the instructions for this piece:
