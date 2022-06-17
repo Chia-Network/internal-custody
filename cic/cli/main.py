@@ -1505,8 +1505,8 @@ def show_cmd(
 
             # Calculate available balance
             elapsed_time: int = current_time - prefarm_info.start_date
-            amount_available: int = prefarm_info.mojos_per_second * elapsed_time - (
-                prefarm_info.starting_amount - latest_singleton.coin.amount
+            amount_available: int = prefarm_info.mojos_per_second * elapsed_time - min(
+                0, (prefarm_info.starting_amount - latest_singleton.coin.amount)
             )
 
             print()
@@ -1519,7 +1519,7 @@ def show_cmd(
             print("Singleton:")
             print(f"  - launcher ID: {prefarm_info.launcher_id}")
             print(f"  - amount left: {latest_singleton.coin.amount - 1}")
-            print(f"  - amount available: {min(amount_available, prefarm_info.starting_amount) - 1}")
+            print(f"  - amount available: {min(amount_available, prefarm_info.starting_amount)}")
             print(f"  - amount to claim: {sum(c.amount for c in p2_singletons)}")
             print()
             print("Outstanding events:")
