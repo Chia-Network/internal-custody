@@ -8,6 +8,8 @@ from chia.types.blockchain_format.sized_bytes import bytes32
 TupleTree = Any  # Union[bytes32, Tuple["TupleTree", "TupleTree"]]
 Proof_Tree_Type = Any  # Union[bytes32, Tuple[bytes32, "Proof_Tree_Type"]]
 
+HASH_TREE_PREFIX = bytes([0])
+
 
 # paths here are not quite the same a `NodePath` paths. We don't need the high order bit
 # anymore since the proof indicates how big the path is.
@@ -30,7 +32,7 @@ def build_merkle_tree_from_binary_tree(tuples: TupleTree) -> Tuple[bytes32, Dict
     left_root, left_proofs = build_merkle_tree_from_binary_tree(left)
     right_root, right_proofs = build_merkle_tree_from_binary_tree(right)
 
-    new_root = sha256(left_root, right_root)
+    new_root = sha256(HASH_TREE_PREFIX, left_root, right_root)
     new_proofs = {}
     for name, (path, proof) in left_proofs.items():
         proof.append(right_root)
@@ -82,9 +84,9 @@ def simplify_merkle_proof(tree_hash: bytes32, proof: Tuple[int, List[bytes32]]) 
     path, nodes = proof
     for node in nodes:
         if path & 1:
-            tree_hash = sha256(node, tree_hash)
+            tree_hash = sha256(HASH_TREE_PREFIX, node, tree_hash)
         else:
-            tree_hash = sha256(tree_hash, node)
+            tree_hash = sha256(HASH_TREE_PREFIX, tree_hash, node)
         path >>= 1
     return tree_hash
 
