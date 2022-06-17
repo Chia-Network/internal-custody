@@ -307,7 +307,7 @@ def test_init():
                 "--amount",
                 2,
                 "--recipient-address",
-                encode_puzzle_hash(ACS_PH, prefix="xch"),
+                encode_puzzle_hash(bytes32([0] * 32), prefix="xch"),
                 "--absorb-available-payments",
                 "--amount-threshold",
                 2,
