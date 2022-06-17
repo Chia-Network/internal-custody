@@ -359,7 +359,8 @@ def launch_cmd(
     async def do_command():
         node_client, wallet_client = await get_node_and_wallet_clients(node_rpc_port, wallet_rpc_port, fingerprint)
         try:
-            fund_coin: Coin = (await wallet_client.select_coins(amount=1, wallet_id=1))[0]
+            fund_coins: List[Coin] = await wallet_client.select_coins(amount=(1 + fee), wallet_id=1)
+            fund_coin: Coin = fund_coins[0]
             launcher_coin = Coin(fund_coin.name(), SINGLETON_LAUNCHER_HASH, 1)
             new_derivation: RootDerivation = calculate_puzzle_root(
                 dataclasses.replace(derivation.prefarm_info, launcher_id=launcher_coin.name()),
@@ -376,7 +377,7 @@ def launch_cmd(
             fund_bundle: SpendBundle = (
                 await wallet_client.create_signed_transaction(
                     [{"puzzle_hash": SINGLETON_LAUNCHER_HASH, "amount": 1}],
-                    [fund_coin],
+                    fund_coins,  # I think this is probably imperfect but will work for now
                     fee=uint64(fee),
                     coin_announcements=[announcement],
                 )
@@ -678,9 +679,14 @@ def sync_cmd(
                 current_singleton = next_singleton
             # Mark any p2_singletons spent
             unspent_p2_singletons: List[bytes32] = [c.name() for c in (await sync_store.get_p2_singletons())]
-            p2_singleton_records: List[CoinRecord] = await node_client.get_coin_records_by_names(
-                unspent_p2_singletons, include_spent_coins=True
-            )
+            p2_singleton_records: List[CoinRecord] = []
+            for i in range(0, len(unspent_p2_singletons), 100):
+                p2_singleton_records.extend(
+                    await node_client.get_coin_records_by_names(
+                        unspent_p2_singletons[i : min(i + 100, len(unspent_p2_singletons) - 1)],
+                        include_spent_coins=True,
+                    )
+                )
             for p2_singleton in p2_singleton_records:
                 if p2_singleton.spent_block_index > 0:
                     await sync_store.set_p2_singleton_spent(p2_singleton.coin.name())
@@ -986,8 +992,10 @@ def payments_cmd(
                 )
                 p2_singletons: List[Coin] = await sync_store.get_p2_singletons(amount_threshold, max_num)
                 if sum(c.amount for c in p2_singletons) % 2 == 1:
-                    smallest_coin: Coin = sorted(p2_singletons, key=attrgetter("amount"))[0]
-                    p2_singletons = [c for c in p2_singletons if c.name() != smallest_coin.name()]
+                    smallest_odd_coin: Coin = sorted(
+                        [c for c in p2_singletons if c.amount % 2 == 1], key=attrgetter("amount")
+                    )[0]
+                    p2_singletons = [c for c in p2_singletons if c.name() != smallest_odd_coin.name()]
             else:
                 p2_singletons = []
 
@@ -1503,8 +1511,8 @@ def show_cmd(
 
             # Calculate available balance
             elapsed_time: int = current_time - prefarm_info.start_date
-            amount_available: int = prefarm_info.mojos_per_second * elapsed_time - (
-                prefarm_info.starting_amount - latest_singleton.coin.amount
+            amount_available: int = prefarm_info.mojos_per_second * elapsed_time - min(
+                0, (prefarm_info.starting_amount - latest_singleton.coin.amount)
             )
 
             print()
@@ -1517,7 +1525,7 @@ def show_cmd(
             print("Singleton:")
             print(f"  - launcher ID: {prefarm_info.launcher_id}")
             print(f"  - amount left: {latest_singleton.coin.amount - 1}")
-            print(f"  - amount available: {min(amount_available, prefarm_info.starting_amount) - 1}")
+            print(f"  - amount available: {min(amount_available, prefarm_info.starting_amount)}")
             print(f"  - amount to claim: {sum(c.amount for c in p2_singletons)}")
             print()
             print("Outstanding events:")
