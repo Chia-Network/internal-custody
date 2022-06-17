@@ -678,9 +678,14 @@ def sync_cmd(
                 current_singleton = next_singleton
             # Mark any p2_singletons spent
             unspent_p2_singletons: List[bytes32] = [c.name() for c in (await sync_store.get_p2_singletons())]
-            p2_singleton_records: List[CoinRecord] = await node_client.get_coin_records_by_names(
-                unspent_p2_singletons, include_spent_coins=True
-            )
+            p2_singleton_records: List[CoinRecord] = []
+            for i in range(0, len(unspent_p2_singletons), 100):
+                p2_singleton_records.extend(
+                    await node_client.get_coin_records_by_names(
+                        unspent_p2_singletons[i : min(i + 100, len(unspent_p2_singletons) - 1)],
+                        include_spent_coins=True,
+                    )
+                )
             for p2_singleton in p2_singleton_records:
                 if p2_singleton.spent_block_index > 0:
                     await sync_store.set_p2_singleton_spent(p2_singleton.coin.name())
