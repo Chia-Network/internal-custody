@@ -986,8 +986,10 @@ def payments_cmd(
                 )
                 p2_singletons: List[Coin] = await sync_store.get_p2_singletons(amount_threshold, max_num)
                 if sum(c.amount for c in p2_singletons) % 2 == 1:
-                    smallest_coin: Coin = sorted(p2_singletons, key=attrgetter("amount"))[0]
-                    p2_singletons = [c for c in p2_singletons if c.name() != smallest_coin.name()]
+                    smallest_odd_coin: Coin = sorted(
+                        [c for c in p2_singletons if c.amount % 2 == 1], key=attrgetter("amount")
+                    )[0]
+                    p2_singletons = [c for c in p2_singletons if c.name() != smallest_odd_coin.name()]
             else:
                 p2_singletons = []
 
