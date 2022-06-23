@@ -1536,7 +1536,7 @@ def show_cmd(
             print("Singleton:")
             print(f"  - launcher ID: {prefarm_info.launcher_id}")
             print(f"  - amount left: {latest_singleton.coin.amount - 1}")
-            print(f"  - amount available: {min(amount_available, prefarm_info.starting_amount)}")
+            print(f"  - amount available: {min(amount_available, latest_singleton.coin.amount)}")
             print(f"  - amount to claim: {p2_sum}")
             print()
             print("Outstanding events:")
