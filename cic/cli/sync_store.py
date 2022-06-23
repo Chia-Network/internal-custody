@@ -3,7 +3,7 @@ import dataclasses
 
 from blspy import G1Element
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import SerializedProgram
@@ -271,8 +271,15 @@ class SyncStore:
             for record in records
         ]
 
-    async def get_p2_singletons(self, minimum_amount=uint64(0), max_num: Optional[uint32] = None) -> List[Coin]:
-        limit_str: str = f" LIMIT {max_num}" if max_num is not None else ""
+    async def get_p2_singletons(
+        self, minimum_amount=uint64(0), start_end: Optional[Tuple[uint32, uint32]] = None
+    ) -> List[Coin]:
+        if start_end is not None:
+            start, end = start_end
+            limit = end - start
+            limit_str: str = f" LIMIT {start}, {limit}"
+        else:
+            limit_str = ""
         cursor = await self.db_connection.execute(
             f"SELECT * from p2_singletons WHERE amount>=? AND spent==0 ORDER BY amount DESC{limit_str}",
             (minimum_amount,),
