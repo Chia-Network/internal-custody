@@ -678,18 +678,21 @@ def sync_cmd(
                 current_coin_record = next_coin_record
                 current_singleton = next_singleton
             # Mark any p2_singletons spent
-            unspent_p2_singletons: List[bytes32] = [c.name() for c in (await sync_store.get_p2_singletons())]
-            p2_singleton_records: List[CoinRecord] = []
-            for i in range(0, len(unspent_p2_singletons), 100):
-                p2_singleton_records.extend(
-                    await node_client.get_coin_records_by_names(
-                        unspent_p2_singletons[i : min(i + 100, len(unspent_p2_singletons) - 1)],
-                        include_spent_coins=True,
-                    )
+            i: int = 0
+            while True:
+                unspent_p2_singletons: List[bytes32] = [
+                    c.name() for c in (await sync_store.get_p2_singletons(start_end=(i, i + 100)))
+                ]
+                if unspent_p2_singletons == []:
+                    break
+                p2_singleton_records = await node_client.get_coin_records_by_names(
+                    unspent_p2_singletons,
+                    include_spent_coins=True,
                 )
-            for p2_singleton in p2_singleton_records:
-                if p2_singleton.spent_block_index > 0:
-                    await sync_store.set_p2_singleton_spent(p2_singleton.coin.name())
+                for p2_singleton in p2_singleton_records:
+                    if p2_singleton.spent_block_index > 0:
+                        await sync_store.set_p2_singleton_spent(p2_singleton.coin.name())
+                i += 100
             # Quickly request all of the new p2_singletons
             p2_singleton_ph: bytes32 = construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash()
             await sync_store.add_p2_singletons(
@@ -988,9 +991,9 @@ def payments_cmd(
             # Get any p2_singletons to spend
             if absorb_available_payments:
                 max_num: Optional[uint32] = (
-                    uint32(math.floor(maximum_extra_cost / 10)) if maximum_extra_cost is not None else None
+                    (uint32(0), uint32(math.floor(maximum_extra_cost / 10))) if maximum_extra_cost is not None else None
                 )
-                p2_singletons: List[Coin] = await sync_store.get_p2_singletons(amount_threshold, max_num)
+                p2_singletons: List[Coin] = await sync_store.get_p2_singletons(amount_threshold, start_end=max_num)
                 if sum(c.amount for c in p2_singletons) % 2 == 1:
                     smallest_odd_coin: Coin = sorted(
                         [c for c in p2_singletons if c.amount % 2 == 1], key=attrgetter("amount")
@@ -1504,10 +1507,18 @@ def show_cmd(
         try:
             current_time = int(time.time())
             latest_singleton = await sync_store.get_latest_singleton()
-            p2_singletons = await sync_store.get_p2_singletons()
             ach_records = await sync_store.get_ach_records()
             rekey_records = await sync_store.get_rekey_records()
             prefarm_info = await sync_store.get_configuration(True, block_outdated=False)
+
+            p2_sum: int = 0
+            i: int = 0
+            while True:
+                p2_singletons = await sync_store.get_p2_singletons(start_end=(uint32(i), uint32(i + 100)))
+                if p2_singletons == []:
+                    break
+                p2_sum += sum(c.amount for c in p2_singletons)
+                i += 100
 
             # Calculate available balance
             elapsed_time: int = current_time - prefarm_info.start_date
@@ -1525,8 +1536,8 @@ def show_cmd(
             print("Singleton:")
             print(f"  - launcher ID: {prefarm_info.launcher_id}")
             print(f"  - amount left: {latest_singleton.coin.amount - 1}")
-            print(f"  - amount available: {min(amount_available, prefarm_info.starting_amount)}")
-            print(f"  - amount to claim: {sum(c.amount for c in p2_singletons)}")
+            print(f"  - amount available: {min(amount_available, latest_singleton.coin.amount)}")
+            print(f"  - amount to claim: {p2_sum}")
             print()
             print("Outstanding events:")
             print("  PAYMENTS:")
