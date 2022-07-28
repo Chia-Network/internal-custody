@@ -1,7 +1,7 @@
 (mod
   (
     CLAWBACK_PERIOD
-    (_ . P2_PH)
+    (_ . P2_PH)  ; the first param is used by the other spend case, P2_PH is where we pay out to if payment is not withdrawn
     my_amount
   )
 

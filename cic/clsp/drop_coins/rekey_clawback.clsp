@@ -1,6 +1,6 @@
 (mod
   (
-    (_ PUZZLE_ROOT TIMELOCK)
+    (NEW_CUSTODY_ROOT OLD_CUSTODY_ROOT TIMELOCK)  ; NEW_CUSTODY_ROOT isn't used in this spend_case but is curried in for verification in puzhash
     my_puzzle_hash
     puzzle_reveal
     merkle_proof
@@ -24,7 +24,7 @@
           (not
             (and
               (= (opcode (f conditions)) CREATE_PUZZLE_ANNOUNCEMENT)
-              (= (f (r (f conditions))) REKEY_KW)
+              (= (f (r (f conditions))) REKEY_KW)  ; block this spend from authorising the rekey
             )
           )
           ; then
@@ -34,17 +34,17 @@
     )
   )
 
-  (defun check_for_and_filter_clawback (conditions CLAWBACK_PH amount seen)
+  (defun check_for_and_filter_clawback (conditions my_puzzle_hash amount seen)
     (if conditions
       (if (= CREATE_COIN (opcode (f conditions)))
           (assert
             (not seen)  ; not seen
-            (= CLAWBACK_PH (puzhash (f conditions)))
+            (= my_puzzle_hash (puzhash (f conditions)))  ; assert that the people clawbacking are capable of creating us in the first place
             (= amount (amount (f conditions)))
             ; then
             (check_for_and_filter_clawback
               (r conditions)
-              CLAWBACK_PH
+              my_puzzle_hash
               amount
               1
             )
@@ -52,7 +52,7 @@
           (c (f conditions)
             (check_for_and_filter_clawback
               (r conditions)
-              CLAWBACK_PH
+              my_puzzle_hash
               amount
               seen
             )
@@ -64,7 +64,8 @@
 
   (assert (> TIMELOCK 0)  ; No clawing back locks
     ; then
-    (assert (= PUZZLE_ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) merkle_proof))
+    ; By using the custody's root we can force a signature from one of the legal sets of keys thus proving that this is a legitimate clawback
+    (assert (= OLD_CUSTODY_ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) merkle_proof))
       ; then
       (c (list ASSERT_MY_PUZZLEHASH my_puzzle_hash)
         (check_for_rekey_announcement

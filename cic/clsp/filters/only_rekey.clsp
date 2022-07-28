@@ -1,8 +1,8 @@
 (mod
   (
-    CURRIED_ARGS
-    PUZZLE_REVEAL
-    (
+    CURRIED_ARGS  ; inside p2_merkle_tree this is the "parameters"
+    PUZZLE_REVEAL  ; inside p2_merkle_tree this is the "curried_args"
+    (  ; inside p2_merkle_tree this is the "inner_solution"
       solution
       curried_args_to_coin  ; These are the args that are curried into the even coin that we see
     )

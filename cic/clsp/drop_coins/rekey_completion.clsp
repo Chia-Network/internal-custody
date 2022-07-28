@@ -2,7 +2,7 @@
   (
     SINGLETON_STRUCT
     FINISHING_TIMELOCK
-    (_ _ TIMELOCK)
+    (OLD_CUSTODY_ROOT NEW_CUSTODY_ROOT TIMELOCK)  ; the first two aren't used in this code, but are curried in for verification inside this coin's puzzlehash
     (parent_parent parent_inner_puz parent_amount)  ; lineage proof
   )
 

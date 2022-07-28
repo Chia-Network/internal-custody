@@ -7,7 +7,7 @@
     spend_type
     spend_solution
     ; optional
-    puzzle_reveal
+    puzzle_reveal  ; this is a puzzle that is included in the root
     proof_of_inclusion
     puzzle_solution
   )
@@ -120,10 +120,15 @@
   )
 
   ;;; FINISH REKEY ;;;
-  (defun finish_rekey (THIS_MOD_HASH ROOT STATE my_amount (
-    timelock_multiple
-    new_root
-  ))
+  (defun finish_rekey (
+    THIS_MOD_HASH
+    ROOT STATE
+    my_amount
+    ( ; this is the spend_solution
+      timelock_multiple
+      new_root
+    )
+  )
     (list
       (list ASSERT_PUZZLE_ANNOUNCEMENT
             (sha256
@@ -140,10 +145,16 @@
   )
 
   ;;; START REKEY ;;;
-  (defun start_rekey (THIS_MOD_HASH ROOT STATE my_amount conditions (
-    timelock_multiple
-    new_root_after
-  ))
+  (defun start_rekey (
+    THIS_MOD_HASH
+    ROOT STATE
+    my_amount
+    conditions
+    (  ; this is the spend_solution
+      timelock_multiple
+      new_root_after
+    )
+  )
     (c
       (list ASSERT_SECONDS_RELATIVE
             (calculate_timelock
@@ -153,26 +164,32 @@
             )
       )
       (check_singleton_and_even conditions
-        (c (calculate_our_ph THIS_MOD_HASH ROOT STATE) my_amount)                                ; singleton info
-        (c (calculate_rekey_ph (REKEY_MOD_HASH STATE) ROOT timelock_multiple new_root_after) 0)  ; drop coin info
+        (c (calculate_our_ph THIS_MOD_HASH ROOT STATE) my_amount)                                ; assert that we are recreating ourself in generated conditions
+        (c (calculate_rekey_ph (REKEY_MOD_HASH STATE) ROOT timelock_multiple new_root_after) 0)  ; assert that we are creating a rekey coin in generated conditions
         (c () ())
       )
     )
   )
 
   ;;; WITHDRAW_PAYMENT ;;;
-  (defun handle_payment (THIS_MOD_HASH ROOT STATE my_amount conditions (
-    out_amount
-    in_amount
-    clawforward_ph
-  ))
+  (defun handle_payment (
+    THIS_MOD_HASH
+    ROOT STATE
+    my_amount
+    conditions
+    (  ; this is the spend_solution
+      out_amount
+      in_amount
+      clawforward_ph
+    )
+  )
     (assert (not (logand (- out_amount in_amount) 1))
       ; then
       (c (list ASSERT_SECONDS_RELATIVE (ACH_TIMELOCK STATE))
         (check_singleton_and_even conditions
-          (c (calculate_our_ph THIS_MOD_HASH ROOT STATE) (+ (- my_amount out_amount) in_amount))  ; singleton info
-          (c (calculate_ach_payment (ACH_MOD_HASH STATE) ROOT clawforward_ph) out_amount)         ; drop coin info
-          (c () (not out_amount))  ; mark it as seen if the out amount is 0
+          (c (calculate_our_ph THIS_MOD_HASH ROOT STATE) (+ (- my_amount out_amount) in_amount))  ; assert that we are recreating ourself with the exact same curryed params in generated conditions after adjusting for amount change
+          (c (calculate_ach_payment (ACH_MOD_HASH STATE) ROOT clawforward_ph) out_amount)         ; assert that we are creating the clawback_able payment
+          (c () (not out_amount))  ; mark it as seen if the out amount is 0 - preventing unreported even coin creations
         )
       )
     )
@@ -182,14 +199,16 @@
   (c (list ASSERT_MY_AMOUNT my_amount)  ; assert our amount because every path needs it
     (if (= spend_type 1)
         (finish_rekey THIS_MOD_HASH ROOT STATE my_amount spend_solution)
-        (check_for_rekey_announcement  ; block the announcement that finishes the rekey
+
+        (check_for_rekey_announcement  ; block the below from making an announcement that finishes the rekey
+
           ; After this point, all of the spends require authentication
-          (assert (= ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))
+          (assert (= ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))  ; check that inputted puzzle is included in our merkle root
             ; then
             (if (= spend_type 2)
-                (start_rekey THIS_MOD_HASH ROOT STATE my_amount (a puzzle_reveal puzzle_solution) spend_solution)
+                (start_rekey THIS_MOD_HASH ROOT STATE my_amount (a puzzle_reveal puzzle_solution) spend_solution)  ; run inputted puzzle and send conditions into (start_rekey)
                 (if (= spend_type 3)
-                    (handle_payment THIS_MOD_HASH ROOT STATE my_amount (a puzzle_reveal puzzle_solution) spend_solution)
+                    (handle_payment THIS_MOD_HASH ROOT STATE my_amount (a puzzle_reveal puzzle_solution) spend_solution)  ; run inputted puzzle and send conditions into (handle_payment)
                     (x)
                 )
             )

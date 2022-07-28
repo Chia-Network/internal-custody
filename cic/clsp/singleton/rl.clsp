@@ -1,6 +1,6 @@
 (mod
   (
-    MOD_HASH
+    RL_MOD_HASH
     START_DATE
     STARTING_AMOUNT
     AMOUNT_PER
@@ -28,7 +28,7 @@
   (defun-inline morph_singleton_condition
     (
       singleton_condition
-      MOD_HASH
+      RL_MOD_HASH
       START_DATE
       STARTING_AMOUNT
       AMOUNT_PER
@@ -39,13 +39,13 @@
     (c
       CREATE_COIN
       (c
-        (puzzle_hash_of_curried_function MOD_HASH
+        (puzzle_hash_of_curried_function RL_MOD_HASH
           (puzzle_hash singleton_condition)
           (sha256 1 TIME_INTERVAL)
           (sha256 1 AMOUNT_PER)
           (sha256 1 STARTING_AMOUNT)
           (sha256 1 START_DATE)
-          (sha256 1 MOD_HASH)
+          (sha256 1 RL_MOD_HASH)
         )
         (r (r singleton_condition))
       )
@@ -66,7 +66,7 @@
       remaining_conditions
       withdrawn_amount
       possible_withdrawn_amount
-      MOD_HASH
+      RL_MOD_HASH
       START_DATE
       STARTING_AMOUNT
       AMOUNT_PER
@@ -79,7 +79,7 @@
       (c
         (morph_singleton_condition
           singleton_condition
-          MOD_HASH
+          RL_MOD_HASH
           START_DATE
           STARTING_AMOUNT
           AMOUNT_PER
@@ -99,7 +99,7 @@
       singleton_condition
       remaining_conditions
       (
-        MOD_HASH
+        RL_MOD_HASH
         START_DATE
         STARTING_AMOUNT
         AMOUNT_PER
@@ -113,7 +113,7 @@
       remaining_conditions
       (- STARTING_AMOUNT (coin_amount singleton_condition))
       (calculate_possible_withdrawal START_DATE AMOUNT_PER TIME_INTERVAL current_time)
-      MOD_HASH
+      RL_MOD_HASH
       START_DATE
       STARTING_AMOUNT
       AMOUNT_PER
@@ -143,7 +143,7 @@
     (a INNER_PUZZLE inner_solution)
     found_singleton
     (list
-      MOD_HASH
+      RL_MOD_HASH
       START_DATE
       STARTING_AMOUNT
       AMOUNT_PER
