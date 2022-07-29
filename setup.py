@@ -6,10 +6,10 @@ with open("README.md", "rt") as fh:
     long_description = fh.read()
 
 dependencies = [
-    "chia-blockchain==1.3.5",
+    "chia-blockchain==1.5.0",
     "click==7.1.2",
     "segno==1.4.1",
-    "hsms==0.1.0",  # Update to 0.1.1 once chia-blockchain 1.3.6/1.4.0 is out with the updated blspy/clvm-tools-rs
+    "hsms==0.1.1",
 ]
 
 dev_dependencies = [
