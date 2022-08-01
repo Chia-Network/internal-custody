@@ -57,7 +57,7 @@ class SetupInfo:
 
 
 @pytest.fixture(scope="function")
-async def setup_info():
+async def _setup_info():
     sim = await SpendSim.create()
     sim_client = SimClient(sim)
     await sim.farm_block(ACS_PH)
@@ -135,7 +135,8 @@ def get_proof_of_inclusion(num_puzzles: int) -> Tuple[int, List[bytes32]]:
 
 
 @pytest.mark.asyncio
-async def test_ach(setup_info, cost_logger):
+async def test_ach(_setup_info, cost_logger):
+    setup_info = await _setup_info
     try:
         PAYMENT_AMOUNT = uint64(1024)
         ach_puzzle: Program = curry_ach_puzzle(setup_info.prefarm_info, ACS_PH)
@@ -224,7 +225,8 @@ async def test_ach(setup_info, cost_logger):
 
 
 @pytest.mark.asyncio
-async def test_rekey(setup_info, cost_logger):
+async def test_rekey(_setup_info, cost_logger):
+    setup_info = await _setup_info
     try:
         REKEY_TIMELOCK = uint8(1)
         new_prefarm_info: PrefarmInfo = dataclasses.replace(

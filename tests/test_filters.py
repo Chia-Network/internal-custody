@@ -53,7 +53,7 @@ class SetupInfo:
 
 
 @pytest.fixture(scope="function")
-async def setup_info():
+async def _setup_info():
     sim = await SpendSim.create()
     sim_client = SimClient(sim)
     await sim.farm_block(ACS_PH)
@@ -115,7 +115,8 @@ def get_proof_of_inclusion(num_puzzles: int) -> Tuple[int, List[bytes32]]:
 
 
 @pytest.mark.asyncio
-async def test_random_create_coins_blocked(setup_info, cost_logger):
+async def test_random_create_coins_blocked(_setup_info, cost_logger):
+    setup_info = await _setup_info
     try:
         rnp_bundle_even = SpendBundle(
             [
@@ -203,7 +204,8 @@ async def test_random_create_coins_blocked(setup_info, cost_logger):
 
 
 @pytest.mark.asyncio
-async def test_honest_payments(setup_info, cost_logger):
+async def test_honest_payments(_setup_info, cost_logger):
+    setup_info = await _setup_info
     try:
         REWIND_HEIGHT = setup_info.sim.block_height
         # Try initiating a payment
@@ -261,7 +263,8 @@ async def test_honest_payments(setup_info, cost_logger):
     [True, False],
 )
 @pytest.mark.asyncio
-async def test_rekeys(setup_info, honest, cost_logger):
+async def test_rekeys(_setup_info, honest, cost_logger):
+    setup_info = await _setup_info
     try:
         REWIND_HEIGHT = setup_info.sim.block_height
         if honest:
@@ -353,7 +356,8 @@ async def test_rekeys(setup_info, honest, cost_logger):
 
 
 @pytest.mark.asyncio
-async def test_wrong_amount_types(setup_info, cost_logger):
+async def test_wrong_amount_types(_setup_info, cost_logger):
+    setup_info = await _setup_info
     try:
         # Try initiating a payment of 0
         bad_payment_bundle = SpendBundle(
