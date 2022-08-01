@@ -104,7 +104,7 @@ def sign_message_with_offset(pk: G1Element, msg: bytes, agg_pk: Optional[G1Eleme
 
 
 @pytest.fixture(scope="function")
-async def setup_info():
+async def _setup_info():
     sim = await SpendSim.create()
     sim_client = SimClient(sim)
     await sim.farm_block(ACS_PH)
@@ -189,7 +189,8 @@ async def setup_info():
 
 
 @pytest.mark.asyncio
-async def test_puzzle_root_derivation(setup_info):
+async def test_puzzle_root_derivation(_setup_info):
+    setup_info = await _setup_info
     try:
         pubkeys: List[G1Element] = []
         m = uint32(3)
@@ -222,7 +223,8 @@ async def test_puzzle_root_derivation(setup_info):
 
 
 @pytest.mark.asyncio
-async def test_payments(setup_info, cost_logger):
+async def test_payments(_setup_info, cost_logger):
+    setup_info = await _setup_info
     try:
         TWO_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 2)]
         THREE_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 3)]
@@ -433,7 +435,8 @@ async def test_payments(setup_info, cost_logger):
 
 
 @pytest.mark.asyncio
-async def test_rate_limiting(setup_info, cost_logger):
+async def test_rate_limiting(_setup_info, cost_logger):
+    setup_info = await _setup_info
     try:
         THREE_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 3)]
         AGG_THREE = G1Element()
@@ -531,7 +534,8 @@ async def test_rate_limiting(setup_info, cost_logger):
 
 
 @pytest.mark.asyncio
-async def test_rekeys(setup_info, cost_logger):
+async def test_rekeys(_setup_info, cost_logger):
+    setup_info = await _setup_info
     try:
         # Pubkey setup
         ONE_PUBKEY: G1Element = secret_key_for_index(0).get_g1()

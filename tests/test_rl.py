@@ -41,7 +41,7 @@ class SetupInfo:
 
 
 @pytest.fixture(scope="function")
-async def setup_info():
+async def _setup_info():
     sim = await SpendSim.create()
     sim_client = SimClient(sim)
     await sim.farm_block(ACS_PH)
@@ -92,7 +92,8 @@ async def setup_info():
 
 
 @pytest.mark.asyncio
-async def test_draining(setup_info, cost_logger):
+async def test_draining(_setup_info, cost_logger):
+    setup_info = await _setup_info
     try:
         # Setup the conditions to drain
         TO_DRAIN = uint64(10)
@@ -188,7 +189,8 @@ async def test_draining(setup_info, cost_logger):
 
 
 @pytest.mark.asyncio
-async def test_cant_drain_more(setup_info, cost_logger):
+async def test_cant_drain_more(_setup_info, cost_logger):
+    setup_info = await _setup_info
     try:
         # Setup the conditions to drain
         TO_DRAIN = uint64(10)
@@ -229,7 +231,8 @@ async def test_cant_drain_more(setup_info, cost_logger):
 
 
 @pytest.mark.asyncio
-async def test_refill_is_ignored(setup_info, cost_logger):
+async def test_refill_is_ignored(_setup_info, cost_logger):
+    setup_info = await _setup_info
     try:
         # First let's farm ourselves some funds
         await setup_info.sim.farm_block(ACS_PH)
