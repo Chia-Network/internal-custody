@@ -39,17 +39,7 @@
                 )
                 (assert
                   ; we check it different based on whether it's amount 0 (rekey) or not (payment)
-                  (if (= (amount (f conditions)) 0)
-                      ; REKEY CHECKING
-                      (and
-                        ; it's a rekey coin
-                        (=
-                          (puzhash (f conditions))
-                          (puzzle_hash_of_curried_function (REKEY_MOD_HASH CURRIED_ARGS) (sha256tree curried_args_to_coin))
-                        )
-                        ; with the correct timelock
-                        (not (> (ALLOWED_REKEY_TIMELOCK CURRIED_ARGS) (f (r (r curried_args_to_coin)))))
-                      )
+                  (if (amount (f conditions))
                       ; PAYMENT CHECKING
                       (or
                         ; either it's an ach clawback ...
@@ -63,17 +53,25 @@
                           (puzzle_hash_of_curried_function (ACH_MOD_HASH CURRIED_ARGS) (sha256tree curried_args_to_coin))
                         )
                       )
+                      ; REKEY CHECKING
+                      (and
+                        ; it's a rekey coin
+                        (=
+                          (puzhash (f conditions))
+                          (puzzle_hash_of_curried_function (REKEY_MOD_HASH CURRIED_ARGS) (sha256tree curried_args_to_coin))
+                        )
+                        ; with the correct timelock
+                        (not (> (ALLOWED_REKEY_TIMELOCK CURRIED_ARGS) (f (r (r curried_args_to_coin)))))
+                      )
                   )
-                  ; then
-                  1
+                  ; if we found an even coin then we can exit early as above layer asserts only one even
+                  0
                 )
-                1
-            )
-            ; then
-            (check_even_coin
-              (r conditions)
-              curried_args_to_coin
-              CURRIED_ARGS
+                (check_even_coin
+                  (r conditions)
+                  curried_args_to_coin
+                  CURRIED_ARGS
+                )
             )
           )
         )

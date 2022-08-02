@@ -18,7 +18,7 @@
   (include utility_macros.clib)
   (include merkle_utils.clib)
 
-  (defconstant REKEY_KW 'rekey')
+  (defconstant REKEY_KW 'r')
 
   ; STATE is a list with the following elements in order
   ; - REKEY_MOD_HASH
@@ -58,7 +58,7 @@
   )
 
   (defun-inline calculate_timelock (BASE_REKEY_TIMELOCK SLOW_REKEY_PENALTY timelock_multiple)
-    (+ (* BASE_REKEY_TIMELOCK timelock_multiple) (if (> timelock_multiple 1) SLOW_REKEY_PENALTY 0))
+    (+ (* BASE_REKEY_TIMELOCK timelock_multiple) (i (> timelock_multiple 1) SLOW_REKEY_PENALTY 0))
   )
 
   (defun-inline opcode (condition) (f condition))
@@ -95,27 +95,19 @@
                       (c seen_singleton 1)
                     )
                 )
-                (c seen_singleton seen_even)
+                (assert
+                  (not
+                    (and
+                      (= (opcode (f conditions)) CREATE_PUZZLE_ANNOUNCEMENT)
+                      (= (f (r (f conditions))) REKEY_KW)
+                    )
+                  )
+                  (c seen_singleton seen_even)
+                )
             )
           )
         )
-        (assert seen_singleton seen_even ())
-    )
-  )
-
-  (defun check_for_rekey_announcement (conditions)
-    (if conditions
-        (assert
-          (not
-            (and
-              (= (opcode (f conditions)) CREATE_PUZZLE_ANNOUNCEMENT)
-              (= (f (r (f conditions))) REKEY_KW)
-            )
-          )
-          ; then
-          (c (f conditions) (check_for_rekey_announcement (r conditions)))
-        )
-        ()
+        (if (all seen_singleton seen_even) () (x))
     )
   )
 
@@ -183,15 +175,12 @@
       clawforward_ph
     )
   )
-    (assert (not (logand (- out_amount in_amount) 1))
-      ; then
-      (c (list ASSERT_SECONDS_RELATIVE (ACH_TIMELOCK STATE))
+    (c (list ASSERT_SECONDS_RELATIVE (ACH_TIMELOCK STATE))
         (check_singleton_and_even conditions
           (c (calculate_our_ph THIS_MOD_HASH ROOT STATE) (+ (- my_amount out_amount) in_amount))  ; assert that we are recreating ourself with the exact same curryed params in generated conditions after adjusting for amount change
           (c (calculate_ach_payment (ACH_MOD_HASH STATE) ROOT clawforward_ph) out_amount)         ; assert that we are creating the clawback_able payment
           (c () (not out_amount))  ; mark it as seen if the out amount is 0 - preventing unreported even coin creations
         )
-      )
     )
   )
 
@@ -200,9 +189,7 @@
     (if (= spend_type 1)
         (finish_rekey THIS_MOD_HASH ROOT STATE my_amount spend_solution)
 
-        (check_for_rekey_announcement  ; block the below from making an announcement that finishes the rekey
-
-          ; After this point, all of the spends require authentication
+        ; After this point, all of the spends require authentication
           (assert (= ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))  ; check that inputted puzzle is included in our merkle root
             ; then
             (if (= spend_type 2)
@@ -213,7 +200,6 @@
                 )
             )
           )
-        )
     )
   )
 
