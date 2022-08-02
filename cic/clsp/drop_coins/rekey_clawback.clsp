@@ -18,22 +18,6 @@
   (defun-inline puzhash (condition) (f (r condition)))
   (defun-inline amount (condition) (f (r (r condition))))
 
-  (defun check_for_rekey_announcement (conditions)
-    (if conditions
-        (assert
-          (not
-            (and
-              (= (opcode (f conditions)) CREATE_PUZZLE_ANNOUNCEMENT)
-              (= (f (r (f conditions))) REKEY_KW)  ; block this spend from authorising the rekey
-            )
-          )
-          ; then
-          (c (f conditions) (check_for_rekey_announcement (r conditions)))
-        )
-        ()
-    )
-  )
-
   (defun check_for_and_filter_clawback_and_rekey_announcement (conditions my_puzzle_hash amount seen)
     (if conditions
       (if (= CREATE_COIN (opcode (f conditions)))
