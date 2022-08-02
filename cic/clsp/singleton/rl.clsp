@@ -131,7 +131,7 @@
             (found_singleton (f conditions) (r conditions) args)
             (c
               (f conditions)
-              (search_for_singleton (r conditions) found_singleton args)
+              (search_for_singleton (r conditions) args)
             )
         )
         (x)
