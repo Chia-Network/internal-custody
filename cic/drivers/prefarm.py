@@ -181,8 +181,7 @@ def get_withdrawal_spend_info(
         ]
     )
     inner_solution: Program = solution_for_delegated_puzzle(delegated_puzzle, Program.to([]))
-
-    return (
+    full_sb = (
         SpendBundle(
             [
                 CoinSpend(
@@ -218,6 +217,7 @@ def get_withdrawal_spend_info(
         ),
         (delegated_puzzle.get_tree_hash() + singleton.name() + DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA),  # TODO
     )
+    return full_sb
 
 
 def get_ach_clawback_spend_info(

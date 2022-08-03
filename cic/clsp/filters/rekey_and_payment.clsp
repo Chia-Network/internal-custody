@@ -65,7 +65,7 @@
                       )
                   )
                   ; if we found an even coin then we can exit early as above layer asserts only one even
-                  0
+                  (r conditions)
                 )
                 (check_even_coin
                   (r conditions)
