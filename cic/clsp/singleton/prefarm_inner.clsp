@@ -20,17 +20,14 @@
 
   (defconstant REKEY_KW 'r')
 
-  ; STATE is a list with the following elements in order
-  ; - REKEY_MOD_HASH
-  ; - ACH_MOD_HASH
-  ; - ACH_TIMELOCK
-  ; - BASE_REKEY_TIMELOCK
-  ; - SLOW_REKEY_PENALTY
-  (defun-inline REKEY_MOD_HASH (STATE) (f STATE))
-  (defun-inline ACH_MOD_HASH (STATE) (f (r STATE)))
-  (defun-inline ACH_TIMELOCK (STATE) (f (r (r STATE))))
-  (defun-inline BASE_REKEY_TIMELOCK (STATE) (f (r (r (r STATE)))))
-  (defun-inline SLOW_REKEY_PENALTY (STATE) (f (r (r (r (r STATE))))))
+  ; STATE is a tree with the following elements in order
+  ; ((REKEY_MOD_HASH . ACH_MOD_HASH) . (ACH_TIMELOCK . (BASE_REKEY_TIMELOCK . SLOW_REKEY_PENALTY)))
+
+  (defun-inline REKEY_MOD_HASH (STATE) (f (f STATE)))
+  (defun-inline ACH_MOD_HASH (STATE) (r (f STATE)))
+  (defun-inline ACH_TIMELOCK (STATE) (f (r STATE)))
+  (defun-inline BASE_REKEY_TIMELOCK (STATE) (f (r (r STATE))))
+  (defun-inline SLOW_REKEY_PENALTY (STATE) (r (r (r STATE))))
 
   ;;; utility functions ;;;
   (defun calculate_our_ph (THIS_MOD_HASH ROOT STATE)
@@ -67,9 +64,9 @@
 
   (defun check_singleton_and_even (
     conditions
-    (singleton_ph . singleton_amount)  ; singleton info
-    (even_ph . even_amount)            ; even coin info
-    (seen_singleton . seen_even)  ; we set seen_even to 1 when we start to prevent an even (v sneaky)
+    (singleton_ph . singleton_amount)  ; singleton info - we assert the singleton we find has this format
+    (even_ph . even_amount)            ; even coin info - we assert the even coin we find has this format
+    (seen_singleton . seen_even)  ; flags used to prevent more than one singleton and one even coin from being created
   )
     (if conditions
         (c
@@ -186,20 +183,19 @@
 
   ; main
   (c (list ASSERT_MY_AMOUNT my_amount)  ; assert our amount because every path needs it
-    (if (= spend_type 1)
-        (finish_rekey THIS_MOD_HASH ROOT STATE my_amount spend_solution)
-
-        ; After this point, all of the spends require authentication
-          (assert (= ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))  ; check that inputted puzzle is included in our merkle root
-            ; then
-            (if (= spend_type 2)
-                (start_rekey THIS_MOD_HASH ROOT STATE my_amount (a puzzle_reveal puzzle_solution) spend_solution)  ; run inputted puzzle and send conditions into (start_rekey)
-                (if (= spend_type 3)
-                    (handle_payment THIS_MOD_HASH ROOT STATE my_amount (a puzzle_reveal puzzle_solution) spend_solution)  ; run inputted puzzle and send conditions into (handle_payment)
-                    (x)
-                )
-            )
+    (if spend_type
+      ; After this point, all of the spends require authentication
+        (assert (= ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))  ; check that inputted puzzle is included in our merkle root
+          ; then
+          (if (= spend_type 1)
+              (start_rekey THIS_MOD_HASH ROOT STATE my_amount (a puzzle_reveal puzzle_solution) spend_solution)  ; run inputted puzzle and send conditions into (start_rekey)
+              (if (= spend_type 2)
+                  (handle_payment THIS_MOD_HASH ROOT STATE my_amount (a puzzle_reveal puzzle_solution) spend_solution)  ; run inputted puzzle and send conditions into (handle_payment)
+                  (x)
+              )
           )
+        )
+        (finish_rekey THIS_MOD_HASH ROOT STATE my_amount spend_solution)
     )
   )
 

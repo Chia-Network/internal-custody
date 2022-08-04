@@ -15,15 +15,12 @@
 
   ; CURRIED_ARGS is a list of these 4 things:
   ;
-  ; - REKEY_MOD_HASH          ; The rekey module without its rekey specific curried arguments
-  ; - ALLOWED_REKEY_TIMELOCK  ; The timelock that is allowed for these rekeys
-  ; - ACH_MOD_HASH            ; The ACH module without its payment specific curried arguments
-  ; - CLAWBACK_PH             ; The P2_SINGLETON address for this singleton
+  ; ((REKEY_MOD_HASH . ALLOWED_REKEY_TIMELOCK) . (ACH_MOD_HASH . CLAWBACK_PH))
 
-  (defun-inline REKEY_MOD_HASH (CURRIED_ARGS) (f CURRIED_ARGS))
-  (defun-inline ALLOWED_REKEY_TIMELOCK (CURRIED_ARGS) (f (r CURRIED_ARGS)))
-  (defun-inline ACH_MOD_HASH (CURRIED_ARGS) (f (r (r CURRIED_ARGS))))
-  (defun-inline CLAWBACK_PH (CURRIED_ARGS) (f (r (r (r CURRIED_ARGS)))))
+  (defun-inline REKEY_MOD_HASH (CURRIED_ARGS) (f (f CURRIED_ARGS)))
+  (defun-inline ALLOWED_REKEY_TIMELOCK (CURRIED_ARGS) (r (f CURRIED_ARGS)))
+  (defun-inline ACH_MOD_HASH (CURRIED_ARGS) (f (r CURRIED_ARGS)))
+  (defun-inline CLAWBACK_PH (CURRIED_ARGS) (r (r CURRIED_ARGS)))
 
   (defun-inline opcode (condition) (f condition))
   (defun-inline puzhash (condition) (f (r condition)))

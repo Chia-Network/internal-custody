@@ -13,13 +13,13 @@
   (include sha256tree.clib)
   (include utility_macros.clib)
 
-  ; CURRIED_ARGS is a list of these 4 things:
+  ; CURRIED_ARGS is a list of these 2 things:
   ;
   ; - REKEY_MOD_HASH          ; The rekey module without its rekey specific curried arguments
   ; - ALLOWED_REKEY_TIMELOCK  ; The timelock that is allowed for these rekeys
 
   (defun-inline REKEY_MOD_HASH (CURRIED_ARGS) (f CURRIED_ARGS))
-  (defun-inline ALLOWED_REKEY_TIMELOCK (CURRIED_ARGS) (f (r CURRIED_ARGS)))
+  (defun-inline ALLOWED_REKEY_TIMELOCK (CURRIED_ARGS) (r CURRIED_ARGS))
 
   (defun-inline opcode (condition) (f condition))
   (defun-inline puzhash (condition) (f (r condition)))
