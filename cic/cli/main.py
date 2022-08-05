@@ -160,11 +160,6 @@ def cli(ctx: click.Context) -> None:
     default=".",
     show_default=True,
 )
-@click.option("-d", "--date", help="Unix time at which withdrawals become possible", required=True)
-@click.option("-r", "--rate", help="Mojos that can be withdrawn per second", required=True)
-@click.option(
-    "-a", "--amount", help="The initial amount that will be locked in this custody program (in mojos)", required=True
-)
 @click.option(
     "-wt",
     "--withdrawal-timelock",
@@ -192,9 +187,6 @@ def cli(ctx: click.Context) -> None:
 @click.option("-sp", "--slow-penalty", help="The time penalty for performing a slow rekey (in seconds)", required=True)
 def init_cmd(
     directory: str,
-    date: int,
-    rate: int,
-    amount: int,
     withdrawal_timelock: int,
     payment_clawback: int,
     rekey_cancel: int,
@@ -203,9 +195,6 @@ def init_cmd(
 ):
     prefarm_info = PrefarmInfo(
         bytes32([0] * 32),
-        uint64(date),
-        uint64(amount),
-        uint64(rate),
         bytes32([0] * 32),
         uint64(withdrawal_timelock),
         uint64(payment_clawback),
@@ -1002,23 +991,12 @@ def payments_cmd(
             else:
                 p2_singletons = []
 
-            # Check that this payment will be legal
-            withdrawn_amount: int = derivation.prefarm_info.starting_amount - (
-                current_singleton.coin.amount - (amount - sum(c.amount for c in p2_singletons))
-            )
-            time_to_use: int = derivation.prefarm_info.start_date + math.ceil(
-                withdrawn_amount / derivation.prefarm_info.mojos_per_second
-            )
-            if time_to_use > int(time.time()):
-                raise ValueError("That much cannot be withdrawn at this time.")
-
             # Get the spend bundle
             singleton_bundle, data_to_sign = get_withdrawal_spend_info(
                 current_singleton.coin,
                 pubkey_list,
                 derivation,
                 current_singleton.lineage_proof,
-                time_to_use,
                 amount,
                 clawforward_ph,
                 p2_singletons_to_claim=p2_singletons,
@@ -1520,12 +1498,6 @@ def show_cmd(
                 p2_sum += sum(c.amount for c in p2_singletons)
                 i += 100
 
-            # Calculate available balance
-            elapsed_time: int = current_time - prefarm_info.start_date
-            amount_available: int = prefarm_info.mojos_per_second * elapsed_time - min(
-                0, (prefarm_info.starting_amount - latest_singleton.coin.amount)
-            )
-
             print()
             print(
                 f"Current time: {current_time} ({datetime.fromtimestamp(current_time).strftime('%m/%d/%Y, %H:%M:%S')})"
@@ -1536,7 +1508,6 @@ def show_cmd(
             print("Singleton:")
             print(f"  - launcher ID: {prefarm_info.launcher_id}")
             print(f"  - amount left: {latest_singleton.coin.amount - 1}")
-            print(f"  - amount available: {min(amount_available, latest_singleton.coin.amount)}")
             print(f"  - amount to claim: {p2_sum}")
             print()
             print("Outstanding events:")
@@ -1562,9 +1533,6 @@ def show_cmd(
             if config:
                 print()
                 print("Config:")
-                print(f" - started: {datetime.fromtimestamp(prefarm_info.start_date).strftime('%m/%d/%Y, %H:%M:%S')}")
-                print(f" - initial amount: {prefarm_info.starting_amount}")
-                print(f" - mojos available per second: {prefarm_info.mojos_per_second}")
                 print(f" - current root: {prefarm_info.puzzle_root}")
                 print(f" - withdrawal timelock: {prefarm_info.withdrawal_timelock} seconds")
                 print(f" - payment clawback period: {prefarm_info.payment_clawback_period} seconds")

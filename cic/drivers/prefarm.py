@@ -39,7 +39,6 @@ from cic.drivers.merkle_utils import simplify_merkle_proof
 from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.puzzle_root_construction import RootDerivation, construct_lock_puzzle, solve_lock_puzzle
 from cic.drivers.singleton import construct_singleton, solve_singleton, construct_p2_singleton, solve_p2_singleton
-from cic.drivers.rate_limiting import construct_rate_limiting_puzzle, solve_rate_limiting_puzzle
 from cic.load_clvm import load_clvm
 
 
@@ -99,13 +98,7 @@ def solve_prefarm_inner(spend_type: SpendType, prefarm_amount: uint64, **kwargs)
 
 
 def construct_singleton_inner_puzzle(prefarm_info: PrefarmInfo) -> Program:
-    return construct_rate_limiting_puzzle(
-        prefarm_info.start_date,
-        prefarm_info.starting_amount,
-        prefarm_info.mojos_per_second,
-        uint64(1),
-        construct_prefarm_inner_puzzle(prefarm_info),
-    )
+    return construct_prefarm_inner_puzzle(prefarm_info)
 
 
 def construct_full_singleton(
@@ -122,7 +115,6 @@ def get_withdrawal_spend_info(
     pubkeys: List[G1Element],
     derivation: RootDerivation,
     lineage_proof: LineageProof,
-    withdrawal_time: uint64,
     amount: uint64,
     clawforward_ph: bytes32,
     p2_singletons_to_claim: List[Coin] = [],
@@ -191,23 +183,20 @@ def get_withdrawal_spend_info(
                     solve_singleton(
                         lineage_proof,
                         singleton.amount,
-                        solve_rate_limiting_puzzle(
-                            withdrawal_time,
-                            solve_prefarm_inner(
-                                SpendType.HANDLE_PAYMENT,
-                                singleton.amount,
-                                out_amount=amount,
-                                in_amount=uint64(sum(c.amount for c in p2_singletons_to_claim)),
-                                p2_ph=clawforward_ph,
-                                puzzle_reveal=filter_puzzle,
-                                proof_of_inclusion=filter_proof,
-                                puzzle_solution=solve_filter_for_payment(
-                                    inner_puzzle,
-                                    Program.to(leaf_proof),
-                                    inner_solution,
-                                    derivation.prefarm_info.puzzle_root,
-                                    clawforward_ph,
-                                ),
+                        solve_prefarm_inner(
+                            SpendType.HANDLE_PAYMENT,
+                            singleton.amount,
+                            out_amount=amount,
+                            in_amount=uint64(sum(c.amount for c in p2_singletons_to_claim)),
+                            p2_ph=clawforward_ph,
+                            puzzle_reveal=filter_puzzle,
+                            proof_of_inclusion=filter_proof,
+                            puzzle_solution=solve_filter_for_payment(
+                                inner_puzzle,
+                                Program.to(leaf_proof),
+                                inner_solution,
+                                derivation.prefarm_info.puzzle_root,
+                                clawforward_ph,
                             ),
                         ),
                     ),
@@ -386,14 +375,6 @@ def calculate_rekey_args(
     return timelock, new_puzzle_root, filter_puzzle, Program.to(filter_proof), filter_solution, data_to_sign
 
 
-# when we do rekeys we don't care about the current time so this calculates the lowest possible value to satisfy the RL
-def calculate_lowest_rl_time(prefarm_info: PrefarmInfo, singleton_amount: uint64) -> uint64:
-    return uint64(
-        prefarm_info.start_date
-        + math.ceil((prefarm_info.starting_amount - singleton_amount) / prefarm_info.mojos_per_second)
-    )
-
-
 def get_rekey_spend_info(
     singleton: Coin,
     pubkeys: List[G1Element],
@@ -450,14 +431,11 @@ def get_rekey_spend_info(
                         singleton.amount,
                     ),
                     singleton.amount,
-                    solve_rate_limiting_puzzle(
-                        calculate_lowest_rl_time(derivation.prefarm_info, singleton.amount),
-                        solve_prefarm_inner(
-                            SpendType.FINISH_REKEY,
-                            singleton.amount,
-                            timelock=uint64(0),
-                            puzzle_root=new_puzzle_root,
-                        ),
+                    solve_prefarm_inner(
+                        SpendType.FINISH_REKEY,
+                        singleton.amount,
+                        timelock=uint64(0),
+                        puzzle_root=new_puzzle_root,
                     ),
                 ),
             ),
@@ -472,17 +450,14 @@ def get_rekey_spend_info(
                     solve_singleton(
                         lineage_proof,
                         singleton.amount,
-                        solve_rate_limiting_puzzle(
-                            calculate_lowest_rl_time(derivation.prefarm_info, singleton.amount),
-                            solve_prefarm_inner(
-                                SpendType.START_REKEY,
-                                singleton.amount,
-                                timelock=timelock,
-                                puzzle_root=new_puzzle_root,
-                                puzzle_reveal=filter_puzzle,
-                                proof_of_inclusion=filter_proof,
-                                puzzle_solution=filter_solution,
-                            ),
+                        solve_prefarm_inner(
+                            SpendType.START_REKEY,
+                            singleton.amount,
+                            timelock=timelock,
+                            puzzle_root=new_puzzle_root,
+                            puzzle_reveal=filter_puzzle,
+                            proof_of_inclusion=filter_proof,
+                            puzzle_solution=filter_solution,
                         ),
                     ),
                 ),
@@ -561,14 +536,11 @@ def get_rekey_completion_spend(
                 solve_singleton(
                     singleton_lineage,
                     singleton.amount,
-                    solve_rate_limiting_puzzle(
-                        calculate_lowest_rl_time(derivation.prefarm_info, singleton.amount),
-                        solve_prefarm_inner(
-                            SpendType.FINISH_REKEY,
-                            singleton.amount,
-                            timelock=timelock,
-                            puzzle_root=new_puzzle_root,
-                        ),
+                    solve_prefarm_inner(
+                        SpendType.FINISH_REKEY,
+                        singleton.amount,
+                        timelock=timelock,
+                        puzzle_root=new_puzzle_root,
                     ),
                 ),
             ),
@@ -587,23 +559,20 @@ def get_rekey_completion_spend(
 
 
 def get_puzzle_root_from_puzzle(puzzle: Program) -> bytes32:
-    _, rl_inner_puzzle = puzzle.uncurry()[1].as_iter()
-    _, _, _, _, _, pf_inner_puzzle = rl_inner_puzzle.uncurry()[1].as_iter()
+    _, pf_inner_puzzle = puzzle.uncurry()[1].as_iter()
     _, root, _ = pf_inner_puzzle.uncurry()[1].as_iter()
     return bytes32(root.as_python())
 
 
 def get_new_puzzle_root_from_solution(solution: Program) -> bytes32:
-    rl_solution = solution.at("rrf")
-    prefarm_inner_solution = rl_solution.at("rf")
+    prefarm_inner_solution = solution.at("rrf")
     spend_solution = prefarm_inner_solution.at("rrf")
     new_puzzle_root = spend_solution.at("rf")
     return bytes32(new_puzzle_root.as_python())
 
 
 def get_spend_type_for_solution(solution: Program) -> SpendType:
-    rl_solution = solution.at("rrf")
-    prefarm_inner_solution = rl_solution.at("rf")
+    prefarm_inner_solution = solution.at("rrf")
     spend_type = prefarm_inner_solution.at("rf")
     return SpendType(int_from_bytes(spend_type.as_python()))
 
@@ -612,8 +581,7 @@ def get_spending_pubkey_for_solution(solution: Program) -> G1Element:
     if get_spend_type_for_solution(solution) == SpendType.FINISH_REKEY:
         return None
     else:
-        rl_solution = solution.at("rrf")
-        prefarm_inner_solution = rl_solution.at("rf")
+        prefarm_inner_solution = solution.at("rrf")
         filter_solution = prefarm_inner_solution.at("rrrrrf")
         leaf_reveal = filter_solution.at("f")
         pubkey = list(leaf_reveal.uncurry())[1].as_python()[0]
@@ -621,8 +589,7 @@ def get_spending_pubkey_for_solution(solution: Program) -> G1Element:
 
 
 def get_spend_params_for_ach_creation(solution: Program) -> Tuple[uint64, uint64, bytes32]:
-    rl_solution = solution.at("rrf")
-    prefarm_inner_solution = rl_solution.at("rf")
+    prefarm_inner_solution = solution.at("rrf")
     spend_solution = prefarm_inner_solution.at("rrf")
     out_amount = uint64(int_from_bytes(spend_solution.at("f").as_python()))
     in_amount = uint64(int_from_bytes(spend_solution.at("rf").as_python()))
@@ -631,8 +598,7 @@ def get_spend_params_for_ach_creation(solution: Program) -> Tuple[uint64, uint64
 
 
 def get_spend_params_for_rekey_creation(solution: Program) -> Tuple[uint8, bytes32]:
-    rl_solution = solution.at("rrf")
-    prefarm_inner_solution = rl_solution.at("rf")
+    prefarm_inner_solution = solution.at("rrf")
     spend_solution = prefarm_inner_solution.at("rrf")
     timelock = uint8(int_from_bytes(spend_solution.at("f").as_python()))
     new_root = bytes32(spend_solution.at("rf").as_python())

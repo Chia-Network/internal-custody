@@ -52,9 +52,6 @@ def test_init():
 
     prefarm_info = PrefarmInfo(
         bytes32([0] * 32),
-        uint64(0),
-        uint64(1000000000000),
-        uint64(1),
         bytes32([0] * 32),
         uint64(30),
         uint64(90),
@@ -62,6 +59,8 @@ def test_init():
         uint64(15),
         uint64(45),
     )
+
+    STARTING_AMOUNT = 1000000000000
 
     with runner.isolated_filesystem():
         os.mkdir("infos")
@@ -75,12 +74,6 @@ def test_init():
                 "init",
                 "--directory",
                 "./infos/",
-                "--date",
-                prefarm_info.start_date,
-                "--rate",
-                prefarm_info.mojos_per_second,
-                "--amount",
-                prefarm_info.starting_amount,  # 1 XCH
                 "--withdrawal-timelock",
                 prefarm_info.withdrawal_timelock,
                 "--payment-clawback",
@@ -244,7 +237,7 @@ def test_init():
                         for cr in await sim_client.get_coin_records_by_puzzle_hashes(
                             [ACS_PH], include_spent_coins=False
                         )
-                        if cr.coin.amount > prefarm_info.starting_amount
+                        if cr.coin.amount > STARTING_AMOUNT
                     )
                 )
                 await sim_client.push_tx(
@@ -255,7 +248,7 @@ def test_init():
                                 ACS,
                                 Program.to(
                                     [
-                                        [51, P2_SINGLETON.get_tree_hash(), prefarm_info.starting_amount],
+                                        [51, P2_SINGLETON.get_tree_hash(), STARTING_AMOUNT],
                                         [51, P2_SINGLETON.get_tree_hash(), 1],
                                     ]
                                 ),
@@ -355,7 +348,7 @@ def test_init():
                 assert singleton_record is not None
                 assert singleton_record != latest_singleton_record
                 # +1 from the launch, -2 from the payment
-                assert singleton_record.coin.amount == prefarm_info.starting_amount - 1
+                assert singleton_record.coin.amount == STARTING_AMOUNT - 1
 
                 p2_singletons: List[Coin] = await sync_store.get_p2_singletons()
                 assert len(p2_singletons) == 1

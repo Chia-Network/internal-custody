@@ -65,9 +65,6 @@ async def _setup_info():
     REKEY_TIMELOCK = uint64(1)  # one minute
     prefarm_info = PrefarmInfo(
         bytes32([0] * 32),  # doesn't matter
-        uint64(0),  # doesn't matter
-        uint64(0),  # doesn't matter
-        uint64(0),  # doesn't matter
         build_merkle_tree([ACS_PH])[0],
         uint64(0),  # doesn't matter
         uint64(0),  # doesn't matter
