@@ -217,7 +217,7 @@ async def test_random_create_coins_blocked(_setup_info, cost_logger):
                                         uint8(0), setup_info.prefarm_info, setup_info.prefarm_info
                                     ).get_tree_hash(),
                                     0,
-                                ]
+                                ],
                             ]
                         ),
                         setup_info.prefarm_info.puzzle_root,
@@ -262,7 +262,14 @@ async def test_random_create_coins_blocked(_setup_info, cost_logger):
             ],
             G2Element(),
         )
-        for bundle in [rnp_bundle_even, rnp_bundle_zero, rko_bundle_even, rko_bundle_zero, rnp_bundle_double, rko_bundle_double]:
+        for bundle in [
+            rnp_bundle_even,
+            rnp_bundle_zero,
+            rko_bundle_even,
+            rko_bundle_zero,
+            rnp_bundle_double,
+            rko_bundle_double,
+        ]:
             result = await setup_info.sim_client.push_tx(bundle)
             assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
             with pytest.raises(ValueError, match="clvm raise"):
