@@ -65,4 +65,15 @@
      (tree-hash-of-apply function-hash
                          (build-curry-list reversed-curry-parameter-hashes (sha256 ONE ONE)))
   )
+
+  (defun-inline size_32 (var)
+    (= (strlen var) 32)
+  )
+
+  (defun calculate_coin_id (parent puzzlehash amount)
+    (if (all (size_32 parent) (size_32 puzzlehash) (> amount -1))
+      (sha256 parent puzzlehash amount)
+      (x)
+    )
+  )
 )

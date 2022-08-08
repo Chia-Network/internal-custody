@@ -151,7 +151,7 @@ async def test_rekey(_setup_info, cost_logger):
         # Parameterize this spend and test that it can't make the malicious announcement
         def start_rekey_spend(malicious: bool) -> SpendBundle:
             if malicious:
-                malicious_condition = [[62, "rekey"]]
+                malicious_condition = [[62, "r"]]
             else:
                 malicious_condition = []
             return SpendBundle(

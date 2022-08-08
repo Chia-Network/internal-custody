@@ -22,12 +22,16 @@ def construct_payment_and_rekey_filter(
 ) -> Program:
     return P2_MERKLE_MOD.curry(
         FILTER_REKEY_AND_PAYMENT_MOD.curry(
-            [
-                construct_rekey_puzzle(prefarm_info).get_tree_hash(),
-                rekey_timelock,
-                construct_ach_puzzle(prefarm_info).get_tree_hash(),
-                calculate_ach_clawback_ph(prefarm_info),
-            ],
+            (
+                (
+                    construct_rekey_puzzle(prefarm_info).get_tree_hash(),
+                    rekey_timelock,
+                ),
+                (
+                    construct_ach_puzzle(prefarm_info).get_tree_hash(),
+                    calculate_ach_clawback_ph(prefarm_info),
+                ),
+            ),
         ),
         puzzle_root,
         [],
@@ -41,10 +45,10 @@ def construct_rekey_filter(
 ) -> Program:
     return P2_MERKLE_MOD.curry(
         FILTER_ONLY_REKEY_MOD.curry(
-            [
+            (
                 construct_rekey_puzzle(prefarm_info).get_tree_hash(),
                 rekey_timelock,
-            ],
+            ),
         ),
         puzzle_root,
         [],

@@ -45,22 +45,26 @@ PREFARM_INNER = load_clvm("prefarm_inner.clsp", package_or_requirement="cic.clsp
 
 
 class SpendType(int, enum.Enum):
-    FINISH_REKEY = 1
-    START_REKEY = 2
-    HANDLE_PAYMENT = 3
+    FINISH_REKEY = 0
+    START_REKEY = 1
+    HANDLE_PAYMENT = 2
 
 
+# ((REKEY_MOD_HASH . ACH_MOD_HASH) . (ACH_TIMELOCK . (BASE_REKEY_TIMELOCK . SLOW_REKEY_PENALTY)))
 def construct_prefarm_inner_puzzle(prefarm_info: PrefarmInfo) -> Program:
     return PREFARM_INNER.curry(
         PREFARM_INNER.get_tree_hash(),
         prefarm_info.puzzle_root,
-        [
-            construct_rekey_puzzle(prefarm_info).get_tree_hash(),
-            construct_ach_puzzle(prefarm_info).get_tree_hash(),
-            prefarm_info.withdrawal_timelock,
-            prefarm_info.rekey_increments,
-            prefarm_info.slow_rekey_timelock,
-        ],
+        (
+            (construct_rekey_puzzle(prefarm_info).get_tree_hash(), construct_ach_puzzle(prefarm_info).get_tree_hash()),
+            (
+                prefarm_info.withdrawal_timelock,
+                (
+                    prefarm_info.rekey_increments,
+                    prefarm_info.slow_rekey_timelock,
+                ),
+            ),
+        ),
     )
 
 
@@ -172,8 +176,7 @@ def get_withdrawal_spend_info(
         ]
     )
     inner_solution: Program = solution_for_delegated_puzzle(delegated_puzzle, Program.to([]))
-
-    return (
+    full_sb = (
         SpendBundle(
             [
                 CoinSpend(
@@ -206,6 +209,7 @@ def get_withdrawal_spend_info(
         ),
         (delegated_puzzle.get_tree_hash() + singleton.name() + DEFAULT_CONSTANTS.AGG_SIG_ME_ADDITIONAL_DATA),  # TODO
     )
+    return full_sb
 
 
 def get_ach_clawback_spend_info(
