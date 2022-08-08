@@ -66,8 +66,6 @@ async def _setup_info():
     await sim.farm_block(ACS_PH)
 
     # Define constants
-    START_DATE = uint64(0)  # pointless for this test
-    DRAIN_RATE = uint64(0)  # pointless for this test
     PAYMENT_CLAWBACK_PERIOD = uint64(0)  # pointless for this test
     REKEY_CLAWBACK_PERIOD = uint64(0)  # pointless for this test
     WITHDRAWAL_TIMELOCK = uint64(60)

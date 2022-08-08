@@ -1,6 +1,5 @@
 import dataclasses
 import enum
-import math
 
 from blspy import G1Element, G2Element
 from clvm.casts import int_from_bytes

@@ -1,6 +1,5 @@
 import dataclasses
 import itertools
-import math
 import pytest
 
 from blspy import AugSchemeMPL, BasicSchemeMPL, G1Element, G2Element, PrivateKey
@@ -110,8 +109,6 @@ async def _setup_info():
     await sim.farm_block(ACS_PH)
 
     # Define constants
-    START_DATE = uint64(sim.timestamp)
-    DRAIN_RATE = 77777777777  # mojos per second
     PUBKEY_LIST = [secret_key_for_index(i).get_g1() for i in range(0, 5)]
     WITHDRAWAL_TIMELOCK = uint64(2592000)  # 30 days
     PAYMENT_CLAWBACK_PERIOD = uint64(90)
@@ -234,7 +231,6 @@ async def test_payments(_setup_info, cost_logger):
         # Just pass a silly number of seconds to bypass the RL
         setup_info.sim.pass_time(uint64(1000000000000000))
         await setup_info.sim.farm_block()
-        current_time = setup_info.sim.timestamp
 
         # First, we're going to try to withdraw using less pubkeys than necessary
         WITHDRAWAL_AMOUNT = uint64(10)
