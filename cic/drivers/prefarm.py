@@ -58,17 +58,14 @@ def construct_prefarm_inner_puzzle(prefarm_info: PrefarmInfo) -> Program:
         PREFARM_INNER.get_tree_hash(),
         prefarm_info.puzzle_root,
         (
-            (
-                construct_rekey_puzzle(prefarm_info).get_tree_hash(),
-                construct_ach_puzzle(prefarm_info).get_tree_hash()
-            ),
+            (construct_rekey_puzzle(prefarm_info).get_tree_hash(), construct_ach_puzzle(prefarm_info).get_tree_hash()),
             (
                 prefarm_info.withdrawal_timelock,
                 (
                     prefarm_info.rekey_increments,
                     prefarm_info.slow_rekey_timelock,
-                )
-            )
+                ),
+            ),
         ),
     )
 
