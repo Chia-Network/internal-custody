@@ -1,7 +1,7 @@
 (mod
   (
-    CURRIED_ARGS  ; inside p2_merkle_tree this is the "parameters"
-    PUZZLE_REVEAL  ; inside p2_merkle_tree this is the "curried_args"
+    CURRIED_ARGS  ; this is an abstraction of a list of curried arguments
+    PUZZLE_REVEAL  ; inside p2_merkle_tree this is the "parameters"
     (  ; inside p2_merkle_tree this is the "inner_solution"
       solution
       curried_args_to_coin  ; These are the args that are curried into the even coin that we see
@@ -42,7 +42,11 @@
                 ; with the correct timelock
                 (not (> (ALLOWED_REKEY_TIMELOCK CURRIED_ARGS) (f (r (r curried_args_to_coin)))))
                 ; then
-                (r conditions)  ; exit early if we find the even coin
+                (check_zero_coin
+                  (r conditions)
+                  curried_args_to_coin
+                  CURRIED_ARGS
+                )
               )
               (check_zero_coin
                 (r conditions)

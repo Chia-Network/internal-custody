@@ -8,7 +8,7 @@
     inner_solution
   )
   ; This puzzle takes a merkle root.
-  ; The merkle root contains a tree of puzzles that can be executed with the passed in "parameters", CURRIED_ARGS, and inner_solution
+  ; The merkle root contains a tree of puzzles that can be executed with the passed in CURRIED_ARGS, and inner_solution
 
   (include sha256tree.clib)
   (include merkle_utils.clib)

@@ -184,7 +184,7 @@
   ; main
   (c (list ASSERT_MY_AMOUNT my_amount)  ; assert our amount because every path needs it
     (if spend_type
-      ; After this point, all of the spends require authentication
+      ; In every case except finishing the rekey the spends require authentication
         (assert (= ROOT (simplify_merkle_proof (sha256tree puzzle_reveal) proof_of_inclusion))  ; check that inputted puzzle is included in our merkle root
           ; then
           (if (= spend_type 1)
