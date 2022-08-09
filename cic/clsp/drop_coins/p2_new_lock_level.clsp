@@ -23,6 +23,6 @@
       0
     )
     (list CREATE_COIN singleton_inner singleton_amount)
-    (list AGG_SIG_ME PUBKEY '$')
+    (list AGG_SIG_ME PUBKEY ())
   )
 )

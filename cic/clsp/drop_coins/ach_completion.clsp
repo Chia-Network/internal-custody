@@ -11,6 +11,6 @@
     (list ASSERT_SECONDS_RELATIVE CLAWBACK_PERIOD)
     (list ASSERT_MY_AMOUNT my_amount)
     (list CREATE_COIN P2_PH my_amount)
-    (list CREATE_COIN_ANNOUNCEMENT '$')  ; for fees
+    (list CREATE_COIN_ANNOUNCEMENT ())  ; for fees
   )
 )

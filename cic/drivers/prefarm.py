@@ -354,7 +354,7 @@ def calculate_rekey_args(
             construct_prefarm_inner_puzzle(derivation.prefarm_info).get_tree_hash(),
             coin.amount,
         )
-        signed_message: bytes = b"$"
+        signed_message: bytes = b""
     else:
         conditions = [
             [
