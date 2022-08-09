@@ -282,53 +282,61 @@ async def test_payments(_setup_info, cost_logger):
     try:
         WITHDRAWAL_AMOUNT = uint64(500)
         prefarm_inner_puzzle: Program = construct_prefarm_inner_puzzle(setup_info.prefarm_info)
-        withdrawal_spend = SpendBundle(
-            [
-                CoinSpend(
-                    setup_info.singleton,
-                    construct_singleton(
-                        setup_info.launcher_id,
-                        prefarm_inner_puzzle,
-                    ),
-                    solve_singleton(
-                        setup_info.first_lineage_proof,
-                        setup_info.singleton.amount,
-                        solve_prefarm_inner(
-                            SpendType.HANDLE_PAYMENT,
-                            setup_info.singleton.amount,
-                            puzzle_reveal=ACS,
-                            proof_of_inclusion=get_proof_of_inclusion(1),
-                            out_amount=WITHDRAWAL_AMOUNT,
-                            in_amount=uint64(0),
-                            p2_ph=ACS_PH,
-                            puzzle_solution=[
-                                [
-                                    51,
-                                    prefarm_inner_puzzle.get_tree_hash(),
-                                    setup_info.singleton.amount - WITHDRAWAL_AMOUNT,
-                                ],
-                                [
-                                    51,
-                                    curry_ach_puzzle(setup_info.prefarm_info, ACS_PH).get_tree_hash(),
-                                    WITHDRAWAL_AMOUNT,
-                                ],
-                            ],
+        for honest in (True, False):
+            withdrawal_spend = SpendBundle(
+                [
+                    CoinSpend(
+                        setup_info.singleton,
+                        construct_singleton(
+                            setup_info.launcher_id,
+                            prefarm_inner_puzzle,
                         ),
-                    ),
-                )
-            ],
-            G2Element(),
-        )
-        # Process results
-        result = await setup_info.sim_client.push_tx(withdrawal_spend)
-        assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
-        setup_info.sim.pass_time(setup_info.prefarm_info.withdrawal_timelock)
-        await setup_info.sim.farm_block()
+                        solve_singleton(
+                            setup_info.first_lineage_proof,
+                            setup_info.singleton.amount,
+                            solve_prefarm_inner(
+                                SpendType.HANDLE_PAYMENT,
+                                setup_info.singleton.amount,
+                                puzzle_reveal=ACS,
+                                proof_of_inclusion=get_proof_of_inclusion(1),
+                                out_amount=WITHDRAWAL_AMOUNT,
+                                in_amount=uint64(0) if honest else -1,
+                                p2_ph=ACS_PH,
+                                puzzle_solution=[
+                                    [
+                                        51,
+                                        prefarm_inner_puzzle.get_tree_hash(),
+                                        setup_info.singleton.amount - WITHDRAWAL_AMOUNT - (0 if honest else 1),
+                                    ],
+                                    [
+                                        51,
+                                        curry_ach_puzzle(setup_info.prefarm_info, ACS_PH).get_tree_hash(),
+                                        WITHDRAWAL_AMOUNT,
+                                    ],
+                                ],
+                            ),
+                        ),
+                    )
+                ],
+                G2Element(),
+            )
+            if honest:
+                # Process results
+                result = await setup_info.sim_client.push_tx(withdrawal_spend)
+                assert result == (MempoolInclusionStatus.FAILED, Err.ASSERT_SECONDS_RELATIVE_FAILED)
+                setup_info.sim.pass_time(setup_info.prefarm_info.withdrawal_timelock)
+                await setup_info.sim.farm_block()
 
-        result = await setup_info.sim_client.push_tx(withdrawal_spend)
-        assert result[0] == MempoolInclusionStatus.SUCCESS
-        await setup_info.sim.farm_block()
-        cost_logger.add_cost("Withdrawal", withdrawal_spend)
+                result = await setup_info.sim_client.push_tx(withdrawal_spend)
+                assert result[0] == MempoolInclusionStatus.SUCCESS
+                await setup_info.sim.farm_block()
+                cost_logger.add_cost("Withdrawal", withdrawal_spend)
+            else:
+                with pytest.raises(ValueError, match="clvm raise"):
+                    spend: CoinSpend = withdrawal_spend.coin_spends[0]
+                    puzzle: Program = spend.puzzle_reveal.to_program()
+                    solution: Program = spend.solution.to_program()
+                    puzzle.run(solution)
 
         # Find the new singleton
         new_singleton: Coin = (
