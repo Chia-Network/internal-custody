@@ -60,20 +60,33 @@
   ;;
   ;; we return the hash of the curried expression
   ;;   (a (q . function-hash) (c (cp1 (c cp2 (c ... 1)...))))
+  ;;
+  ;; Note that from a user's perspective the hashes passed in here aren't simply
+  ;; the hashes of the desired parameters, but their treehash representation since
+  ;; that's the form we're assuming they take in the acutal curried program.
 
   (defun puzzle_hash_of_curried_function (function-hash . reversed-curry-parameter-hashes)
      (tree-hash-of-apply function-hash
                          (build-curry-list reversed-curry-parameter-hashes (sha256 ONE ONE)))
   )
 
-  (defun-inline size_32 (var)
-    (= (strlen var) 32)
+  (defconstant b32 32)
+
+  (defun-inline size_b32 (var)
+    (= (strlen var) b32)
   )
 
   (defun calculate_coin_id (parent puzzlehash amount)
-    (if (all (size_32 parent) (size_32 puzzlehash) (> amount -1))
+    (if (all (size_b32 parent) (size_b32 puzzlehash) (> amount -1))
       (sha256 parent puzzlehash amount)
       (x)
     )
   )
+
+  ; takes a lisp tree and returns the hash of it
+  (defun sha256tree (TREE)
+        (if (l TREE)
+            (sha256 2 (sha256tree (f TREE)) (sha256tree (r TREE)))
+            (sha256 1 TREE)))
+
 )
