@@ -90,8 +90,10 @@ def _simplify_merkle_proof(tree_hash: bytes32, proof: Tuple[int, List[bytes32]])
         path >>= 1
     return tree_hash
 
+
 def simplify_merkle_proof(tree_hash: bytes32, proof: Tuple[int, List[bytes32]]) -> bytes32:
     return _simplify_merkle_proof(sha256(HASH_LEAF_PREFIX, tree_hash), proof)
+
 
 def check_merkle_proof(merkle_root: bytes32, tree_hash: bytes32, proof: Tuple[int, List[bytes32]]) -> bool:
     return merkle_root == simplify_merkle_proof(tree_hash, proof)
