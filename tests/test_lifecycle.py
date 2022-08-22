@@ -875,7 +875,7 @@ async def test_rekeys(_setup_info, cost_logger):
             new_derivation,
             setup_info.prefarm_info.rekey_increments,
             setup_info.derivation,
-            additional_conditions=[Program.to([62, "rekey"])],
+            additional_conditions=[Program.to([62, "r"])],
         )
         synth_pk: G1Element = get_synthetic_pubkey(AGG_THREE_NEW)
         signature: G2Element = AugSchemeMPL.aggregate(
@@ -903,7 +903,7 @@ async def test_rekeys(_setup_info, cost_logger):
             setup_info.sim.timestamp,
             uint64(10),
             ACS_PH,
-            additional_conditions=[Program.to([62, "rekey"])],
+            additional_conditions=[Program.to([62, "r"])],
         )
         synth_pk: G1Element = get_synthetic_pubkey(AGG_THREE_NEW)
         signature: G2Element = AugSchemeMPL.aggregate(

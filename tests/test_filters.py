@@ -194,7 +194,82 @@ async def test_random_create_coins_blocked(_setup_info, cost_logger):
             ],
             G2Element(),
         )
-        for bundle in [rnp_bundle_even, rnp_bundle_zero, rko_bundle_even, rko_bundle_zero]:
+        rnp_bundle_double = SpendBundle(
+            [
+                CoinSpend(
+                    setup_info.rnp_coin,
+                    setup_info.rnp_filter,
+                    solve_filter_for_rekey(
+                        ACS,
+                        get_proof_of_inclusion(1),
+                        Program.to(
+                            [
+                                [
+                                    51,
+                                    curry_rekey_puzzle(
+                                        setup_info.rekey_timelock, setup_info.prefarm_info, setup_info.prefarm_info
+                                    ).get_tree_hash(),
+                                    0,
+                                ],
+                                [
+                                    51,
+                                    curry_rekey_puzzle(
+                                        uint8(0), setup_info.prefarm_info, setup_info.prefarm_info
+                                    ).get_tree_hash(),
+                                    0,
+                                ],
+                            ]
+                        ),
+                        setup_info.prefarm_info.puzzle_root,
+                        setup_info.prefarm_info.puzzle_root,
+                        setup_info.rekey_timelock,
+                    ),
+                )
+            ],
+            G2Element(),
+        )
+        rko_bundle_double = SpendBundle(
+            [
+                CoinSpend(
+                    setup_info.rko_coin,
+                    setup_info.rko_filter,
+                    solve_filter_for_rekey(
+                        ACS,
+                        get_proof_of_inclusion(1),
+                        Program.to(
+                            [
+                                [
+                                    51,
+                                    curry_rekey_puzzle(
+                                        setup_info.rekey_timelock, setup_info.prefarm_info, setup_info.prefarm_info
+                                    ).get_tree_hash(),
+                                    0,
+                                ],
+                                [
+                                    51,
+                                    curry_rekey_puzzle(
+                                        uint8(0), setup_info.prefarm_info, setup_info.prefarm_info
+                                    ).get_tree_hash(),
+                                    0,
+                                ],
+                            ]
+                        ),
+                        setup_info.prefarm_info.puzzle_root,
+                        setup_info.prefarm_info.puzzle_root,
+                        setup_info.rekey_timelock,
+                    ),
+                )
+            ],
+            G2Element(),
+        )
+        for bundle in [
+            rnp_bundle_even,
+            rnp_bundle_zero,
+            rko_bundle_even,
+            rko_bundle_zero,
+            rnp_bundle_double,
+            rko_bundle_double,
+        ]:
             result = await setup_info.sim_client.push_tx(bundle)
             assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
             with pytest.raises(ValueError, match="clvm raise"):

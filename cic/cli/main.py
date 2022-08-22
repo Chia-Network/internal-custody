@@ -986,7 +986,7 @@ def payments_cmd(
                 raise RuntimeError("No singleton is found for this configuration.  Try `cic sync` then try again.")
             pubkey_list: List[G1Element] = list(load_pubkeys(pubkeys))
             clawforward_ph: bytes32 = decode_puzzle_hash(recipient_address)
-            fee_conditions: List[Program] = [Program.to([60, b"$"])]
+            fee_conditions: List[Program] = [Program.to([60, b""])]
 
             # Get any p2_singletons to spend
             if absorb_available_payments:
@@ -1108,7 +1108,7 @@ def start_rekey_cmd(
             if current_singleton is None:
                 raise RuntimeError("No singleton is found for this configuration.  Try `cic sync` then try again.")
             pubkey_list: List[G1Element] = list(load_pubkeys(pubkeys))
-            fee_conditions: List[Program] = [Program.to([60, b"$"])]
+            fee_conditions: List[Program] = [Program.to([60, b""])]
 
             # Get the spend bundle
             singleton_bundle, data_to_sign = get_rekey_spend_info(
@@ -1206,7 +1206,7 @@ def clawback_cmd(
 
             # Construct the spend for the selected index
             pubkey_list: List[G1Element] = list(load_pubkeys(pubkeys))
-            fee_conditions: List[Program] = [Program.to([60, b"$"])]
+            fee_conditions: List[Program] = [Program.to([60, b""])]
             if selected_action <= len(achs):
                 ach_record: ACHRecord = achs[selected_action - 1]
 
@@ -1429,7 +1429,7 @@ def increase_cmd(
             if current_singleton is None:
                 raise RuntimeError("No singleton is found for this configuration.  Try `cic sync` then try again.")
             pubkey_list: List[G1Element] = list(load_pubkeys(pubkeys))
-            fee_conditions: List[Program] = [Program.to([60, b"$"])]
+            fee_conditions: List[Program] = [Program.to([60, b""])]
 
             # Validate we have enough pubkeys
             if len(pubkey_list) < derivation.required_pubkeys + 1:

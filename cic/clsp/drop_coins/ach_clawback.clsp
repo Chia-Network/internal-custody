@@ -1,7 +1,7 @@
 (mod
   (
     CLAWBACK_PH
-    (PUZZLE_ROOT . _)
+    (PUZZLE_ROOT . _)  ; PUZZLE_ROOT is the custody coin's merkle root which we use to authenticate we're being withdrawn by some set of legal keys
     my_amount
     puzzle_reveal
     merkle_proof

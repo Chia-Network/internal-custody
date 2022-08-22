@@ -279,7 +279,7 @@ async def test_rekey(_setup_info, cost_logger):
                         Program.to(
                             [
                                 [51, rekey_puzzle.get_tree_hash(), 0],
-                                [62, "rekey"],
+                                [62, "r"],
                             ]
                         ),
                     ),
@@ -340,7 +340,7 @@ async def test_rekey(_setup_info, cost_logger):
                         setup_info.singleton.amount,
                         Program.to(
                             [
-                                [62, "rekey"],
+                                [62, "r"],
                                 [51, ACS_PH, setup_info.singleton.amount],
                             ]
                         ),

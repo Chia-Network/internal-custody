@@ -1,6 +1,6 @@
 (mod
   (
-    MOD_HASH
+    RL_MOD_HASH
     START_DATE
     STARTING_AMOUNT
     AMOUNT_PER
@@ -19,7 +19,7 @@
   (defun-inline puzzle_hash (condition) (f (r condition)))
 
   (defun max (a b)
-    (if (> a b)
+    (i (> a b)
       a
       b
     )
@@ -28,7 +28,7 @@
   (defun-inline morph_singleton_condition
     (
       singleton_condition
-      MOD_HASH
+      RL_MOD_HASH
       START_DATE
       STARTING_AMOUNT
       AMOUNT_PER
@@ -39,13 +39,13 @@
     (c
       CREATE_COIN
       (c
-        (puzzle_hash_of_curried_function MOD_HASH
+        (puzzle_hash_of_curried_function RL_MOD_HASH
           (puzzle_hash singleton_condition)
-          (sha256 1 TIME_INTERVAL)
-          (sha256 1 AMOUNT_PER)
-          (sha256 1 STARTING_AMOUNT)
-          (sha256 1 START_DATE)
-          (sha256 1 MOD_HASH)
+          (sha256 ONE TIME_INTERVAL)
+          (sha256 ONE AMOUNT_PER)
+          (sha256 ONE STARTING_AMOUNT)
+          (sha256 ONE START_DATE)
+          (sha256 ONE RL_MOD_HASH)
         )
         (r (r singleton_condition))
       )
@@ -64,22 +64,25 @@
     (
       singleton_condition
       remaining_conditions
-      withdrawn_amount
-      possible_withdrawn_amount
-      MOD_HASH
-      START_DATE
-      STARTING_AMOUNT
-      AMOUNT_PER
-      TIME_INTERVAL
-      current_time
+      (
+        RL_MOD_HASH
+        START_DATE
+        STARTING_AMOUNT
+        AMOUNT_PER
+        TIME_INTERVAL
+        current_time
+      )
     )
-
     (c
-      (assert_rate withdrawn_amount possible_withdrawn_amount current_time)
+      (assert_rate
+        (- STARTING_AMOUNT (coin_amount singleton_condition))
+        (calculate_possible_withdrawal START_DATE AMOUNT_PER TIME_INTERVAL current_time)
+        current_time
+      )
       (c
         (morph_singleton_condition
           singleton_condition
-          MOD_HASH
+          RL_MOD_HASH
           START_DATE
           STARTING_AMOUNT
           AMOUNT_PER
@@ -94,44 +97,16 @@
     (* (f (divmod AMOUNT_PER TIME_INTERVAL)) (max 0 (- current_time START_DATE)))
   )
 
-  (defun found_singleton
-    (
-      singleton_condition
-      remaining_conditions
-      (
-        MOD_HASH
-        START_DATE
-        STARTING_AMOUNT
-        AMOUNT_PER
-        TIME_INTERVAL
-        current_time
-      )
-    )
-
-    (generate_final_conditions
-      singleton_condition
-      remaining_conditions
-      (- STARTING_AMOUNT (coin_amount singleton_condition))
-      (calculate_possible_withdrawal START_DATE AMOUNT_PER TIME_INTERVAL current_time)
-      MOD_HASH
-      START_DATE
-      STARTING_AMOUNT
-      AMOUNT_PER
-      TIME_INTERVAL
-      current_time
-    )
-  )
-
-  (defun search_for_singleton (conditions found_function args)
+  (defun search_for_singleton (conditions args)
     (if conditions
         (if (and
               (= (f (f conditions)) CREATE_COIN)      ; this is a CREATE_COIN
-              (logand (coin_amount (f conditions)) 1) ; the amount is odd
+              (logand (coin_amount (f conditions)) ONE) ; the amount is odd
             )
-            (found_function (f conditions) (r conditions) args)
+            (generate_final_conditions (f conditions) (r conditions) args)
             (c
               (f conditions)
-              (search_for_singleton (r conditions) found_function args)
+              (search_for_singleton (r conditions) args)
             )
         )
         (x)
@@ -141,9 +116,8 @@
   ; main
   (search_for_singleton
     (a INNER_PUZZLE inner_solution)
-    found_singleton
     (list
-      MOD_HASH
+      RL_MOD_HASH
       START_DATE
       STARTING_AMOUNT
       AMOUNT_PER
