@@ -9,7 +9,6 @@ program_files = set(
     [
         "cic/clsp/singleton/prefarm_inner.clsp",
         "cic/clsp/singleton/singleton_top_layer_v1_1.clsp",
-        "cic/clsp/singleton/rl.clsp",
         "cic/clsp/drop_coins/ach_clawback.clsp",
         "cic/clsp/drop_coins/ach_completion.clsp",
         "cic/clsp/drop_coins/p2_merkle_tree.clsp",
