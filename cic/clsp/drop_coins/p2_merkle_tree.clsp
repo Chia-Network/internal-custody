@@ -10,7 +10,7 @@
   ; This puzzle takes a merkle root.
   ; The merkle root contains a tree of puzzles that can be executed with the passed in CURRIED_ARGS, and inner_solution
 
-  (include sha256tree.clib)
+  (include curry_and_treehash.clib)
   (include merkle_utils.clib)
   (include utility_macros.clib)
 
