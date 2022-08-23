@@ -2,13 +2,11 @@ Internal Custody
 =======
 
 ## Install
-You need a running full node and wallet for these commands to work.  Here are the instructions for this piece:
+You need a running full node and wallet for most commands to work.  You don't need anything if you are just a signer. Here are the instructions for this piece:
 ```
-git clone https://github.com/Chia-Network/internal-custody.git
-cd ./internal-custody
 py -m venv venv
 . ./venv/bin/activate  # ./venv/Scripts/activate for Windows users
-pip install --extra-index-url https://pypi.chia.net/simple/ .
+pip install --extra-index-url https://pypi.chia.net/simple/ chia-internal-custody
 ```
 
 If you're on Windows, you need one extra package:
@@ -29,7 +27,7 @@ _Either upgrade your shell or find some other way to put the output into a file 
 
 ## Configuration
 ```
-cic init --date <go get the unix time> --rate 1 --amount 100000 --withdrawal-timelock 60 --payment-clawback 120 --rekey-cancel 120 --rekey-timelock 120 --slow-penalty 120
+cic init --withdrawal-timelock 60 --payment-clawback 120 --rekey-cancel 120 --rekey-timelock 120 --slow-penalty 120
 cic derive_root -pks "1.pk,2.pk,3.pk" -m 2 -n 3
 ```
 
