@@ -1295,9 +1295,11 @@ def complete_cmd(
             print("Which actions would you like to complete?:")
             print()
             index: int = 1
+            selectable_records: Dict[int, Union[ACHRecord, RekeyRecord]] = {}
             for ach in achs:
                 if ach.confirmed_at_time + derivation.prefarm_info.payment_clawback_period < time.time():
                     prefix = f"{index})"
+                    selectable_records[index] = ach
                     index += 1
                 else:
                     prefix = "-)"
@@ -1306,6 +1308,7 @@ def complete_cmd(
             for rekey in rekeys:
                 if rekey.confirmed_at_time + derivation.prefarm_info.rekey_clawback_period < time.time():
                     prefix = f"{index})"
+                    selectable_records[index] = rekey
                     index += 1
                 else:
                     prefix = "-)"
@@ -1319,34 +1322,33 @@ def complete_cmd(
                 return
 
             # Construct the spend for the selected index
-            if selected_action <= len(achs):
-                ach_record: ACHRecord = achs[selected_action - 1]
+            record = selectable_records[selected_action]
+            if isinstance(record, ACHRecord):
                 # Get the spend bundle
                 completion_bundle = get_ach_clawforward_spend_bundle(
-                    ach_record.coin,
+                    record.coin,
                     dataclasses.replace(
                         derivation,
-                        prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=ach_record.from_root),
+                        prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=record.from_root),
                     ),
-                    ach_record.p2_ph,
+                    record.p2_ph,
                 )
             else:
-                rekey_record: RekeyRecord = rekeys[selected_action - len(achs) - 1]
                 current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
                 if current_singleton is None:
                     raise RuntimeError("No singleton is found for this configuration.  Try `cic sync` then try again.")
                 parent_singleton: Optional[SingletonRecord] = await sync_store.get_singleton_record(
-                    rekey_record.coin.parent_coin_info
+                    record.coin.parent_coin_info
                 )
                 if parent_singleton is None:
                     raise RuntimeError("Bad sync information. Please try a resync.")
 
-                num_pubkeys: int = derivation.required_pubkeys - (rekey_record.timelock - 1)
+                num_pubkeys: int = derivation.required_pubkeys - (record.timelock - 1)
 
                 # Get the spend bundle
                 completion_bundle = get_rekey_completion_spend(
                     current_singleton.coin,
-                    rekey_record.coin,
+                    record.coin,
                     derivation.pubkey_list[0:num_pubkeys],
                     derivation,
                     current_singleton.lineage_proof,
@@ -1357,7 +1359,7 @@ def complete_cmd(
                     ),
                     dataclasses.replace(
                         derivation,
-                        prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=rekey_record.to_root),
+                        prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=record.to_root),
                     ),
                 )
 
