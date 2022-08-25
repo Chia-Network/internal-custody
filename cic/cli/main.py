@@ -1171,11 +1171,14 @@ def clawback_cmd(
             print("Which actions would you like to cancel?:")
             print()
             index: int = 1
+            selectable_records: Dict[int, Union[ACHRecord, RekeyRecord]] = {}
             for ach in achs:
                 print(f"{index}) PAYMENT to {encode_puzzle_hash(ach.p2_ph, 'xch')} of amount {ach.coin.amount}")
+                selectable_records[index] = ach
                 index += 1
             for rekey in rekeys:
                 print(f"{index}) REKEY from {rekey.from_root} to {rekey.to_root}")
+                selectable_records[index] = rekey
                 index += 1
             selected_action = int(input("(Enter index of action to cancel): "))
             if selected_action not in range(1, index):
@@ -1185,9 +1188,8 @@ def clawback_cmd(
             # Construct the spend for the selected index
             pubkey_list: List[G1Element] = list(load_pubkeys(pubkeys))
             fee_conditions: List[Program] = [Program.to([60, b""])]
-            if selected_action <= len(achs):
-                ach_record: ACHRecord = achs[selected_action - 1]
-
+            record = selectable_records[selected_action]
+            if isinstance(record, ACHRecord):
                 # Validate we have enough keys
                 if len(pubkey_list) != derivation.required_pubkeys:
                     print("Incorrect number of keys to claw back selected payment")
@@ -1195,17 +1197,15 @@ def clawback_cmd(
 
                 # Get the spend bundle
                 clawback_bundle, data_to_sign = get_ach_clawback_spend_info(
-                    ach_record.coin,
+                    record.coin,
                     pubkey_list,
                     derivation,
-                    ach_record.p2_ph,
+                    record.p2_ph,
                     fee_conditions,
                 )
             else:
-                rekey_record: RekeyRecord = rekeys[selected_action - len(achs) - 1]
-
                 # Validate we have enough keys
-                timelock: uint64 = rekey_record.timelock
+                timelock: uint64 = record.timelock
                 required_pubkeys: Optional[int] = None
                 if timelock == uint8(1):
                     required_pubkeys = derivation.required_pubkeys
@@ -1220,13 +1220,13 @@ def clawback_cmd(
 
                 # Get the spend bundle
                 clawback_bundle, data_to_sign = get_rekey_clawback_spend_info(
-                    rekey_record.coin,
+                    record.coin,
                     pubkey_list,
                     derivation,
-                    rekey_record.timelock,
+                    record.timelock,
                     dataclasses.replace(
                         derivation,
-                        prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=rekey_record.to_root),
+                        prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=record.to_root),
                     ),
                     fee_conditions,
                 )
