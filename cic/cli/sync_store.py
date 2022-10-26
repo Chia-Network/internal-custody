@@ -336,10 +336,10 @@ class SyncStore:
             else:
                 return derivation
         except AssertionError:
-            if not public:
-                raise ValueError("The configuration file is not a public configuration file")
-            else:
+            if public:
                 return PrefarmInfo.from_bytes(info[1])
+            else:
+                raise ValueError("The configuration file is not a private configuration file")
 
     async def is_configuration_outdated(self) -> bool:
         cursor = await self.db_connection.execute("SELECT * FROM configuration_info")
