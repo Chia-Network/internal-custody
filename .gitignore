@@ -9,3 +9,4 @@ __pycache__
 main.sym
 /build/
 /dist/
+.idea/*
