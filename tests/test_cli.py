@@ -176,7 +176,7 @@ def test_init():
                 assert singleton_record is not None
                 return singleton_record
             finally:
-                await sync_store.db_connection.close()
+                await sync_store.db_wrapper.close()
 
         latest_singleton_record = asyncio.get_event_loop().run_until_complete(check_for_singleton_record())
 
@@ -282,7 +282,7 @@ def test_init():
                 p2_singletons: List[Coin] = await sync_store.get_p2_singletons()
                 assert len(p2_singletons) == 2
             finally:
-                await sync_store.db_connection.close()
+                await sync_store.db_wrapper.close()
 
         asyncio.get_event_loop().run_until_complete(check_for_singleton_record_and_payments())
 
@@ -357,7 +357,7 @@ def test_init():
 
                 return singleton_record, ach_record
             finally:
-                await sync_store.db_connection.close()
+                await sync_store.db_wrapper.close()
 
         latest_singleton_record, ach_payment = asyncio.get_event_loop().run_until_complete(
             check_for_singleton_record_and_payment()
@@ -444,7 +444,7 @@ def test_init():
                 rekey_record: RekeyRecord = (await sync_store.get_rekey_records(include_completed_coins=False))[0]
                 return singleton_record, rekey_record
             finally:
-                await sync_store.db_connection.close()
+                await sync_store.db_wrapper.close()
 
         latest_singleton_record, rekey_drop = asyncio.get_event_loop().run_until_complete(
             check_for_singleton_record_and_rekey()
@@ -523,7 +523,7 @@ def test_init():
                     assert len(records) == 1
                     assert not records[0].completed
                 finally:
-                    await sync_store.db_connection.close()
+                    await sync_store.db_wrapper.close()
 
             asyncio.get_event_loop().run_until_complete(check_for_spent_clawback())
 
@@ -591,7 +591,7 @@ def test_init():
                     assert len(records) == 1
                     assert records[0].completed
                 finally:
-                    await sync_store.db_connection.close()
+                    await sync_store.db_wrapper.close()
 
             asyncio.get_event_loop().run_until_complete(check_for_spent_completion())
 
@@ -724,7 +724,7 @@ def test_init():
                 assert len(records) == 1
                 assert records[0].completed
             finally:
-                await sync_store.db_connection.close()
+                await sync_store.db_wrapper.close()
 
         asyncio.get_event_loop().run_until_complete(check_for_spent_completion_again())
 
