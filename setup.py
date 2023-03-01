@@ -9,7 +9,7 @@ dependencies = [
     "chia-blockchain==1.7.0",
     "click==8.1.3",
     "segno==1.4.1",
-    "hsms@git+https://github.com/Chia-Network/hsms.git@17wjb",
+    "hsms==0.1.3",
 ]
 
 dev_dependencies = [
