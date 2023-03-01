@@ -431,9 +431,9 @@ def update_cmd(
                     outdated = True
                 else:
                     outdated = False
-                await sync_store.db_wrapper.begin_transaction()
+                # await sync_store.db_wrapper.begin_transaction()
                 await sync_store.add_configuration(db_config, outdated)
-                await sync_store.db_wrapper.commit_transaction()
+                # await sync_store.db_wrapper.commit_transaction()
                 print("Configuration update successful")
         finally:
             await sync_store.db_wrapper.close()
@@ -538,12 +538,12 @@ def sync_cmd(
                     db_config = load_prefarm_info(configuration)
                     prefarm_info = db_config
                 sync_store: SyncStore = await load_db(db_path, prefarm_info.launcher_id)
-                await sync_store.db_wrapper.begin_transaction()
+                # await sync_store.db_wrapper.begin_transaction()
                 await sync_store.add_configuration(db_config)
             else:
                 sync_store: SyncStore = await load_db(db_path)
                 prefarm_info = await sync_store.get_configuration(public=True, block_outdated=False)
-                await sync_store.db_wrapper.begin_transaction()
+                # await sync_store.db_wrapper.begin_transaction()
 
             current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
             current_coin_record: Optional[CoinRecord] = None
@@ -773,7 +773,7 @@ def sync_cmd(
             node_client.close()
             await node_client.await_closed()
 
-        await sync_store.db_wrapper.commit_transaction()
+        # await sync_store.db_wrapper.commit_transaction()
         await sync_store.db_wrapper.close()
 
     asyncio.get_event_loop().run_until_complete(do_sync())
