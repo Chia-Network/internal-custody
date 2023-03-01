@@ -95,7 +95,7 @@ class SyncStore:
                 "   outdated tinyint"
                 ")"
             )
-        
+
         return self
 
     async def add_singleton_record(self, record: SingletonRecord) -> None:
@@ -233,9 +233,7 @@ class SyncStore:
     async def get_ach_records(self, include_completed_coins: bool = False) -> List[ACHRecord]:
         optional_unspent_str: str = "" if include_completed_coins else " WHERE completed==0"
         async with self.db_wrapper.reader_no_transaction() as conn:
-            cursor = await conn.execute(
-                f"SELECT * from achs{optional_unspent_str} ORDER BY confirmed_at_time DESC"
-            )
+            cursor = await conn.execute(f"SELECT * from achs{optional_unspent_str} ORDER BY confirmed_at_time DESC")
             records = await cursor.fetchall()
             await cursor.close()
         return [
@@ -258,9 +256,7 @@ class SyncStore:
     async def get_rekey_records(self, include_completed_coins: bool = False) -> List[RekeyRecord]:
         optional_unspent_str: str = "" if include_completed_coins else " WHERE completed==0"
         async with self.db_wrapper.reader_no_transaction() as conn:
-            cursor = await conn.execute(
-                f"SELECT * from rekeys{optional_unspent_str} ORDER BY confirmed_at_time DESC"
-            )
+            cursor = await conn.execute(f"SELECT * from rekeys{optional_unspent_str} ORDER BY confirmed_at_time DESC")
             records = await cursor.fetchall()
             await cursor.close()
         return [
