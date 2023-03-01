@@ -275,7 +275,7 @@ def derive_cmd(
                 assert isinstance(prefarm_info, PrefarmInfo)
                 return prefarm_info
             finally:
-                await sync_store.db_connection.close()
+                await sync_store.db_wrapper.close()
 
         prefarm_info = asyncio.get_event_loop().run_until_complete(get_prefarm_info())
     pubkey_list: List[G1Element] = list(load_pubkeys(pubkeys))
@@ -431,12 +431,12 @@ def update_cmd(
                     outdated = True
                 else:
                     outdated = False
-                await sync_store.db_wrapper.begin_transaction()
+                # await sync_store.db_wrapper.begin_transaction()
                 await sync_store.add_configuration(db_config, outdated)
-                await sync_store.db_wrapper.commit_transaction()
+                # await sync_store.db_wrapper.commit_transaction()
                 print("Configuration update successful")
         finally:
-            await sync_store.db_connection.close()
+            await sync_store.db_wrapper.close()
 
     asyncio.get_event_loop().run_until_complete(do_command())
 
@@ -487,7 +487,7 @@ def export_cmd(
                 file.write(bytes(configuration))
             print(f"Config successfully exported to {_filename}")
         finally:
-            await sync_store.db_connection.close()
+            await sync_store.db_wrapper.close()
 
     asyncio.get_event_loop().run_until_complete(do_command())
 
@@ -538,12 +538,12 @@ def sync_cmd(
                     db_config = load_prefarm_info(configuration)
                     prefarm_info = db_config
                 sync_store: SyncStore = await load_db(db_path, prefarm_info.launcher_id)
-                await sync_store.db_wrapper.begin_transaction()
+                # await sync_store.db_wrapper.begin_transaction()
                 await sync_store.add_configuration(db_config)
             else:
                 sync_store: SyncStore = await load_db(db_path)
                 prefarm_info = await sync_store.get_configuration(public=True, block_outdated=False)
-                await sync_store.db_wrapper.begin_transaction()
+                # await sync_store.db_wrapper.begin_transaction()
 
             current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
             current_coin_record: Optional[CoinRecord] = None
@@ -766,15 +766,15 @@ def sync_cmd(
             ]:
                 await sync_store.add_rekey_record(dataclasses.replace(outdated_rekey, completed=False))
         except Exception as e:
-            await sync_store.db_connection.close()
+            await sync_store.db_wrapper.close()
             print(str(e))
             return
         finally:
             node_client.close()
             await node_client.await_closed()
 
-        await sync_store.db_wrapper.commit_transaction()
-        await sync_store.db_connection.close()
+        # await sync_store.db_wrapper.commit_transaction()
+        await sync_store.db_wrapper.close()
 
     asyncio.get_event_loop().run_until_complete(do_sync())
 
@@ -804,7 +804,7 @@ def address_cmd(db_path: str, prefix: str):
             prefarm_info = await sync_store.get_configuration(True, block_outdated=False)
             print(encode_puzzle_hash(construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash(), prefix))
         finally:
-            await sync_store.db_connection.close()
+            await sync_store.db_wrapper.close()
 
     asyncio.get_event_loop().run_until_complete(do_command())
 
@@ -1030,7 +1030,7 @@ def payments_cmd(
                 for chunk in unsigned_spend.chunk(255):
                     print(str(b2a_qrint(chunk)))
         finally:
-            await sync_store.db_connection.close()
+            await sync_store.db_wrapper.close()
 
     asyncio.get_event_loop().run_until_complete(do_command())
 
@@ -1125,7 +1125,7 @@ def start_rekey_cmd(
                 for chunk in unsigned_spend.chunk(255):
                     print(str(b2a_qrint(chunk)))
         finally:
-            await sync_store.db_connection.close()
+            await sync_store.db_wrapper.close()
 
     asyncio.get_event_loop().run_until_complete(do_command())
 
@@ -1256,7 +1256,7 @@ def clawback_cmd(
                 for chunk in unsigned_spend.chunk(255):
                     print(str(b2a_qrint(chunk)))
         finally:
-            await sync_store.db_connection.close()
+            await sync_store.db_wrapper.close()
 
     asyncio.get_event_loop().run_until_complete(do_command())
 
@@ -1370,7 +1370,7 @@ def complete_cmd(
             else:
                 print(bytes(completion_bundle).hex())
         finally:
-            await sync_store.db_connection.close()
+            await sync_store.db_wrapper.close()
 
     asyncio.get_event_loop().run_until_complete(do_command())
 
@@ -1444,7 +1444,7 @@ def increase_cmd(
                 for chunk in unsigned_spend.chunk(255):
                     print(str(b2a_qrint(chunk)))
         finally:
-            await sync_store.db_connection.close()
+            await sync_store.db_wrapper.close()
 
     asyncio.get_event_loop().run_until_complete(do_command())
 
@@ -1555,7 +1555,7 @@ def show_cmd(
                     print(f"    - {as_bech32m}")
 
         finally:
-            await sync_store.db_connection.close()
+            await sync_store.db_wrapper.close()
 
     asyncio.get_event_loop().run_until_complete(do_command())
 
@@ -1679,7 +1679,7 @@ def audit_cmd(
                     file.write(json.dumps(final_dict))
 
         finally:
-            await sync_store.db_connection.close()
+            await sync_store.db_wrapper.close()
 
     asyncio.get_event_loop().run_until_complete(do_command())
 
