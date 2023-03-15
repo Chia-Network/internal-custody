@@ -3,7 +3,7 @@ import aiohttp
 from pprint import pprint
 from typing import Optional
 
-from chia.cmds.wallet_funcs import get_wallet
+from chia.cmds.cmds_util import get_wallet
 from chia.rpc.full_node_rpc_client import FullNodeRpcClient
 from chia.rpc.wallet_rpc_client import WalletRpcClient
 from chia.util.config import load_config
