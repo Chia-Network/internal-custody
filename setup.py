@@ -19,6 +19,7 @@ dev_dependencies = [
     "pytest",
     "pytest-asyncio",
     "pytest-env",
+    "types-setuptools",
 ]
 
 setup(
