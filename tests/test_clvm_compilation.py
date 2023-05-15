@@ -3,7 +3,8 @@ from pathlib import Path
 from clvm_tools_rs import compile_clvm
 from unittest import TestCase
 
-from chia.types.blockchain_format.program import Program, SerializedProgram
+from chia.types.blockchain_format.program import Program
+from chia.types.blockchain_format.serialized_program import SerializedProgram
 
 program_files = set(
     [
