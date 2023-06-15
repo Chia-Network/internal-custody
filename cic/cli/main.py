@@ -32,6 +32,7 @@ from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
     calculate_synthetic_offset,
     DEFAULT_HIDDEN_PUZZLE_HASH,
 )
+from clvm_rs import Program as CProgram
 
 from cic import __version__
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
@@ -64,6 +65,7 @@ from cic.drivers.singleton import generate_launch_conditions_and_coin_spend, con
 from hsms.bls12_381 import BLSPublicKey, BLSSecretExponent
 from hsms.process.signing_hints import SumHint
 from hsms.process.unsigned_spend import UnsignedSpend
+from hsms.streamables.coin import Coin as HSMCoin
 from hsms.streamables.coin_spend import CoinSpend as HSMCoinSpend
 from hsms.util.qrint_encoding import a2b_qrint, b2a_qrint
 
@@ -1012,7 +1014,7 @@ def payments_cmd(
                 )
             )
             coin_spends = [
-                HSMCoinSpend(cs.coin, cs.puzzle_reveal.to_program(), cs.solution.to_program())
+                HSMCoinSpend(HSMCoin.from_bytes(bytes(cs.coin)), CProgram.from_bytes(bytes(cs.puzzle_reveal)), CProgram.from_bytes(bytes(cs.solution)))
                 for cs in singleton_bundle.coin_spends
             ]
             unsigned_spend = UnsignedSpend(
