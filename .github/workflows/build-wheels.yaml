@@ -14,6 +14,10 @@ concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/long_lived/')) && github.sha || '' }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   build-wheels:
     runs-on: ubuntu-latest
@@ -46,38 +50,39 @@ jobs:
           name: wheels
           path: ./dist
 
-      - name: Test for secrets access
-        id: check_secrets
-        shell: bash
-        run: |
-          unset HAS_SECRET
-          if [ -n "$SECRET" ]; then HAS_SECRET='true' ; fi
-          echo "HAS_SECRET=${HAS_SECRET}" >>$GITHUB_OUTPUT
-        env:
-          SECRET: "${{ secrets.test_pypi_password }}"
+  upload:
+    name: Upload to PyPI
+    runs-on: ubuntu-latest
+    needs:
+      - build-wheels
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
-      - name: Install twine
-        run: |
-          . ./venv/bin/activate
-          pip install twine
+      - name: Set Env
+        uses: Chia-Network/actions/setjobenv@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: wheels
+          path: ./dist
 
       - name: Publish distribution to PyPI
-        if: startsWith(github.event.ref, 'refs/tags') && steps.check_secrets.outputs.HAS_SECRET
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_NON_INTERACTIVE: 1
-          TWINE_PASSWORD: ${{ secrets.pypi_password }}
-        run: |
-          . ./venv/bin/activate
-          twine upload --non-interactive --skip-existing --verbose 'dist/*'
+        if: env.RELEASE == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          skip-existing: true
 
       - name: Publish distribution to Test PyPI
-        if: steps.check_secrets.outputs.HAS_SECRET
-        env:
-          TWINE_REPOSITORY_URL: https://test.pypi.org/legacy/
-          TWINE_USERNAME: __token__
-          TWINE_NON_INTERACTIVE: 1
-          TWINE_PASSWORD: ${{ secrets.test_pypi_password }}
-        run:  |
-          . ./venv/bin/activate
-          twine upload --non-interactive --skip-existing --verbose 'dist/*'
+        if: env.PRE_RELEASE == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+          skip-existing: true
