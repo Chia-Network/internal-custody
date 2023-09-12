@@ -36,6 +36,14 @@ def secret_key_for_index(index: int) -> PrivateKey:
     return PrivateKey.from_bytes(secret_exponent.to_bytes(32, "big"))
 
 
+def generate_pubkey_arguments(pubkey_files: List[str]) -> List[str]:
+    return [
+        argument
+        for pubkey_file in pubkey_files
+        for argument in ["--pubkey", pubkey_file]
+    ]
+
+
 ACS: Program = Program.to(1)
 ACS_PH: bytes32 = ACS.get_tree_hash()
 
@@ -119,8 +127,7 @@ def test_init():
                 "derive_root",
                 "--configuration",
                 "./infos/Configuration (needs derivation).txt",
-                "--pubkeys",
-                ",".join(pubkey_files),
+                *generate_pubkey_arguments(pubkey_files),
                 "--initial-lock-level",
                 uint32(3),
             ],
@@ -187,8 +194,7 @@ def test_init():
                 "derive_root",
                 "--db-path",
                 sync_db_path,
-                "--pubkeys",
-                ",".join(pubkey_files),
+                *generate_pubkey_arguments(pubkey_files),
                 "--initial-lock-level",
                 uint32(3),
                 "--validate-against",
@@ -295,8 +301,7 @@ def test_init():
                 spend_bundle_out_path,
                 "--db-path",
                 sync_db_path,
-                "--pubkeys",
-                ",".join(pubkey_files[0:3]),
+                *generate_pubkey_arguments(pubkey_files[0:3]),
                 "--amount",
                 2,
                 "--recipient-address",
@@ -384,8 +389,7 @@ def test_init():
                 spend_bundle_out_path,
                 "--db-path",
                 sync_db_path,
-                "--pubkeys",
-                ",".join(pubkey_files[0:3]),
+                *generate_pubkey_arguments(pubkey_files[0:3]),
                 "--new-configuration",
                 new_derivation_filepath,
             ],
@@ -475,8 +479,7 @@ def test_init():
                     spend_bundle_out_path,
                     "--db-path",
                     sync_db_path,
-                    "--pubkeys",
-                    ",".join(pubkey_files[0:3]),
+                    *generate_pubkey_arguments(pubkey_files[0:3]),
                 ],
                 input="1\n",
             )
@@ -642,8 +645,7 @@ def test_init():
                 spend_bundle_out_path,
                 "--db-path",
                 sync_db_path,
-                "--pubkeys",
-                ",".join(pubkey_files[0:4]),
+                *generate_pubkey_arguments(pubkey_files[0:4]),
             ],
         )
 
@@ -747,8 +749,7 @@ def test_init():
                 spend_bundle_out_path,
                 "--db-path",
                 sync_db_path,
-                "--pubkeys",
-                ",".join(pubkey_files[0:3]),
+                *generate_pubkey_arguments(pubkey_files[0:3]),
                 "--new-configuration",
                 new_derivation_filepath,
             ],
