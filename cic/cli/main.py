@@ -1539,6 +1539,8 @@ def show_cmd(
                 print(f" - withdrawal timelock: {prefarm_info.withdrawal_timelock} seconds")
                 print(f" - payment clawback period: {prefarm_info.payment_clawback_period} seconds")
                 print(f" - rekey cancellation period: {prefarm_info.rekey_clawback_period} seconds")
+                print(f" - rekey penalty: {prefarm_info.rekey_increments} seconds")
+                print(f" - slow rekey timelock: {prefarm_info.slow_rekey_timelock} seconds")
 
             if derivation:
                 print()
