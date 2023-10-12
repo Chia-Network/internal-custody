@@ -286,9 +286,9 @@ class SyncStore:
         else:
             limit_str = ""
         async with self.db_wrapper.reader_no_transaction() as conn:
+            hex_amt = format(minimum_amount, "016x")
             cursor = await conn.execute(
-                f"SELECT * from p2_singletons WHERE amount>=? AND spent==0 ORDER BY amount DESC{limit_str}",
-                (format(minimum_amount, "016x"),),
+                f"SELECT * from p2_singletons WHERE amount>=x'{hex_amt}' AND spent==0 ORDER BY amount DESC{limit_str}"
             )
             coins = await cursor.fetchall()
             await cursor.close()
