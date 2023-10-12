@@ -6,7 +6,8 @@ from typing import Union
 
 from clvm_tools_rs import compile_clvm
 
-from chia.types.blockchain_format.program import Program, SerializedProgram
+from chia.types.blockchain_format.program import Program
+from chia.types.blockchain_format.serialized_program import SerializedProgram
 
 
 # Helper function that allows for packages to be decribed as a string, Path, or package string

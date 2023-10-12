@@ -6,7 +6,7 @@ with open("README.md", "rt") as fh:
     long_description = fh.read()
 
 dependencies = [
-    "chia-blockchain==1.7.0",
+    "chia-blockchain==1.8.1",
     "click==8.1.3",
     "segno==1.4.1",
     "hsms==0.1.3",
@@ -19,6 +19,7 @@ dev_dependencies = [
     "pytest",
     "pytest-asyncio",
     "pytest-env",
+    "types-setuptools",
 ]
 
 setup(

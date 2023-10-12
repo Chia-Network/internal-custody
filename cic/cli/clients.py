@@ -51,7 +51,7 @@ async def get_node_and_wallet_clients(
     try:
         full_node_client = await get_node_client(full_node_rpc_port)
         _wallet_client = await get_wallet_client(wallet_rpc_port)
-        wallet_client_f = await get_wallet(_wallet_client, fingerprint)
+        wallet_client_f = await get_wallet(DEFAULT_ROOT_PATH, _wallet_client, fingerprint)
         assert wallet_client_f is not None
         wallet_client, _ = wallet_client_f
         return full_node_client, wallet_client
