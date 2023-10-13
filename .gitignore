@@ -11,3 +11,4 @@ main.sym
 /dist/
 .idea/*
 Configuration*.txt
+*.sqlite
