@@ -42,7 +42,7 @@ class WalletClientMock:
         self.sim_client = sim_client
 
     # These are the only two methods we need
-    async def select_coins(self, amount, wallet_id) -> List[Coin]:
+    async def select_coins(self, amount, wallet_id, max_coin_amount=uint64(2**64 - 1)) -> List[Coin]:
         return [
             sorted(
                 await self.sim_client.get_coin_records_by_puzzle_hashes([ACS_PH], include_spent_coins=False),
