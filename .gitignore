@@ -10,3 +10,4 @@ main.sym
 /build/
 /dist/
 .idea/*
+Configuration*.txt
