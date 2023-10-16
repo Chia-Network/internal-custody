@@ -348,7 +348,9 @@ def launch_cmd(
     async def do_command():
         node_client, wallet_client = await get_node_and_wallet_clients(node_rpc_port, wallet_rpc_port, fingerprint)
         try:
-            fund_coins: List[Coin] = await wallet_client.select_coins(amount=(1 + fee), wallet_id=1)
+            fund_coins: List[Coin] = await wallet_client.select_coins(
+                amount=(1 + fee), wallet_id=1, max_coin_amount=uint64(2 ** 64 - 1)
+            )
             fund_coin: Coin = fund_coins[0]
             launcher_coin = Coin(fund_coin.name(), SINGLETON_LAUNCHER_HASH, 1)
             new_derivation: RootDerivation = calculate_puzzle_root(
