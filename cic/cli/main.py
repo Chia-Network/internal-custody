@@ -32,6 +32,7 @@ from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
     calculate_synthetic_offset,
     DEFAULT_HIDDEN_PUZZLE_HASH,
 )
+from chia.wallet.transaction_record import TransactionRecord
 
 from cic import __version__
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
@@ -876,17 +877,20 @@ def push_cmd(
                     print("Cannot find a way to link fee to this transaction. Please specify 0 fee and try again.")
                     return
                 else:
-                    spends.append(
-                        (
-                            await wallet_client.create_signed_transaction(
-                                [
-                                    {"puzzle_hash": bytes32([0] * 32), "amount": 0}
-                                ],  # This is dust but the RPC requires it
-                                fee=uint64(fee),
-                                coin_announcements=[fee_announcement],
-                            )
-                        ).spend_bundle
+                    txs: List[TransactionRecord] = await wallet_client.create_signed_transactions(
+                        additions=[
+                            {"puzzle_hash": bytes32([0] * 32), "amount": 0}
+                        ],  # This is dust but the RPC requires it,
+                        fee=uint64(fee),
+                        coin_announcements=[fee_announcement],
+                        min_coin_amount=uint64(0),
+                        max_coin_amount=uint64(2**64 - 1),
                     )
+                    if len(txs) == 0:
+                        raise ValueError("`create_signed_transaction` returned empty list!")
+
+                    tx = txs[0]
+                    spends.append(tx.spend_bundle)
 
             result = await node_client.push_tx(SpendBundle.aggregate(spends))
             print(result)
