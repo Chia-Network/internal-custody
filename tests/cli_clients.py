@@ -74,6 +74,17 @@ class WalletClientMock:
                 coin_spends.append(CoinSpend(coin, ACS, Program.to([])))
         return TXMock(SpendBundle(coin_spends, G2Element()))
 
+    async def create_signed_transactions(
+        self,
+        additions: List[Dict],
+        coins: Optional[List[Coin]] = None,
+        fee=uint64(0),
+        coin_announcements: Optional[List[Announcement]] = None,
+        min_coin_amount: uint64 = 0,
+        max_coin_amount: uint64 = 0,
+    ) -> [TXMock]:
+        return [await self.create_signed_transaction(additions, coins, fee, coin_announcements)]
+
     def close(self):
         return
 
