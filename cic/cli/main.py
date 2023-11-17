@@ -884,7 +884,7 @@ def push_cmd(
                         fee=uint64(fee),
                         coin_announcements=[fee_announcement],
                         min_coin_amount=uint64(0),
-                        max_coin_amount=uint64(2**64 - 1),
+                        max_coin_amount=uint64(2 ** 64 - 1),
                     )
                     if len(txs) == 0:
                         raise ValueError("`create_signed_transaction` returned empty list!")
