@@ -76,7 +76,7 @@ else:
 # Newer versions of chia should use the modern keys and the version bundled here uses the old keys
 original_to_json_dict = SpendBundle.to_json_dict
 def patched_to_json_dict(self, include_legacy_keys: bool = False, exclude_modern_keys: bool = False) -> Dict[str, Any]:
-    # Call the original method with different args if needed
+    # Call the original method with different defaults
     return original_to_json_dict(self, include_legacy_keys=include_legacy_keys, exclude_modern_keys=exclude_modern_keys)
 SpendBundle.to_json_dict = patched_to_json_dict
 
