@@ -15,7 +15,7 @@ from clvm.casts import int_to_bytes
 from datetime import datetime
 from operator import attrgetter
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Union
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program, INFINITE_COST
@@ -72,6 +72,17 @@ if os.environ.get("TESTING_CIC_CLI", "FALSE") == "TRUE":
     from tests.cli_clients import get_node_and_wallet_clients, get_node_client, get_additional_data
 else:
     from cic.cli.clients import get_node_and_wallet_clients, get_node_client, get_additional_data
+
+# Newer versions of chia should use the modern keys and the version bundled here uses the old keys
+original_to_json_dict = SpendBundle.to_json_dict
+
+
+def patched_to_json_dict(self, include_legacy_keys: bool = False, exclude_modern_keys: bool = False) -> Dict[str, Any]:
+    # Call the original method with different defaults
+    return original_to_json_dict(self, include_legacy_keys=include_legacy_keys, exclude_modern_keys=exclude_modern_keys)
+
+
+SpendBundle.to_json_dict = patched_to_json_dict
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
