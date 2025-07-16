@@ -968,6 +968,12 @@ def push_cmd(
     default=1000000000000,
     show_default=True,
 )
+@click.option(
+    "-ps",
+    "--previous-spends",
+    help="A comma separated list of previously generated spend bundle files to simulate spending first (in order)",
+    default=None,
+)
 def payments_cmd(
     db_path: str,
     pubkeys: str,
@@ -977,6 +983,7 @@ def payments_cmd(
     maximum_extra_cost: Optional[int],
     amount_threshold: int,
     filename: Optional[str],
+    previous_spends: Optional[str],
 ):
     # Check to make sure we've been given a correct set of parameters
     if amount % 2 == 1:
@@ -994,6 +1001,61 @@ def payments_cmd(
             clawforward_ph: bytes32 = decode_puzzle_hash(recipient_address)
             fee_conditions: List[Program] = [Program.to([60, b""])]
 
+            # Handle previous spends if provided
+            current_coin = current_singleton.coin
+            current_lineage_proof = current_singleton.lineage_proof
+
+            if previous_spends:
+                previous_spend_files = previous_spends.split(",")
+                for spend_file in previous_spend_files:
+                    try:
+                        # Read the unsigned spend
+                        unsigned_spend = read_unsigned_spend(spend_file.strip())
+
+                        # Extract the coin spend for the singleton (first one should be the singleton)
+                        if len(unsigned_spend.coin_spends) == 0:
+                            raise ValueError(f"No coin spends found in {spend_file}")
+
+                        # Get the singleton coin spend
+                        singleton_spend = unsigned_spend.coin_spends[0]
+
+                        # Extract the payment amount from the spend bundle
+                        # We need to parse the solution to get the out_amount
+                        try:
+                            # The HSM coin spend has the solution as a Program, not bytes
+                            # We can work with it directly
+                            solution = singleton_spend.solution
+                            out_amount, in_amount, p2_ph = get_spend_params_for_ach_creation(solution)
+
+                            # Calculate the new amount after this payment
+                            # out_amount is what we're paying out
+                            # in_amount is what we're absorbing from p2_singletons
+                            net_change = in_amount - out_amount
+                            new_amount = current_coin.amount + net_change
+
+                        except Exception as parse_error:
+                            raise ValueError(f"Cannot parse previous spend bundle {spend_file}. The tool needs to be able to extract the payment amount from the spend bundle to calculate the correct coin state.")
+
+                        # Safety check: ensure new_amount is not negative
+                        if new_amount < 0:
+                            raise ValueError(f"Calculated new amount {new_amount} is negative. This indicates an error in the calculation.")
+
+                        # Update for next iteration
+                        previous_coin: Coin = current_coin
+                        current_coin = Coin(
+                            previous_coin.name(),
+                            current_coin.puzzle_hash,
+                            new_amount
+                        )
+                        current_lineage_proof = LineageProof(
+                            previous_coin.parent_coin_info,
+                            construct_singleton_inner_puzzle(derivation.prefarm_info).get_tree_hash(),
+                            previous_coin.amount,
+                        )
+
+                    except Exception as e:
+                        raise ValueError(f"Error processing previous spend file {spend_file}: {e}")
+
             # Get any p2_singletons to spend
             if absorb_available_payments:
                 max_num: Optional[uint32] = (
@@ -1010,10 +1072,10 @@ def payments_cmd(
 
             # Get the spend bundle
             singleton_bundle, data_to_sign = get_withdrawal_spend_info(
-                current_singleton.coin,
+                current_coin,
                 pubkey_list,
                 derivation,
-                current_singleton.lineage_proof,
+                current_lineage_proof,
                 amount,
                 clawforward_ph,
                 p2_singletons_to_claim=p2_singletons,
