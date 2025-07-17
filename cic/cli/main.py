@@ -361,7 +361,7 @@ def launch_cmd(
         node_client, wallet_client = await get_node_and_wallet_clients(node_rpc_port, wallet_rpc_port, fingerprint)
         try:
             fund_coins: List[Coin] = await wallet_client.select_coins(
-                amount=(1 + fee), wallet_id=1, max_coin_amount=uint64(2 ** 64 - 1)
+                amount=(1 + fee), wallet_id=1, max_coin_amount=uint64(2**64 - 1)
             )
             fund_coin: Coin = fund_coins[0]
             launcher_coin = Coin(fund_coin.name(), SINGLETON_LAUNCHER_HASH, 1)
@@ -895,7 +895,7 @@ def push_cmd(
                         fee=uint64(fee),
                         coin_announcements=[fee_announcement],
                         min_coin_amount=uint64(0),
-                        max_coin_amount=uint64(2 ** 64 - 1),
+                        max_coin_amount=uint64(2**64 - 1),
                     )
                     if len(txs) == 0:
                         raise ValueError("`create_signed_transaction` returned empty list!")
@@ -1035,13 +1035,15 @@ def payments_cmd(
 
                         except Exception:
                             raise ValueError(
-                                f"Cannot parse previous spend bundle {spend_file}. The tool needs to be able to extract the payment amount from the spend bundle to calculate the correct coin state."
+                                f"Cannot parse previous spend bundle {spend_file}. The tool needs to be able to extract"
+                                " the payment amount from the spend bundle to calculate the correct coin state."
                             )
 
                         # Safety check: ensure new_amount is not negative
                         if new_amount < 0:
                             raise ValueError(
-                                f"Calculated new amount {new_amount} is negative. This indicates an error in the calculation."
+                                f"Calculated new amount {new_amount} is negative. This indicates an error in the "
+                                "calculation."
                             )
 
                         # Update for next iteration
