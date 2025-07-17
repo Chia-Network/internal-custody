@@ -1033,20 +1033,20 @@ def payments_cmd(
                             net_change = in_amount - out_amount
                             new_amount = current_coin.amount + net_change
 
-                        except Exception as parse_error:
-                            raise ValueError(f"Cannot parse previous spend bundle {spend_file}. The tool needs to be able to extract the payment amount from the spend bundle to calculate the correct coin state.")
+                        except Exception:
+                            raise ValueError(
+                                f"Cannot parse previous spend bundle {spend_file}. The tool needs to be able to extract the payment amount from the spend bundle to calculate the correct coin state."
+                            )
 
                         # Safety check: ensure new_amount is not negative
                         if new_amount < 0:
-                            raise ValueError(f"Calculated new amount {new_amount} is negative. This indicates an error in the calculation.")
+                            raise ValueError(
+                                f"Calculated new amount {new_amount} is negative. This indicates an error in the calculation."
+                            )
 
                         # Update for next iteration
                         previous_coin: Coin = current_coin
-                        current_coin = Coin(
-                            previous_coin.name(),
-                            current_coin.puzzle_hash,
-                            new_amount
-                        )
+                        current_coin = Coin(previous_coin.name(), current_coin.puzzle_hash, new_amount)
                         current_lineage_proof = LineageProof(
                             previous_coin.parent_coin_info,
                             construct_singleton_inner_puzzle(derivation.prefarm_info).get_tree_hash(),
