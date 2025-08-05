@@ -60,7 +60,7 @@ from cic.drivers.prefarm import (
     was_rekey_completed,
 )
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
-from cic.drivers.singleton import generate_launch_conditions_and_coin_spend, construct_p2_singleton
+from cic.drivers.singleton import generate_launch_conditions_and_coin_spend, construct_p2_singleton, SINGLETON_MOD
 
 from hsms.bls12_381 import BLSPublicKey, BLSSecretExponent
 from hsms.process.signing_hints import SumHint
@@ -1017,7 +1017,17 @@ def payments_cmd(
                             raise ValueError(f"No coin spends found in {spend_file}")
 
                         # Get the singleton coin spend
-                        singleton_spend = unsigned_spend.coin_spends[0]
+                        singleton_spend: Optional[CoinSpend] = None
+
+                        for possible_spend in unsigned_spend.coin_spends:
+                            program = Program.from_bytes(bytes(possible_spend.puzzle_reveal))
+                            mod, curried_args = program.uncurry()
+                            if mod == SINGLETON_MOD:
+                                singleton_spend = possible_spend
+                                break
+
+                        if singleton_spend is None:
+                            raise ValueError(f"Unable to identify the singleton spend in {spend_file}")
 
                         # Extract the payment amount from the spend bundle
                         # We need to parse the solution to get the out_amount
