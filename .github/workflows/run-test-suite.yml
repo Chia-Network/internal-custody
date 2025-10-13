@@ -6,10 +6,10 @@ on:
     branches:
       - main
     tags:
-        - '**'
+      - "**"
   pull_request:
     branches:
-      - '**'
+      - "**"
 
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}--${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/long_lived/')) && github.sha || '' }}
@@ -22,19 +22,19 @@ jobs:
     timeout-minutes: 30
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v3
-      with:
-        fetch-depth: 0
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
-    - name: Setup Python environment
-      uses: actions/setup-python@v4
-      with:
-        python-version: 3.9
+      - name: Setup Python environment
+        uses: Chia-Network/actions/setup-python@main
+        with:
+          python-version: 3.12
 
-    - name: Test code with pytest
-      run: |
-        python3 -m venv venv
-        . ./venv/bin/activate
-        pip install .[dev]
-        ./venv/bin/py.test tests/ -s -v --durations 0
+      - name: Test code with pytest
+        run: |
+          python3 -m venv venv
+          . ./venv/bin/activate
+          pip install .[dev]
+          ./venv/bin/py.test tests/ -s -v --durations 0
