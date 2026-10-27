@@ -40,7 +40,6 @@ from cic.drivers.puzzle_root_construction import RootDerivation, construct_lock_
 from cic.drivers.singleton import construct_singleton, solve_singleton, construct_p2_singleton, solve_p2_singleton
 from cic.load_clvm import load_clvm
 
-
 PREFARM_INNER = load_clvm("prefarm_inner.clsp", package_or_requirement="cic.clsp.singleton")
 
 
