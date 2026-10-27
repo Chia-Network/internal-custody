@@ -3,7 +3,7 @@ import enum
 
 from chia_rs import G1Element, G2Element, SpendBundle
 from clvm.casts import int_from_bytes
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program
@@ -342,7 +342,7 @@ def calculate_rekey_args(
         )
         signed_message: bytes = b""
     else:
-        conditions = [
+        conditions: List[Any] = [
             [
                 51,
                 curry_rekey_puzzle(timelock, derivation.prefarm_info, new_derivation.prefarm_info).get_tree_hash(),
@@ -396,6 +396,7 @@ def get_rekey_spend_info(
 
     lock_spends: List[CoinSpend] = []
     if new_derivation is None:
+        assert derivation.next_root is not None
         rekey_puzzle: Program = curry_rekey_puzzle(
             uint8(0),
             derivation.prefarm_info,
@@ -578,7 +579,7 @@ def get_spend_type_for_solution(solution: Program) -> SpendType:
     return SpendType(int_from_bytes(spend_type.as_python()))
 
 
-def get_spending_pubkey_for_solution(solution: Program) -> G1Element:
+def get_spending_pubkey_for_solution(solution: Program) -> Optional[G1Element]:
     if get_spend_type_for_solution(solution) == SpendType.FINISH_REKEY:
         return None
     else:

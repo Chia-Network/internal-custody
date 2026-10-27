@@ -305,7 +305,9 @@ class SyncStore:
             await cursor.close()
         if info is not None:
             try:
-                valid = PrefarmInfo.from_bytes(info[1]).is_valid_update(configuration)
+                valid = PrefarmInfo.from_bytes(info[1]).is_valid_update(
+                    configuration.prefarm_info if isinstance(configuration, RootDerivation) else configuration
+                )
             except (AssertionError, ValueError):
                 assert isinstance(configuration, RootDerivation)
                 valid = RootDerivation.from_bytes(info[1]).prefarm_info.is_valid_update(configuration.prefarm_info)
@@ -370,13 +372,14 @@ class SyncStore:
         if info is None:
             raise ValueError("No configuration present")
 
+        new_configuration: Union[PrefarmInfo, RootDerivation]
         try:
             derivation = RootDerivation.from_bytes(info[1])
             if derivation.next_root == puzzle_root:
                 new_configuration = calculate_puzzle_root(
                     derivation.prefarm_info,
                     derivation.pubkey_list,
-                    derivation.required_pubkeys + 1,
+                    uint32(derivation.required_pubkeys + 1),
                     derivation.maximum_pubkeys,
                     derivation.minimum_pubkeys,
                 )

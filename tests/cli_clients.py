@@ -93,6 +93,7 @@ class WalletClientMock:
         tx_config: Any,
         extra_conditions: tuple = (),
     ):
+        assert request.push is False and request.sign is True
         total_amount: int = 0
         conditions: List[Program] = []
         for add in request.additions:

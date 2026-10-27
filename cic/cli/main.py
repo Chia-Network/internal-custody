@@ -15,7 +15,7 @@ from clvm.casts import int_to_bytes
 from datetime import datetime
 from operator import attrgetter
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Union
+from typing import Dict, Iterable, List, Optional, Union
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program, INFINITE_COST
@@ -66,6 +66,7 @@ from chia_base.bls12_381 import BLSPublicKey, BLSSecretExponent
 from hsms.core.signing_hints import SumHint
 from hsms.core.unsigned_spend import UnsignedSpend
 from chia_base.atoms import bytes32 as HSMbytes32
+from chia_base.atoms import uint64 as HSMuint64
 from chia_base.core import Coin as HSMCoin
 from chia_base.core import CoinSpend as HSMCoinSpend
 from clvm_rs import Program as CProgram
@@ -76,17 +77,6 @@ if os.environ.get("TESTING_CIC_CLI", "FALSE") == "TRUE":
 else:
     from cic.cli.clients import get_node_and_wallet_clients, get_node_client, get_additional_data
 
-# Newer versions of chia should use the modern keys and the version bundled here uses the old keys
-original_to_json_dict = SpendBundle.to_json_dict
-
-
-def patched_to_json_dict(self, include_legacy_keys: bool = False, exclude_modern_keys: bool = False) -> Dict[str, Any]:
-    # The modern SpendBundle type no longer takes these arguments
-    return original_to_json_dict(self)
-
-
-SpendBundle.to_json_dict = patched_to_json_dict
-
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
 
@@ -95,7 +85,7 @@ def to_hsm_coin_spend(coin_spend: CoinSpend) -> HSMCoinSpend:
         HSMCoin(
             HSMbytes32(bytes(coin_spend.coin.parent_coin_info)),
             HSMbytes32(bytes(coin_spend.coin.puzzle_hash)),
-            coin_spend.coin.amount,
+            HSMuint64(int(coin_spend.coin.amount)),
         ),
         CProgram.from_bytes(bytes(coin_spend.puzzle_reveal)),
         CProgram.from_bytes(bytes(coin_spend.solution)),
@@ -407,6 +397,8 @@ def launch_cmd(
                     additions=[Addition(puzzle_hash=SINGLETON_LAUNCHER_HASH, amount=uint64(1))],
                     coins=fund_coins,
                     fee=uint64(fee),
+                    push=False,
+                    sign=True,
                 ),
                 DEFAULT_TX_CONFIG,
                 (announcement,),
@@ -931,6 +923,8 @@ def push_cmd(
                             wallet_id=uint32(1),
                             additions=[Addition(puzzle_hash=bytes32([0] * 32), amount=uint64(0))],
                             fee=uint64(fee),
+                            push=False,
+                            sign=True,
                         ),
                         DEFAULT_TX_CONFIG,
                         (fee_announcement,),
@@ -1758,7 +1752,7 @@ def examine_cmd(
     singleton_spends: List[HSMCoinSpend] = [cs for cs in bundle.coin_spends if cs.coin.amount % 2 == 1]
     drop_coin_spends: List[HSMCoinSpend] = [cs for cs in bundle.coin_spends if cs.coin.amount % 2 == 0]
     if len(singleton_spends) > 1:
-        names: List[bytes32] = [cs.coin.name() for cs in singleton_spends]
+        names: List[HSMbytes32] = [cs.coin.name() for cs in singleton_spends]
         spend: HSMCoinSpend = next(cs for cs in singleton_spends if cs.coin.parent_coin_info not in names)
         spend_type: str = "LOCK"
     elif len(singleton_spends) == 1:
@@ -1777,7 +1771,8 @@ def examine_cmd(
 
     spend_summary: str
     if spend_type == "HANDLE_PAYMENT":
-        spending_pubkey: G1Element = get_spending_pubkey_for_solution(solution)
+        spending_pubkey = get_spending_pubkey_for_solution(solution)
+        assert spending_pubkey is not None
         out_amount, in_amount, p2_ph = get_spend_params_for_ach_creation(solution)
         print("Type: Payment")
         print(f"Incoming: {in_amount}")
@@ -1797,6 +1792,7 @@ def examine_cmd(
         """
     elif spend_type == "LOCK":
         spending_pubkey = get_spending_pubkey_for_solution(solution)
+        assert spending_pubkey is not None
         print("Type: Lock level increase")
         print(f"Spenders: {BLSPublicKey(spending_pubkey).as_bech32m()}")
         spend_summary = f"""
@@ -1809,6 +1805,7 @@ def examine_cmd(
         """
     elif spend_type == "START_REKEY":
         spending_pubkey = get_spending_pubkey_for_solution(solution)
+        assert spending_pubkey is not None
         from_root = get_puzzle_root_from_puzzle(puzzle)
         timelock, new_root = get_spend_params_for_rekey_creation(solution)
         print("Type: Rekey")
