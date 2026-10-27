@@ -15,7 +15,7 @@ dependencies = [
 dev_dependencies = [
     "flake8",
     "mypy",
-    "black==21.12b0",
+    "black==26.10.1",
     "pytest",
     "pytest-asyncio",
     "pytest-env",
