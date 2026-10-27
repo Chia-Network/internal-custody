@@ -7,7 +7,7 @@ with open("README.md", "rt") as fh:
 
 dependencies = [
     "chia-blockchain==1.7.0",
-    "click==8.1.3",
+    "click==8.5.0",
     "segno==1.4.1",
     "hsms==0.1.3",
 ]
