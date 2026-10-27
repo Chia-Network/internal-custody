@@ -1,20 +1,19 @@
 import asyncio
 import os
 
-from blspy import BasicSchemeMPL, PrivateKey, G2Element
+from chia_rs import AugSchemeMPL, G2Element, PrivateKey, SpendBundle
+from chia_rs.sized_bytes import bytes32
+from chia_rs.sized_ints import uint32, uint64
 from click.testing import CliRunner, Result
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from chia.clvm.spend_sim import SpendSim, SimClient
+from chia._tests.util.spend_sim import SpendSim, SimClient
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program
-from chia.types.blockchain_format.sized_bytes import bytes32
-from chia.types.coin_spend import CoinSpend
-from chia.types.spend_bundle import SpendBundle
+from chia.types.coin_spend import make_spend
 from chia.util.bech32m import encode_puzzle_hash
 from chia.util.hash import std_hash
-from chia.util.ints import uint32, uint64
 
 from cic.cli.main import cli, read_unsigned_spend
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
@@ -23,7 +22,8 @@ from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
 from cic.drivers.singleton import construct_p2_singleton
 
-from hsms.bls12_381 import BLSPublicKey, BLSSecretExponent, BLSSignature
+from chia_base.bls12_381 import BLSPublicKey, BLSSecretExponent, BLSSignature
+from chia_base.cbincode import to_bytes
 from hsms.cmds.hsmmerge import create_spend_bundle
 from hsms.process.sign import sign
 
@@ -31,8 +31,8 @@ from hsms.process.sign import sign
 # Key functions
 def secret_key_for_index(index: int) -> PrivateKey:
     blob = index.to_bytes(32, "big")
-    hashed_blob = BasicSchemeMPL.key_gen(std_hash(b"foo" + blob))
-    secret_exponent = int.from_bytes(hashed_blob, "big")
+    hashed_blob = AugSchemeMPL.key_gen(std_hash(b"foo" + blob))
+    secret_exponent = int.from_bytes(hashed_blob.to_bytes(), "big")
     return PrivateKey.from_bytes(secret_exponent.to_bytes(32, "big"))
 
 
@@ -151,14 +151,11 @@ def test_init():
 
         # The sim should be initialized now
         async def check_for_launcher():
-            try:
-                sim = await SpendSim.create(db_path="./sim.db")
+            async with SpendSim.managed(Path("./sim.db")) as sim:
                 sim_client = SimClient(sim)
                 assert (
                     len(await sim_client.get_coin_records_by_parent_ids([new_derivation.prefarm_info.launcher_id])) > 0
                 )
-            finally:
-                await sim.close()
 
         asyncio.get_event_loop().run_until_complete(check_for_launcher())
 
@@ -228,8 +225,7 @@ def test_init():
 
         # Create and sync some p2_singletons
         async def pay_singleton_and_pass_time():
-            try:
-                sim = await SpendSim.create(db_path="./sim.db")
+            async with SpendSim.managed(Path("./sim.db")) as sim:
                 sim_client = SimClient(sim)
                 acs_coin: Coin = next(
                     (
@@ -243,13 +239,14 @@ def test_init():
                 await sim_client.push_tx(
                     SpendBundle(
                         [
-                            CoinSpend(
+                            make_spend(
                                 acs_coin,
                                 ACS,
                                 Program.to(
                                     [
                                         [51, P2_SINGLETON.get_tree_hash(), STARTING_AMOUNT],
                                         [51, P2_SINGLETON.get_tree_hash(), 1],
+                                        [51, ACS_PH, acs_coin.amount - STARTING_AMOUNT - 1],
                                     ]
                                 ),
                             )
@@ -260,8 +257,6 @@ def test_init():
                 await sim.farm_block()
                 sim.pass_time(derivation.prefarm_info.withdrawal_timelock)
                 await sim.farm_block()
-            finally:
-                await sim.close()
 
         asyncio.get_event_loop().run_until_complete(pay_singleton_and_pass_time())
 
@@ -314,7 +309,7 @@ def test_init():
             se = BLSSecretExponent(secret_key_for_index(key))
             sigs.extend([si.signature for si in sign(withdrawal_bundle, [se])])
         _hsms_bundle = create_spend_bundle(withdrawal_bundle, sigs)
-        signed_withdrawal_bundle = SpendBundle.from_bytes(bytes(_hsms_bundle))  # gotta convert from the hsms here
+        signed_withdrawal_bundle = SpendBundle.from_bytes(to_bytes(_hsms_bundle))  # gotta convert from the hsms here
 
         # Push the tx
         result = runner.invoke(
@@ -398,16 +393,13 @@ def test_init():
             for si in sign(rekey_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
         ]
         _hsms_bundle = create_spend_bundle(rekey_bundle, sigs)
-        signed_rekey_bundle = SpendBundle.from_bytes(bytes(_hsms_bundle))  # gotta convert from the hsms here
+        signed_rekey_bundle = SpendBundle.from_bytes(to_bytes(_hsms_bundle))  # gotta convert from the hsms here
 
         # Push the tx
         async def fast_forward():
-            try:
-                sim = await SpendSim.create(db_path="./sim.db")
+            async with SpendSim.managed(Path("./sim.db")) as sim:
                 sim.pass_time(derivation.prefarm_info.rekey_increments)
                 await sim.farm_block()
-            finally:
-                await sim.close()
 
         asyncio.get_event_loop().run_until_complete(fast_forward())
 
@@ -453,15 +445,12 @@ def test_init():
         db_backup_path = "./db_backup.sqlite"
 
         async def set_rewind_height() -> uint32:
-            try:
-                with open(db_backup_path, "wb") as backup:
-                    with open(sync_db_path, "rb") as file:
-                        backup.write(file.read())
+            with open(db_backup_path, "wb") as backup:
+                with open(sync_db_path, "rb") as file:
+                    backup.write(file.read())
 
-                sim = await SpendSim.create(db_path="./sim.db")
+            async with SpendSim.managed(Path("./sim.db")) as sim:
                 return sim.block_height
-            finally:
-                await sim.close()
 
         REWIND_HERE: uint32 = asyncio.get_event_loop().run_until_complete(set_rewind_height())
 
@@ -488,7 +477,7 @@ def test_init():
                 for si in sign(clawback_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
             ]
             _hsms_bundle = create_spend_bundle(clawback_bundle, sigs)
-            signed_clawback_bundle = SpendBundle.from_bytes(bytes(_hsms_bundle))  # gotta convert from the hsms here
+            signed_clawback_bundle = SpendBundle.from_bytes(to_bytes(_hsms_bundle))  # gotta convert from the hsms here
 
             # Push the tx
             result = runner.invoke(
@@ -528,16 +517,13 @@ def test_init():
             asyncio.get_event_loop().run_until_complete(check_for_spent_clawback())
 
         async def rewind():
-            try:
-                sim = await SpendSim.create(db_path="./sim.db")
+            async with SpendSim.managed(Path("./sim.db")) as sim:
                 await sim.rewind(REWIND_HERE)
                 sim.pass_time(max(prefarm_info.payment_clawback_period, prefarm_info.rekey_clawback_period))
                 await sim.farm_block()
                 with open(db_backup_path, "rb") as backup:
                     with open(sync_db_path, "wb") as file:
                         file.write(backup.read())
-            finally:
-                await sim.close()
 
         asyncio.get_event_loop().run_until_complete(rewind())
 
@@ -621,15 +607,12 @@ def test_init():
         assert "The configuration of this sync DB is not outdated" in result.output
 
         async def rewind_again():
-            try:
-                sim = await SpendSim.create(db_path="./sim.db")
+            async with SpendSim.managed(Path("./sim.db")) as sim:
                 await sim.rewind(REWIND_HERE)
                 sim.pass_time(prefarm_info.payment_clawback_period)
                 with open(db_backup_path, "rb") as backup:
                     with open(sync_db_path, "wb") as file:
                         file.write(backup.read())
-            finally:
-                await sim.close()
 
         asyncio.get_event_loop().run_until_complete(rewind_again())
 
@@ -654,7 +637,7 @@ def test_init():
             for si in sign(lock_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 4)])
         ]
         _hsms_bundle = create_spend_bundle(lock_bundle, sigs)
-        signed_lock_bundle = SpendBundle.from_bytes(bytes(_hsms_bundle))  # gotta convert from the hsms here
+        signed_lock_bundle = SpendBundle.from_bytes(to_bytes(_hsms_bundle))  # gotta convert from the hsms here
 
         # Push the tx
         result = runner.invoke(
@@ -730,12 +713,9 @@ def test_init():
 
         # Try a slow rekey
         async def fast_forward_slow_rekey():
-            try:
-                sim = await SpendSim.create(db_path="./sim.db")
+            async with SpendSim.managed(Path("./sim.db")) as sim:
                 sim.pass_time(prefarm_info.rekey_increments * 2 + prefarm_info.slow_rekey_timelock)
                 await sim.farm_block()
-            finally:
-                await sim.close()
 
         asyncio.get_event_loop().run_until_complete(fast_forward_slow_rekey())
 
@@ -760,7 +740,7 @@ def test_init():
             for si in sign(slow_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
         ]
         _hsms_bundle = create_spend_bundle(slow_bundle, sigs)
-        signed_slow_bundle = SpendBundle.from_bytes(bytes(_hsms_bundle))  # gotta convert from the hsms here
+        signed_slow_bundle = SpendBundle.from_bytes(to_bytes(_hsms_bundle))  # gotta convert from the hsms here
 
         result = runner.invoke(
             cli,
@@ -775,12 +755,9 @@ def test_init():
         assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
 
         async def fast_forward_rekey_timelock():
-            try:
-                sim = await SpendSim.create(db_path="./sim.db")
+            async with SpendSim.managed(Path("./sim.db")) as sim:
                 sim.pass_time(prefarm_info.rekey_clawback_period)
                 await sim.farm_block()
-            finally:
-                await sim.close()
 
         asyncio.get_event_loop().run_until_complete(fast_forward_rekey_timelock())
 
