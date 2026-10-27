@@ -1,8 +1,8 @@
 from typing import List, Tuple, Dict
 
 from chia.types.blockchain_format.program import Program
-from chia.types.blockchain_format.sized_bytes import bytes32
-from chia.util.ints import uint8, uint64
+from chia_rs.sized_bytes import bytes32
+from chia_rs.sized_ints import uint8, uint64
 from chia.wallet.lineage_proof import LineageProof
 
 from cic.drivers.merkle_utils import build_merkle_tree

@@ -10,7 +10,7 @@ import tempfile
 import time
 import webbrowser
 
-from blspy import PrivateKey, G1Element, G2Element
+from chia_rs import PrivateKey, G1Element, G2Element, CoinRecord, SpendBundle
 from clvm.casts import int_to_bytes
 from datetime import datetime
 from operator import attrgetter
@@ -19,13 +19,11 @@ from typing import Any, Dict, Iterable, List, Optional, Union
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program, INFINITE_COST
-from chia.types.blockchain_format.sized_bytes import bytes32
-from chia.types.announcement import Announcement
-from chia.types.coin_record import CoinRecord
+from chia_rs.sized_bytes import bytes32
+from chia.wallet.conditions import AssertCoinAnnouncement
 from chia.types.coin_spend import CoinSpend
-from chia.types.spend_bundle import SpendBundle
 from chia.util.bech32m import decode_puzzle_hash, encode_puzzle_hash
-from chia.util.ints import uint8, uint32, uint64
+from chia_rs.sized_ints import uint8, uint32, uint64
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
 from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
@@ -33,6 +31,8 @@ from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
     DEFAULT_HIDDEN_PUZZLE_HASH,
 )
 from chia.wallet.transaction_record import TransactionRecord
+from chia.wallet.util.tx_config import DEFAULT_TX_CONFIG
+from chia.wallet.wallet_request_types import Addition, CreateSignedTransaction, SelectCoins
 
 from cic import __version__
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
@@ -62,10 +62,13 @@ from cic.drivers.prefarm import (
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
 from cic.drivers.singleton import generate_launch_conditions_and_coin_spend, construct_p2_singleton
 
-from hsms.bls12_381 import BLSPublicKey, BLSSecretExponent
-from hsms.process.signing_hints import SumHint
-from hsms.process.unsigned_spend import UnsignedSpend
-from hsms.streamables.coin_spend import CoinSpend as HSMCoinSpend
+from chia_base.bls12_381 import BLSPublicKey, BLSSecretExponent
+from hsms.core.signing_hints import SumHint
+from hsms.core.unsigned_spend import UnsignedSpend
+from chia_base.atoms import bytes32 as HSMbytes32
+from chia_base.core import Coin as HSMCoin
+from chia_base.core import CoinSpend as HSMCoinSpend
+from clvm_rs import Program as CProgram
 from hsms.util.qrint_encoding import a2b_qrint, b2a_qrint
 
 if os.environ.get("TESTING_CIC_CLI", "FALSE") == "TRUE":
@@ -78,13 +81,25 @@ original_to_json_dict = SpendBundle.to_json_dict
 
 
 def patched_to_json_dict(self, include_legacy_keys: bool = False, exclude_modern_keys: bool = False) -> Dict[str, Any]:
-    # Call the original method with different defaults
-    return original_to_json_dict(self, include_legacy_keys=include_legacy_keys, exclude_modern_keys=exclude_modern_keys)
+    # The modern SpendBundle type no longer takes these arguments
+    return original_to_json_dict(self)
 
 
 SpendBundle.to_json_dict = patched_to_json_dict
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
+
+
+def to_hsm_coin_spend(coin_spend: CoinSpend) -> HSMCoinSpend:
+    return HSMCoinSpend(
+        HSMCoin(
+            HSMbytes32(bytes(coin_spend.coin.parent_coin_info)),
+            HSMbytes32(bytes(coin_spend.coin.puzzle_hash)),
+            coin_spend.coin.amount,
+        ),
+        CProgram.from_bytes(bytes(coin_spend.puzzle_reveal)),
+        CProgram.from_bytes(bytes(coin_spend.solution)),
+    )
 
 
 def load_prefarm_info(configuration: Optional[str]) -> PrefarmInfo:
@@ -98,10 +113,10 @@ def load_prefarm_info(configuration: Optional[str]) -> PrefarmInfo:
         file_bytes = file.read()
         try:
             return PrefarmInfo.from_bytes(file_bytes)
-        except AssertionError:
+        except (AssertionError, ValueError):
             try:
                 return RootDerivation.from_bytes(file_bytes).prefarm_info
-            except AssertionError:
+            except (AssertionError, ValueError):
                 raise ValueError("The configuration specified is not a recognizable format")
 
 
@@ -116,11 +131,11 @@ def load_root_derivation(configuration: Optional[str]) -> RootDerivation:
         file_bytes = file.read()
         try:
             return RootDerivation.from_bytes(file_bytes)
-        except AssertionError:
+        except (AssertionError, ValueError):
             try:
                 PrefarmInfo.from_bytes(file_bytes)
                 raise ValueError("The specified configuration file can only perform observer actions")
-            except AssertionError:
+            except (AssertionError, ValueError):
                 raise ValueError("The configuration specified is not a recognizable format")
 
 
@@ -360,9 +375,15 @@ def launch_cmd(
     async def do_command():
         node_client, wallet_client = await get_node_and_wallet_clients(node_rpc_port, wallet_rpc_port, fingerprint)
         try:
-            fund_coins: List[Coin] = await wallet_client.select_coins(
-                amount=(1 + fee), wallet_id=1, max_coin_amount=uint64(2**64 - 1)
-            )
+            fund_coins: List[Coin] = (
+                await wallet_client.select_coins(
+                    SelectCoins(
+                        wallet_id=uint32(1),
+                        amount=uint64(1 + fee),
+                        max_coin_amount=uint64(2**64 - 1),
+                    )
+                )
+            ).coins
             fund_coin: Coin = fund_coins[0]
             launcher_coin = Coin(fund_coin.name(), SINGLETON_LAUNCHER_HASH, 1)
             new_derivation: RootDerivation = calculate_puzzle_root(
@@ -376,15 +397,25 @@ def launch_cmd(
                 fund_coin, construct_singleton_inner_puzzle(new_derivation.prefarm_info), uint64(1)
             )
             creation_bundle = SpendBundle([launch_spend], G2Element())
-            announcement = Announcement(launcher_coin.name(), launch_spend.solution.to_program().get_tree_hash())
-            fund_bundle: SpendBundle = (
-                await wallet_client.create_signed_transaction(
-                    [{"puzzle_hash": SINGLETON_LAUNCHER_HASH, "amount": 1}],
-                    fund_coins,  # I think this is probably imperfect but will work for now
+            announcement = AssertCoinAnnouncement(
+                asserted_id=launcher_coin.name(),
+                asserted_msg=Program.from_bytes(bytes(launch_spend.solution)).get_tree_hash(),
+            )
+            fund_response = await wallet_client.create_signed_transactions(
+                CreateSignedTransaction(
+                    wallet_id=uint32(1),
+                    additions=[Addition(puzzle_hash=SINGLETON_LAUNCHER_HASH, amount=uint64(1))],
+                    coins=fund_coins,
                     fee=uint64(fee),
-                    coin_announcements=[announcement],
-                )
-            ).spend_bundle
+                ),
+                DEFAULT_TX_CONFIG,
+                (announcement,),
+            )
+            if len(fund_response.signed_txs) == 0:
+                raise ValueError("`create_signed_transaction` returned no transactions!")
+            fund_bundle: Optional[SpendBundle] = fund_response.signed_txs[0].spend_bundle
+            if fund_bundle is None:
+                raise ValueError("`create_signed_transaction` returned an unsigned transaction!")
             result = await node_client.push_tx(SpendBundle.aggregate([creation_bundle, fund_bundle]))
             if not result["success"]:
                 raise ValueError(result["error"])
@@ -575,7 +606,7 @@ def sync_cmd(
                     initial_spend = await node_client.get_puzzle_and_solution(
                         current_coin_record.coin.name(), current_coin_record.spent_block_index
                     )
-                    puzzle_root = get_puzzle_root_from_puzzle(initial_spend.puzzle_reveal.to_program())
+                    puzzle_root = get_puzzle_root_from_puzzle(Program.from_bytes(bytes(initial_spend.puzzle_reveal)))
                 current_singleton = SingletonRecord(
                     current_coin_record.coin,
                     puzzle_root,
@@ -605,7 +636,7 @@ def sync_cmd(
                     break
 
                 # Fill in all of the information about the spent singleton
-                latest_solution: Program = latest_spend.solution.to_program()
+                latest_solution: Program = Program.from_bytes(bytes(latest_spend.solution))
                 spend_type: SpendType = get_spend_type_for_solution(latest_solution)
                 await sync_store.add_singleton_record(
                     dataclasses.replace(
@@ -738,7 +769,7 @@ def sync_cmd(
                         )
                         assert ach_spend is not None
                         spending_pubkey: Optional[G1Element] = get_spending_pubkey_for_drop_coin(
-                            ach_spend.solution.to_program()
+                            Program.from_bytes(bytes(ach_spend.solution))
                         )
                     else:
                         completed = True
@@ -759,11 +790,13 @@ def sync_cmd(
                         spent_drop_coin.coin.name(), spent_drop_coin.spent_block_index
                     )
                     assert rekey_spend is not None
-                    completed = was_rekey_completed(rekey_spend.solution.to_program())
+                    completed = was_rekey_completed(Program.from_bytes(bytes(rekey_spend.solution)))
                     if completed:
                         spending_pubkey = None
                     else:
-                        spending_pubkey = get_spending_pubkey_for_drop_coin(rekey_spend.solution.to_program())
+                        spending_pubkey = get_spending_pubkey_for_drop_coin(
+                            Program.from_bytes(bytes(rekey_spend.solution))
+                        )
                     await sync_store.add_rekey_record(
                         dataclasses.replace(
                             current_rekey_record,
@@ -877,30 +910,38 @@ def push_cmd(
             spends: List[SpendBundle] = [push_bundle]
 
             if fee > 0:
-                fee_announcement: Optional[Announcement] = None
+                fee_announcement: Optional[AssertCoinAnnouncement] = None
                 for coin_spend in push_bundle.coin_spends:
-                    _, conditions = coin_spend.puzzle_reveal.run_with_cost(INFINITE_COST, coin_spend.solution)
+                    puzzle_reveal = Program.from_bytes(bytes(coin_spend.puzzle_reveal))
+                    solution = Program.from_bytes(bytes(coin_spend.solution))
+                    _, conditions = puzzle_reveal.run_with_cost(INFINITE_COST, solution)
                     for condition in conditions.as_python():
                         if condition[0] == int_to_bytes(60):  # CREATE_COIN_ANNOUNCEMENT
-                            fee_announcement = Announcement(coin_spend.coin.name(), condition[1])
+                            fee_announcement = AssertCoinAnnouncement(
+                                asserted_id=coin_spend.coin.name(),
+                                asserted_msg=condition[1],
+                            )
                             break
                 if fee_announcement is None:
                     print("Cannot find a way to link fee to this transaction. Please specify 0 fee and try again.")
                     return
                 else:
-                    txs: List[TransactionRecord] = await wallet_client.create_signed_transactions(
-                        additions=[
-                            {"puzzle_hash": bytes32([0] * 32), "amount": 0}
-                        ],  # This is dust but the RPC requires it,
-                        fee=uint64(fee),
-                        coin_announcements=[fee_announcement],
-                        min_coin_amount=uint64(0),
-                        max_coin_amount=uint64(2**64 - 1),
+                    tx_response = await wallet_client.create_signed_transactions(
+                        CreateSignedTransaction(
+                            wallet_id=uint32(1),
+                            additions=[Addition(puzzle_hash=bytes32([0] * 32), amount=uint64(0))],
+                            fee=uint64(fee),
+                        ),
+                        DEFAULT_TX_CONFIG,
+                        (fee_announcement,),
                     )
+                    txs: List[TransactionRecord] = tx_response.signed_txs
                     if len(txs) == 0:
                         raise ValueError("`create_signed_transaction` returned empty list!")
 
                     tx = txs[0]
+                    if tx.spend_bundle is None:
+                        raise ValueError("`create_signed_transaction` returned an unsigned transaction!")
                     spends.append(tx.spend_bundle)
 
             result = await node_client.push_tx(SpendBundle.aggregate(spends))
@@ -1028,10 +1069,7 @@ def payments_cmd(
                     calculate_synthetic_offset(agg_pk, DEFAULT_HIDDEN_PUZZLE_HASH).to_bytes(32, "big")
                 )
             )
-            coin_spends = [
-                HSMCoinSpend(cs.coin, cs.puzzle_reveal.to_program(), cs.solution.to_program())
-                for cs in singleton_bundle.coin_spends
-            ]
+            coin_spends = [to_hsm_coin_spend(cs) for cs in singleton_bundle.coin_spends]
             unsigned_spend = UnsignedSpend(
                 coin_spends,
                 [SumHint(as_bls_pubkey_list, synth_sk)],
@@ -1123,10 +1161,7 @@ def start_rekey_cmd(
                     calculate_synthetic_offset(agg_pk, DEFAULT_HIDDEN_PUZZLE_HASH).to_bytes(32, "big")
                 )
             )
-            coin_spends = [
-                HSMCoinSpend(cs.coin, cs.puzzle_reveal.to_program(), cs.solution.to_program())
-                for cs in singleton_bundle.coin_spends
-            ]
+            coin_spends = [to_hsm_coin_spend(cs) for cs in singleton_bundle.coin_spends]
             unsigned_spend = UnsignedSpend(
                 coin_spends,
                 [SumHint(as_bls_pubkey_list, synth_sk)],
@@ -1255,10 +1290,7 @@ def clawback_cmd(
                     calculate_synthetic_offset(agg_pk, DEFAULT_HIDDEN_PUZZLE_HASH).to_bytes(32, "big")
                 )
             )
-            coin_spends = [
-                HSMCoinSpend(cs.coin, cs.puzzle_reveal.to_program(), cs.solution.to_program())
-                for cs in clawback_bundle.coin_spends
-            ]
+            coin_spends = [to_hsm_coin_spend(cs) for cs in clawback_bundle.coin_spends]
             unsigned_spend = UnsignedSpend(
                 coin_spends,
                 [SumHint(as_bls_pubkey_list, synth_sk)],
@@ -1443,10 +1475,7 @@ def increase_cmd(
             )
 
             as_bls_pubkey_list = [BLSPublicKey(pk) for pk in pubkey_list]
-            coin_spends = [
-                HSMCoinSpend(cs.coin, cs.puzzle_reveal.to_program(), cs.solution.to_program())
-                for cs in lock_bundle.coin_spends
-            ]
+            coin_spends = [to_hsm_coin_spend(cs) for cs in lock_bundle.coin_spends]
             unsigned_spend = UnsignedSpend(
                 coin_spends,
                 [SumHint(as_bls_pubkey_list, BLSSecretExponent.zero())],
@@ -1635,7 +1664,9 @@ def audit_cmd(
                     continue
                 if singleton.spend_type == SpendType.HANDLE_PAYMENT:
                     params: Dict[str, Union[str, int, bool]] = {}
-                    out_amount, in_amount, p2_ph = get_spend_params_for_ach_creation(singleton.solution.to_program())
+                    out_amount, in_amount, p2_ph = get_spend_params_for_ach_creation(
+                        Program.from_bytes(bytes(singleton.solution))
+                    )
                     if out_amount > 0:
                         params["out_amount"] = out_amount
                         params["recipient_ph"] = p2_ph.hex()
@@ -1650,7 +1681,9 @@ def audit_cmd(
                                 params["clawback_pubkey"] = BLSPublicKey(ach_record.clawback_pubkey).as_bech32m()
                 elif singleton.spend_type == SpendType.START_REKEY:
                     params = {}
-                    timelock, new_root = get_spend_params_for_rekey_creation(singleton.solution.to_program())
+                    timelock, new_root = get_spend_params_for_rekey_creation(
+                        Program.from_bytes(bytes(singleton.solution))
+                    )
                     rekey_record: RekeyRecord = rekey_dict[coin_id]
                     params["from_root"] = rekey_record.from_root.hex()
                     params["to_root"] = rekey_record.to_root.hex()

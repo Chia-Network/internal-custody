@@ -2,11 +2,11 @@ from typing import List, Tuple
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program
-from chia.types.blockchain_format.sized_bytes import bytes32
-from chia.types.coin_spend import CoinSpend
+from chia_rs.sized_bytes import bytes32
+from chia.types.coin_spend import CoinSpend, make_spend
 from chia.types.condition_opcodes import ConditionOpcode
 from chia.util.hash import std_hash
-from chia.util.ints import uint64
+from chia_rs.sized_ints import uint64
 from chia.wallet.puzzles.singleton_top_layer import (
     SINGLETON_LAUNCHER,
     SINGLETON_LAUNCHER_HASH,
@@ -64,7 +64,7 @@ def generate_launch_conditions_and_coin_spend(
 
     conditions = [create_launcher, assert_launcher_announcement]
 
-    launcher_coin_spend = CoinSpend(
+    launcher_coin_spend = make_spend(
         launcher_coin,
         SINGLETON_LAUNCHER,
         launcher_solution,

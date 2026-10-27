@@ -1,21 +1,20 @@
 import dataclasses
 import enum
 
-from blspy import G1Element, G2Element
+from chia_rs import G1Element, G2Element, SpendBundle
 from clvm.casts import int_from_bytes
 from typing import List, Optional, Tuple
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program
-from chia.types.blockchain_format.sized_bytes import bytes32
-from chia.types.coin_spend import CoinSpend
+from chia_rs.sized_bytes import bytes32
+from chia.types.coin_spend import CoinSpend, make_spend
 from chia.consensus.default_constants import DEFAULT_CONSTANTS
-from chia.types.spend_bundle import SpendBundle
 from chia.wallet.lineage_proof import LineageProof
 from chia.wallet.puzzles.p2_conditions import puzzle_for_conditions
 from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import puzzle_for_pk, solution_for_delegated_puzzle
 from chia.util.hash import std_hash
-from chia.util.ints import uint8, uint64
+from chia_rs.sized_ints import uint8, uint64
 
 from cic.drivers.drop_coins import (
     construct_rekey_puzzle,
@@ -135,7 +134,7 @@ def get_withdrawal_spend_info(
     p2_singleton_claim_conditions: List[Program] = []
     for p2_singleton in p2_singletons_to_claim:
         p2_singleton_spends.append(
-            CoinSpend(
+            make_spend(
                 p2_singleton,
                 construct_p2_singleton(derivation.prefarm_info.launcher_id),
                 solve_p2_singleton(p2_singleton, singleton_inner_puzhash),
@@ -178,7 +177,7 @@ def get_withdrawal_spend_info(
     full_sb = (
         SpendBundle(
             [
-                CoinSpend(
+                make_spend(
                     singleton,
                     construct_full_singleton(derivation.prefarm_info),
                     solve_singleton(
@@ -245,7 +244,7 @@ def get_ach_clawback_spend_info(
     return (
         SpendBundle(
             [
-                CoinSpend(
+                make_spend(
                     ach_coin,
                     curry_ach_puzzle(derivation.prefarm_info, clawforward_ph),
                     solve_ach_clawback(
@@ -276,7 +275,7 @@ def get_ach_clawforward_spend_bundle(
 ) -> SpendBundle:
     return SpendBundle(
         [
-            CoinSpend(
+            make_spend(
                 ach_coin,
                 curry_ach_puzzle(derivation.prefarm_info, clawforward_ph),
                 solve_ach_completion(derivation.prefarm_info, ach_coin.amount),
@@ -403,7 +402,7 @@ def get_rekey_spend_info(
             dataclasses.replace(derivation.prefarm_info, puzzle_root=derivation.next_root),
         )
         lock_spends = [
-            CoinSpend(
+            make_spend(
                 Coin(
                     singleton.name(),
                     rekey_puzzle.get_tree_hash(),
@@ -419,7 +418,7 @@ def get_rekey_spend_info(
                     ),
                 ),
             ),
-            CoinSpend(
+            make_spend(
                 Coin(
                     singleton.name(),
                     singleton.puzzle_hash,
@@ -446,7 +445,7 @@ def get_rekey_spend_info(
     return (
         SpendBundle(
             [
-                CoinSpend(
+                make_spend(
                     singleton,
                     construct_full_singleton(derivation.prefarm_info),
                     solve_singleton(
@@ -491,7 +490,7 @@ def get_rekey_clawback_spend_info(
     return (
         SpendBundle(
             [
-                CoinSpend(
+                make_spend(
                     rekey_coin,
                     curry_rekey_puzzle(
                         timelock_multiple,
@@ -532,7 +531,7 @@ def get_rekey_completion_spend(
 
     return SpendBundle(
         [
-            CoinSpend(
+            make_spend(
                 singleton,
                 construct_full_singleton(derivation.prefarm_info),
                 solve_singleton(
@@ -546,7 +545,7 @@ def get_rekey_completion_spend(
                     ),
                 ),
             ),
-            CoinSpend(
+            make_spend(
                 rekey_coin,
                 curry_rekey_puzzle(
                     timelock,

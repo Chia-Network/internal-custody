@@ -1,14 +1,14 @@
 import dataclasses
 
-from blspy import G1Element
+from chia_rs import G1Element
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import SerializedProgram
-from chia.types.blockchain_format.sized_bytes import bytes32
+from chia_rs.sized_bytes import bytes32
 from chia.util.db_wrapper import DBWrapper2
-from chia.util.ints import uint32, uint64
+from chia_rs.sized_ints import uint32, uint64
 from chia.wallet.lineage_proof import LineageProof
 
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
@@ -306,7 +306,7 @@ class SyncStore:
         if info is not None:
             try:
                 valid = PrefarmInfo.from_bytes(info[1]).is_valid_update(configuration)
-            except AssertionError:
+            except (AssertionError, ValueError):
                 assert isinstance(configuration, RootDerivation)
                 valid = RootDerivation.from_bytes(info[1]).prefarm_info.is_valid_update(configuration.prefarm_info)
             if not valid:
@@ -344,7 +344,7 @@ class SyncStore:
                 return derivation.prefarm_info
             else:
                 return derivation
-        except AssertionError:
+        except (AssertionError, ValueError):
             if not public:
                 raise ValueError("The configuration file is not a public configuration file")
             else:
@@ -386,7 +386,7 @@ class SyncStore:
                     derivation, prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=puzzle_root)
                 )
             public = False
-        except AssertionError:
+        except (AssertionError, ValueError):
             prefarm_info = PrefarmInfo.from_bytes(info[1])
             new_configuration = dataclasses.replace(prefarm_info, puzzle_root=puzzle_root)
             public = True
