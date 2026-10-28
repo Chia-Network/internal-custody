@@ -20,18 +20,18 @@ The bundle is therefore split into:
 * step 2: all ephemeral spends.
 
 The two split bundles themselves need no signature for the ephemeral spends;
-step 1 carries the aggregated signature.  An optional fee transaction is
-aggregated into whichever step holds the announcement it asserts.  For a lock
-level increase that announcement comes from the lock coin completion spend, so
-the fee is aggregated into step 2, which then also carries the fee transaction's
-signature.
+step 1 carries the aggregated signature.  ``split_two_step_push`` itself adds no
+fee transaction.  Afterwards ``cic push_tx`` attaches a separate fee to each
+step: the step that holds the announcement binds its fee to that coin
+announcement, and the other step binds its fee with ``ASSERT_CONCURRENT_SPEND``
+on its first spend.
 
 The lock coin (0 mojo, created by START_REKEY in step 1) is confirmed on chain
 for at least one block before FINISH_REKEY and rekey_completion are spent in
 step 2, so between the two steps the new singleton and the lock coin exist on
-chain.  If step 2 never lands, the lock coin stays pending on chain and the CLI
-prints the exact step 2 bundle (hex) so it can be pushed later with
-``cic push_tx``.
+chain.  If step 2 never lands, the lock coin stays pending on chain and never
+expires; the CLI prints the exact step 2 bundle (hex) so it can be pushed later
+with ``cic push_tx``.
 """
 
 from dataclasses import dataclass

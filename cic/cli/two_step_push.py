@@ -60,8 +60,8 @@ async def push_in_two_steps(
     they are confirmed) or ``confirmation_timeout`` seconds have elapsed since
     the start of the wait.  A timeout of 0 still performs one check before
     raising.  Once every step 2 coin is confirmed, step 2 is pushed.  Its
-    ephemeral spends need no signature; when a fee transaction is aggregated
-    into step 2, it also carries the fee transaction's signature.
+    ephemeral spends need no signature of their own; when a fee was attached,
+    it also carries the step 2 fee transaction's signature.
 
     If step 1 is rejected, nothing is pushed and step 2 is not attempted.  If the
     wait times out or step 2 is rejected, the raised ``TwoStepPushError`` carries
@@ -94,9 +94,12 @@ async def push_in_two_steps(
             break
         if time.monotonic() - start >= confirmation_timeout:
             raise TwoStepPushError(
-                "Step 1 was accepted, but the coins spent in step 2 were not seen confirmed within "
-                f"{confirmation_timeout} seconds. The second part can be pushed later with `cic push_tx`. "
-                f"{_second_bundle_description(second_bundle)}",
+                "Step 1 was accepted by the node into its mempool, but the coins spent in step 2 were "
+                f"not seen confirmed within {confirmation_timeout} seconds. Step 1 may have been dropped "
+                "or may still be waiting to be confirmed. Verify with `cic sync` (or a block explorer) "
+                "that the lock coin and the new singleton coin exist before pushing step 2; a step 2 "
+                "pushed before they exist will be rejected. The second part can be pushed later with "
+                f"`cic push_tx`. {_second_bundle_description(second_bundle)}",
                 second_bundle,
                 second_bundle_without_fee,
             )

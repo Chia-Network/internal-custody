@@ -158,6 +158,9 @@ def test_push_tx_two_step_confirmation_timeout(monkeypatch):
             )
             assert result.exit_code != 0
             assert "not seen confirmed" in result.output
+            assert "cic sync" in result.output
+            assert "may have been dropped" in result.output
+            assert "Step 1 was accepted, but" not in result.output
             match = re.search(r"Step 2 spend bundle \(hex\): ([0-9a-f]+)", result.output)
             assert match is not None
             second_hex = match.group(1)

@@ -188,6 +188,9 @@ async def test_push_in_two_steps_confirmation_timeout():
         await push_in_two_steps(node_client, first, second, 0, 0.01)
 
     assert "not seen confirmed" in str(error.value)
+    assert "cic sync" in str(error.value)
+    assert "may have been dropped" in str(error.value)
+    assert "Step 1 was accepted, but" not in str(error.value)
     assert error.value.second_bundle == second
     assert SpendBundle.from_bytes(bytes.fromhex(error.value.second_bundle_hex)) == second
     assert len(node_client.pushed) == 1
