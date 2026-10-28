@@ -102,6 +102,7 @@ BASELINE_PARAMS: Dict[str, Tuple[Tuple[Any, ...], ...]] = {
         ),
         ("maximum_extra_cost", ("--maximum-extra-cost", "-mc"), (), 50, False, False, False, "integer", 1),
         ("amount_threshold", ("--amount-threshold", "-at"), (), 1000000000000, False, False, False, "integer", 1),
+        ("previous_spends", ("--previous-spends", "-ps"), (), None, False, False, False, "text", 1),
     ),
     "push_tx": (
         ("spend_bundle", ("--spend-bundle", "-b"), (), UNSET, True, False, False, "text", 1),

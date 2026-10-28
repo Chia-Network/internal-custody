@@ -3,7 +3,7 @@
 import dataclasses
 import os
 from pathlib import Path
-from typing import Iterable, List, Union
+from typing import Iterable, List, Optional, Union
 
 from chia_rs import AugSchemeMPL, G1Element, PrivateKey, SpendBundle
 from chia_rs.sized_bytes import bytes32
@@ -61,9 +61,10 @@ def sign_unsigned_spend(filename: Union[str, Path], key_indices: Iterable[int]) 
     return SpendBundle.from_bytes(to_bytes(hsms_bundle))
 
 
-def setup_launched_singleton(runner: CliRunner) -> LaunchedSingleton:
+def setup_launched_singleton(runner: CliRunner, prefarm_info: Optional[PrefarmInfo] = None) -> LaunchedSingleton:
     """Run the minimum init/derive/launch/sync sequence used by test_init."""
-    prefarm_info = make_prefarm_info()
+    if prefarm_info is None:
+        prefarm_info = make_prefarm_info()
     os.mkdir("infos")
     result = runner.invoke(
         cli,

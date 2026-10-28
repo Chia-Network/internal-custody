@@ -39,8 +39,7 @@ PAYMENT_AMOUNT = 2
 FUNDING_AMOUNT = 1000
 RECIPIENT_ADDRESS = encode_puzzle_hash(bytes32([0] * 32), "xch")
 
-# Flags that exist today. A later change adds payment -ps/--previous-spends
-# (restoring the earlier tool's flag) and extends this table.
+# Flags of the earlier operator tooling, including payment -ps/--previous-spends.
 BASELINE_CLI = {
     "audit": ["--db-path", "--diff", "--filepath", "-d", "-db", "-f"],
     "clawback": ["--db-path", "--filename", "--pubkeys", "-db", "-f", "-pks"],
@@ -99,6 +98,7 @@ BASELINE_CLI = {
         "--db-path",
         "--filename",
         "--maximum-extra-cost",
+        "--previous-spends",
         "--pubkeys",
         "--recipient-address",
         "-a",
@@ -108,6 +108,7 @@ BASELINE_CLI = {
         "-f",
         "-mc",
         "-pks",
+        "-ps",
         "-t",
     ],
     "push_tx": [

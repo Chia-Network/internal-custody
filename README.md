@@ -55,6 +55,26 @@ cic push_tx -b ./initial_absorb.signed -m 100000000
 cic sync
 ```
 
+## Generating a series of payments
+
+Generate the files in push order. Each file after the first is built against the singleton as it will be after the earlier files confirm:
+```
+cic payment ... -f p1
+cic payment ... --previous-spends p1 -f p2
+cic payment ... --previous-spends p1,p2 -f p3
+```
+The files can be unsigned spend files or signed spend files. List them in push order.
+
+Each spend must be pushed no sooner than `withdrawal_timelock` seconds after the previous spend confirms. The singleton changes with every payment, so a series can never be pushed as one bundle. Any other spend of the singleton in between leaves the remaining files unusable, and they must be regenerated with `cic payment --previous-spends`.
+
+To verify a list against the synced state, run:
+```
+cic check_series --db-path <db> --spends p1,p2,p3
+```
+This command is read-only. It prints the earliest push time and reports any file that does not follow the series.
+
+Store signed spend files with the same care as other signed transactions.
+
 ## Clawback
 ````
 cic clawback -f clawback.unsigned -pks "1.pk,2.pk"
