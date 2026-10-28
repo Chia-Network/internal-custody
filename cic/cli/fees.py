@@ -7,7 +7,7 @@ from chia_rs.sized_bytes import bytes32
 from chia_rs.sized_ints import uint32, uint64
 from chia.types.blockchain_format.program import Program, INFINITE_COST
 from chia.types.coin_spend import CoinSpend
-from chia.wallet.conditions import AssertCoinAnnouncement, AssertConcurrentSpend, Condition
+from chia.wallet.conditions import AssertCoinAnnouncement, Condition
 from chia.wallet.transaction_record import TransactionRecord
 from chia.wallet.util.tx_config import DEFAULT_TX_CONFIG
 from chia.wallet.wallet_request_types import Addition, CreateSignedTransaction
@@ -55,25 +55,6 @@ def bundle_fee(spend_bundle: SpendBundle) -> int:
     both sides and therefore cancels out.
     """
     return sum(coin.amount for coin in spend_bundle.removals()) - sum(coin.amount for coin in spend_bundle.additions())
-
-
-def fee_condition_for_step(
-    step_bundle: SpendBundle,
-    announcement_spend: CoinSpend,
-    announcement: AssertCoinAnnouncement,
-) -> Condition:
-    """Return the condition binding a fee transaction to ``step_bundle``.
-
-    The step that contains the announcement spend asserts the announcement itself.
-    The other step asserts that its first coin spend happens concurrently with the
-    fee spend, which keeps the fee in the same push as the rest of that step.
-    """
-    announcement_coin_id = announcement_spend.coin.name()
-    if any(coin_spend.coin.name() == announcement_coin_id for coin_spend in step_bundle.coin_spends):
-        return announcement
-    if len(step_bundle.coin_spends) == 0:
-        raise ValueError("Cannot link a fee to an empty step of a two-step push")
-    return AssertConcurrentSpend(step_bundle.coin_spends[0].coin.name())
 
 
 async def create_fee_spend_bundle(

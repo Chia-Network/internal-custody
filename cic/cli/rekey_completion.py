@@ -18,16 +18,15 @@ def get_rekey_completion_bundle(
 ) -> SpendBundle:
     """Build the spend bundle that completes the given rekey or lock record."""
     if record.timelock == 0:
-        new_derivation = None
-        num_pubkeys = derivation.required_pubkeys + 1
-    else:
-        new_derivation = dataclasses.replace(
-            derivation,
-            prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=record.to_root),
-        )
-        num_pubkeys = derivation.required_pubkeys - (record.timelock - 1)
+        raise ValueError("Lock level increase coins (timelock 0) are not supported by this version of cic")
 
-    completion_bundle = get_rekey_completion_spend(
+    new_derivation = dataclasses.replace(
+        derivation,
+        prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=record.to_root),
+    )
+    num_pubkeys = derivation.required_pubkeys - (record.timelock - 1)
+
+    return get_rekey_completion_spend(
         current_singleton.coin,
         record.coin,
         derivation.pubkey_list[0:num_pubkeys],
@@ -40,15 +39,3 @@ def get_rekey_completion_bundle(
         ),
         new_derivation,
     )
-    if record.timelock == 0:
-        # Put the bundle in the same order as the second push that `cic push_tx`
-        # prints: the lock coin spend first, then the singleton FINISH_REKEY
-        # spend.  This makes the two bundles byte-identical.
-        completion_bundle = SpendBundle(
-            sorted(
-                completion_bundle.coin_spends,
-                key=lambda coin_spend: coin_spend.coin.name() != record.coin.name(),
-            ),
-            completion_bundle.aggregated_signature,
-        )
-    return completion_bundle

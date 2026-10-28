@@ -12,7 +12,7 @@ from chia._tests.util.spend_sim import SpendSim, SimClient
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program
 from chia.types.mempool_inclusion_status import MempoolInclusionStatus
-from chia.types.coin_spend import CoinSpend, make_spend
+from chia.types.coin_spend import make_spend
 from chia.util.errors import Err
 from chia.util.hash import std_hash
 from chia.wallet.lineage_proof import LineageProof
@@ -25,7 +25,7 @@ from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
 )
 from chia.wallet.puzzles.singleton_top_layer import SINGLETON_LAUNCHER_HASH
 
-from cic.drivers.drop_coins import curry_ach_puzzle, solve_ach_clawback, solve_rekey_clawback
+from cic.drivers.drop_coins import curry_ach_puzzle, solve_ach_clawback
 from cic.drivers.filters import construct_rekey_filter, solve_filter_for_payment
 from cic.drivers.merkle_utils import simplify_merkle_proof
 from cic.drivers.prefarm import (
@@ -37,18 +37,16 @@ from cic.drivers.prefarm import (
     get_rekey_spend_info,
     get_rekey_clawback_spend_info,
     get_rekey_completion_spend,
-    calculate_rekey_args,
 )
 from cic.drivers.puzzle_root_construction import (
     calculate_puzzle_root,
+    derive_next_lock_level,
     RootDerivation,
     get_all_aggregate_pubkey_combinations,
 )
 from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.singleton import generate_launch_conditions_and_coin_spend, construct_p2_singleton
-from cic.drivers.two_step_push import split_two_step_push
-
-from tests import push_two_step_bundle, run_coin_spend
+from tests import run_coin_spend
 from tests.cost_logger import CostLogger
 
 ACS = Program.to(1)
@@ -420,163 +418,134 @@ async def test_rekeys(_setup_info, cost_logger):
     setup_info = _setup_info
     # Pubkey setup
     ONE_PUBKEY: G1Element = secret_key_for_index(0).get_g1()
-    TWO_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 2)]
     THREE_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 3)]
     FOUR_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 4)]
-    FIVE_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(0, 5)]
     NEW_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(5, 10)]
     THREE_NEW_PUBKEYS: List[G1Element] = [secret_key_for_index(i).get_g1() for i in range(5, 8)]
-    AGG_TWO = G1Element()
     AGG_THREE = G1Element()
     AGG_THREE_NEW = G1Element()
     AGG_FOUR = G1Element()
-    AGG_FIVE = G1Element()
-    for pk in TWO_PUBKEYS:
-        AGG_TWO += pk
     for pk in THREE_PUBKEYS:
         AGG_THREE += pk
     for pk in THREE_NEW_PUBKEYS:
         AGG_THREE_NEW += pk
     for pk in FOUR_PUBKEYS:
         AGG_FOUR += pk
-    for pk in FIVE_PUBKEYS:
-        AGG_FIVE += pk
 
     # Let's try increasing the lock level all the way to the max
     # Bump from 3 -> 4
-    three_to_four_bundle, data_to_sign = get_rekey_spend_info(
+    new_derivation_4 = derive_next_lock_level(setup_info.derivation)
+    start_3_to_4_bundle, data_to_sign = get_rekey_spend_info(
         setup_info.singleton,
-        FOUR_PUBKEYS,
+        THREE_PUBKEYS,
         setup_info.derivation,
         setup_info.first_lineage_proof,
+        new_derivation_4,
+        [Program.to([60, b""])],
     )
+    synth_pk: G1Element = get_synthetic_pubkey(AGG_THREE)
     signature: G2Element = AugSchemeMPL.aggregate(
-        [sign_message_at_index(i, data_to_sign, AGG_FOUR) for i in range(0, 4)]
+        [
+            sign_message_with_offset(AGG_THREE, data_to_sign, synth_pk),
+            *[sign_message_at_index(i, data_to_sign, synth_pk) for i in range(0, 3)],
+        ]
     )
-    aggregate_bundle = SpendBundle.aggregate([three_to_four_bundle, SpendBundle([], signature)])
-    # Before we actually perform a successful one, let's try to cancel it ephemerally and make sure that fails
-    lock_completion_spend: CoinSpend = [
-        cs
-        for cs in aggregate_bundle.coin_spends
-        if cs.coin.parent_coin_info == setup_info.singleton.name() and cs.coin.amount == 0
-    ][0]
-    singleton_spend: CoinSpend = [cs for cs in aggregate_bundle.coin_spends if cs.coin == setup_info.singleton][0]
-    _, new_puzzle_root, filter_puzzle, filter_proof, filter_solution, extra_data_to_sign = calculate_rekey_args(
-        lock_completion_spend.coin,
-        FOUR_PUBKEYS,
-        setup_info.derivation,
-    )
-    cancellation_spend: CoinSpend = lock_completion_spend.replace(
-        solution=solve_rekey_clawback(
-            setup_info.prefarm_info,
-            new_puzzle_root,
-            filter_puzzle,
-            filter_proof,
-            filter_solution,
-        ).to_serialized(),
-    )
-    extra_signature: G2Element = AugSchemeMPL.aggregate(
-        [sign_message_at_index(i, data_to_sign, AGG_FOUR) for i in range(0, 4)],
-    )
-    ephemeral_cancel_bundle = SpendBundle.aggregate(
-        [SpendBundle([singleton_spend, cancellation_spend], signature), SpendBundle([], extra_signature)]
-    )
-    result = await setup_info.sim_client.push_tx(ephemeral_cancel_bundle)
-    assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
-    with pytest.raises(ValueError, match="clvm raise"):
-        run_coin_spend(cancellation_spend)
-    # Now actually push the honest bundle
-    first_result, second_result = await push_two_step_bundle(setup_info.sim, setup_info.sim_client, aggregate_bundle)
-    assert first_result[0] == MempoolInclusionStatus.SUCCESS
-    assert second_result[0] == MempoolInclusionStatus.SUCCESS
-    two_step_bundles = split_two_step_push(aggregate_bundle)
-    cost_logger.add_cost("Lock Level 3 -> 4 (step 1)", two_step_bundles.first)
-    cost_logger.add_cost("Lock Level 3 -> 4 (step 2)", two_step_bundles.second)
+    aggregate_bundle = SpendBundle.aggregate([start_3_to_4_bundle, SpendBundle([], signature)])
+    setup_info.sim.pass_time(setup_info.prefarm_info.rekey_increments)
+    await setup_info.sim.farm_block()
+    result = await setup_info.sim_client.push_tx(aggregate_bundle)
+    assert result == (MempoolInclusionStatus.SUCCESS, None)
+    await setup_info.sim.farm_block()
+    cost_logger.add_cost("Lock Level 3 -> 4 (rekey start)", aggregate_bundle)
 
-    # Then make sure there's no way to bump it with 3 again
-    new_derivation: RootDerivation = calculate_puzzle_root(
-        setup_info.prefarm_info,
-        setup_info.derivation.pubkey_list,
-        uint32(4),  # lock level 4
-        uint32(5),
-        uint32(1),
-    )
-    ephemeral_singleton = Coin(
-        setup_info.singleton.name(),
-        setup_info.singleton.puzzle_hash,
+    rekey_coin: Coin = [c for c in start_3_to_4_bundle.additions() if c.amount == 0][0]
+    rekey_lineage = LineageProof(
+        setup_info.singleton.parent_coin_info,
+        construct_singleton_inner_puzzle(setup_info.derivation.prefarm_info).get_tree_hash(),
         setup_info.singleton.amount,
     )
-    new_singleton = Coin(
-        ephemeral_singleton.name(),
-        construct_full_singleton(new_derivation.prefarm_info).get_tree_hash(),
-        setup_info.singleton.amount,
+    setup_info.sim.pass_time(setup_info.prefarm_info.rekey_clawback_period)
+    await setup_info.sim.farm_block()
+    finish_3_to_4_bundle = get_rekey_completion_spend(
+        Coin(setup_info.singleton.name(), setup_info.singleton.puzzle_hash, setup_info.singleton.amount),
+        rekey_coin,
+        THREE_PUBKEYS,
+        setup_info.derivation,
+        rekey_lineage,
+        rekey_lineage,
+        new_derivation_4,
     )
+    result = await setup_info.sim_client.push_tx(finish_3_to_4_bundle)
+    assert result == (MempoolInclusionStatus.SUCCESS, None)
+    await setup_info.sim.farm_block()
+    cost_logger.add_cost("Lock Level 3 -> 4 (rekey finish)", finish_3_to_4_bundle)
+
+    new_singleton = [c for c in finish_3_to_4_bundle.additions() if c.amount == setup_info.singleton.amount][0]
+    assert new_singleton.puzzle_hash == construct_full_singleton(new_derivation_4.prefarm_info).get_tree_hash()
     new_lineage_proof = LineageProof(
-        ephemeral_singleton.parent_coin_info,
-        construct_singleton_inner_puzzle(setup_info.prefarm_info).get_tree_hash(),
-        ephemeral_singleton.amount,
+        setup_info.singleton.name(),
+        construct_singleton_inner_puzzle(setup_info.derivation.prefarm_info).get_tree_hash(),
+        setup_info.singleton.amount,
     )
-    new_singleton_record = await setup_info.sim_client.get_coin_record_by_name(new_singleton.name())
-    assert new_singleton_record is not None
-    assert new_singleton_record.confirmed_block_index > 0
-    assert not new_singleton_record.spent
-    with pytest.raises(ValueError, match="Could not find a puzzle matching the specified pubkey"):
-        _, _ = get_rekey_spend_info(
-            new_singleton,
-            FOUR_PUBKEYS,
-            new_derivation,
-            new_lineage_proof,
-        )
 
     # Then 4 -> 5
-    four_to_five_bundle, data_to_sign = get_rekey_spend_info(
+    new_derivation_5 = derive_next_lock_level(new_derivation_4)
+    start_4_to_5_bundle, data_to_sign = get_rekey_spend_info(
         new_singleton,
-        FIVE_PUBKEYS,
-        new_derivation,
+        FOUR_PUBKEYS,
+        new_derivation_4,
         new_lineage_proof,
+        new_derivation_5,
+        [Program.to([60, b""])],
     )
-    signature: G2Element = AugSchemeMPL.aggregate(
-        [sign_message_at_index(i, data_to_sign, AGG_FIVE) for i in range(0, 5)]
+    synth_pk = get_synthetic_pubkey(AGG_FOUR)
+    signature = AugSchemeMPL.aggregate(
+        [
+            sign_message_with_offset(AGG_FOUR, data_to_sign, synth_pk),
+            *[sign_message_at_index(i, data_to_sign, synth_pk) for i in range(0, 4)],
+        ]
     )
-    aggregate_bundle = SpendBundle.aggregate([four_to_five_bundle, SpendBundle([], signature)])
-    first_result, second_result = await push_two_step_bundle(setup_info.sim, setup_info.sim_client, aggregate_bundle)
-    assert first_result[0] == MempoolInclusionStatus.SUCCESS
-    assert second_result[0] == MempoolInclusionStatus.SUCCESS
-    two_step_bundles = split_two_step_push(aggregate_bundle)
-    cost_logger.add_cost("Lock Level 4 -> 5 (step 1)", two_step_bundles.first)
-    cost_logger.add_cost("Lock Level 4 -> 5 (step 2)", two_step_bundles.second)
+    aggregate_bundle = SpendBundle.aggregate([start_4_to_5_bundle, SpendBundle([], signature)])
+    setup_info.sim.pass_time(setup_info.prefarm_info.rekey_increments)
+    await setup_info.sim.farm_block()
+    result = await setup_info.sim_client.push_tx(aggregate_bundle)
+    assert result == (MempoolInclusionStatus.SUCCESS, None)
+    await setup_info.sim.farm_block()
+    cost_logger.add_cost("Lock Level 4 -> 5 (rekey start)", aggregate_bundle)
 
-    # Then make sure we can't increase any further
-    previous_prefarm_info: PrefarmInfo = new_derivation.prefarm_info
-    new_derivation = calculate_puzzle_root(
-        setup_info.prefarm_info,
-        setup_info.derivation.pubkey_list,
-        uint32(5),  # lock level 5
-        uint32(5),
-        uint32(1),
-    )
-    ephemeral_singleton = Coin(
-        new_singleton.name(),
-        new_singleton.puzzle_hash,
+    rekey_coin = [c for c in start_4_to_5_bundle.additions() if c.amount == 0][0]
+    rekey_lineage = LineageProof(
+        new_singleton.parent_coin_info,
+        construct_singleton_inner_puzzle(new_derivation_4.prefarm_info).get_tree_hash(),
         new_singleton.amount,
     )
-    new_singleton = Coin(
-        ephemeral_singleton.name(),
-        construct_full_singleton(new_derivation.prefarm_info).get_tree_hash(),
-        setup_info.singleton.amount,
+    setup_info.sim.pass_time(setup_info.prefarm_info.rekey_clawback_period)
+    await setup_info.sim.farm_block()
+    finish_4_to_5_bundle = get_rekey_completion_spend(
+        Coin(new_singleton.name(), new_singleton.puzzle_hash, new_singleton.amount),
+        rekey_coin,
+        FOUR_PUBKEYS,
+        new_derivation_4,
+        rekey_lineage,
+        rekey_lineage,
+        new_derivation_5,
     )
+    result = await setup_info.sim_client.push_tx(finish_4_to_5_bundle)
+    assert result == (MempoolInclusionStatus.SUCCESS, None)
+    await setup_info.sim.farm_block()
+    cost_logger.add_cost("Lock Level 4 -> 5 (rekey finish)", finish_4_to_5_bundle)
+
+    previous_singleton = new_singleton
+    new_singleton = [c for c in finish_4_to_5_bundle.additions() if c.amount == previous_singleton.amount][0]
+    assert new_singleton.puzzle_hash == construct_full_singleton(new_derivation_5.prefarm_info).get_tree_hash()
     new_lineage_proof = LineageProof(
-        ephemeral_singleton.parent_coin_info,
-        construct_singleton_inner_puzzle(previous_prefarm_info).get_tree_hash(),
-        ephemeral_singleton.amount,
+        previous_singleton.name(),
+        construct_singleton_inner_puzzle(new_derivation_4.prefarm_info).get_tree_hash(),
+        previous_singleton.amount,
     )
-    with pytest.raises(AssertionError):
-        _, _ = get_rekey_spend_info(
-            new_singleton,
-            FOUR_PUBKEYS,
-            new_derivation,
-            new_lineage_proof,
-        )
+    new_derivation = new_derivation_5
+    with pytest.raises(ValueError, match="already at maximum lock level"):
+        derive_next_lock_level(new_derivation_5)
 
     # Now let's rekey down to a new 2/3 pubkey set
     # Start with a slower rekey of 3 keys

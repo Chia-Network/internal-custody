@@ -10,7 +10,7 @@ import pytest
 
 from click.testing import CliRunner
 
-from cic.cli.common import read_unsigned_spend, write_unsigned_spend
+from cic.cli.common import format_duration, read_unsigned_spend, write_unsigned_spend
 from cic.cli.main import cli
 import cic.cli.examine_commands as examine_commands
 
@@ -82,7 +82,7 @@ def _command_args(command_name: str, launched: LaunchedSingleton) -> Tuple[List[
             "--db-path",
             db_path,
             "--pubkeys",
-            ",".join(launched.pubkey_files[0:4]),
+            keys_3,
         ],
         None,
     )
@@ -161,7 +161,23 @@ def test_qr_output_is_only_decimal_chunk_lines(command_name: str, monkeypatch: p
 
         qr_result = runner.invoke(cli, base_args, input=command_input)
         assert qr_result.exit_code == 0, qr_result.output
-        lines = qr_result.output.splitlines()
+        if command_name == "increase_security_level":
+            explanation = (
+                f"Rekey to lock level {launched.derivation.required_pubkeys + 1} "
+                f"of {launched.derivation.maximum_pubkeys}. "
+                "It can be pushed once the singleton has not been spent for "
+                f"{launched.prefarm_info.rekey_increments} "
+                f"({format_duration(launched.prefarm_info.rekey_increments)}), "
+                "and completed with cic complete "
+                f"{launched.prefarm_info.rekey_clawback_period} "
+                f"({format_duration(launched.prefarm_info.rekey_clawback_period)}) "
+                "after it confirms. It can be cancelled with cic clawback until it is completed. "
+                "cic sync updates the configuration afterwards."
+            )
+            assert qr_result.stderr == explanation + "\n"
+            lines = qr_result.stdout.splitlines()
+        else:
+            lines = qr_result.output.splitlines()
         assert len(lines) > 0
         assert all(re.fullmatch(r"\d+", line) is not None for line in lines), qr_result.output
 

@@ -2,7 +2,7 @@ import contextlib
 import os
 
 from pathlib import Path
-from typing import AsyncIterator, Iterable, Optional
+from typing import AsyncIterator, Iterable, List, Optional
 
 from chia.types.coin_spend import CoinSpend
 from chia_rs import G1Element
@@ -27,6 +27,19 @@ else:
     from cic.cli.clients import get_node_and_wallet_clients, get_node_client, get_additional_data  # noqa: F401
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
+
+
+def format_duration(seconds: int) -> str:
+    """Format a number of seconds as a human-readable duration, for example "1 day 2 hours"."""
+    parts: List[str] = []
+    for label, unit in (("day", 86400), ("hour", 3600), ("minute", 60), ("second", 1)):
+        count, seconds = divmod(seconds, unit)
+        if count:
+            suffix = "" if count == 1 else "s"
+            parts.append(f"{count} {label}{suffix}")
+    if not parts:
+        return "0 seconds"
+    return " ".join(parts)
 
 
 def to_hsm_coin_spend(coin_spend: CoinSpend) -> HSMCoinSpend:
