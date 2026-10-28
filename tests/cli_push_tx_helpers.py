@@ -137,7 +137,7 @@ def _record_wallet_calls(monkeypatch):
 def _select_spent_coin_on_second_call(monkeypatch, spent_coin: Coin):
     from tests.cli_clients import WalletClientMock
 
-    original_select_coins = WalletClientMock.select_coins
+    original_select_coins = WalletClientMock._select_coins
     calls: List[object] = []
 
     async def select_spent_coin(self, request, tx_config=None):
@@ -146,5 +146,5 @@ def _select_spent_coin_on_second_call(monkeypatch, spent_coin: Coin):
             return SimpleNamespace(coins=[spent_coin])
         return await original_select_coins(self, request, tx_config)
 
-    monkeypatch.setattr(WalletClientMock, "select_coins", select_spent_coin)
+    monkeypatch.setattr(WalletClientMock, "_select_coins", select_spent_coin)
     return calls

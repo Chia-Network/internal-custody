@@ -285,7 +285,7 @@ def test_push_tx_two_step_overlapping_fee_coins_abort(monkeypatch):
             async def select_same_coin(self, request, tx_config=None):
                 return SimpleNamespace(coins=[coins[0]])
 
-            monkeypatch.setattr(WalletClientMock, "select_coins", select_same_coin)
+            monkeypatch.setattr(WalletClientMock, "_select_coins", select_same_coin)
 
             result = runner.invoke(
                 cli,

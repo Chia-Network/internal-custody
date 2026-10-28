@@ -71,7 +71,10 @@ class WalletClientMock:
         self.sim_client = sim_client
 
     # These are the only two methods we need
-    async def select_coins(self, request: SelectCoins, tx_config: Any = None):
+    async def select_coins(self, request: SelectCoins):
+        return await self._select_coins(request)
+
+    async def _select_coins(self, request: SelectCoins, tx_config: Any = None):
         excluded_coin_ids = set() if tx_config is None else set(tx_config.excluded_coin_ids)
         coin_records = [
             record
@@ -97,7 +100,7 @@ class WalletClientMock:
         coins: Optional[List[Coin]] = request.coins
         if coins is None:
             coins = (
-                await self.select_coins(
+                await self._select_coins(
                     SelectCoins(wallet_id=uint32(1), amount=uint64(total_amount + request.fee)),
                     tx_config,
                 )
