@@ -42,3 +42,8 @@ jobs:
         . ./venv/bin/activate
         pip install .[dev]
         ./venv/bin/py.test tests/ -s -v --durations 0
+
+    - name: Check formatting with black
+      run: |
+        . ./venv/bin/activate
+        black --check .
