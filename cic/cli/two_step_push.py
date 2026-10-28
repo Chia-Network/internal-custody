@@ -1,11 +1,15 @@
 """CLI-side orchestration for a two-step spend bundle push."""
 
 import asyncio
+import click
 import time
 from typing import Any, Dict, List, Tuple
 
 from chia_rs import SpendBundle
 from chia_rs.sized_bytes import bytes32
+
+from cic.cli.fees import create_fee_spend_bundle, find_fee_announcement_and_spend
+from cic.drivers.two_step_push import split_two_step_push
 
 
 class TwoStepPushError(Exception):
@@ -91,3 +95,58 @@ async def push_in_two_steps(
         )
 
     return first_result, second_result
+
+
+async def run_two_step_push(
+    node_client: Any,
+    wallet_client: Any,
+    push_bundle: SpendBundle,
+    fee: int,
+    confirmation_timeout: float,
+    poll_interval: float,
+) -> None:
+    """Push a bundle that needs a two-step push, linking any fee to its announcement spend."""
+    two_step_bundles = split_two_step_push(push_bundle)
+    first_bundle = two_step_bundles.first
+    second_bundle = two_step_bundles.second
+
+    if fee > 0:
+        # Find the announcement with the original last-match rule over the whole
+        # bundle, then put the fee transaction in the same step as the spend that
+        # emits it.  A lock level increase emits its only coin announcement from the
+        # lock coin completion spend, which is an ephemeral spend and therefore part
+        # of step 2.  Step 2 then carries the fee, so the fee assertion and the
+        # announcement are pushed atomically.  If step 2 has to be retried manually,
+        # the printed step 2 hex can be pushed again with `cic push_tx --fee N`,
+        # which attaches a fee in the ordinary single-push way.
+        fee_match = find_fee_announcement_and_spend(push_bundle)
+        if fee_match is None:
+            print("Cannot find a way to link fee to this transaction. Please specify 0 fee and try again.")
+            return
+        announcement_spend, fee_announcement = fee_match
+        fee_spend_bundle = await create_fee_spend_bundle(wallet_client, fee, fee_announcement)
+        if announcement_spend.coin.name() in {coin_spend.coin.name() for coin_spend in first_bundle.coin_spends}:
+            first_bundle = SpendBundle.aggregate([first_bundle, fee_spend_bundle])
+        else:
+            second_bundle = SpendBundle.aggregate([second_bundle, fee_spend_bundle])
+
+    # A lock level increase creates the lock coin and the new singleton coin inside the
+    # same bundle.  Chia 2.7.5 rejects relative time conditions on such ephemeral spends,
+    # so step 1 confirms those coins first and step 2 spends them afterwards.  Step 2 needs
+    # no signature (unless it carries the fee).  If step 2 never lands, the lock coin stays
+    # pending on chain and the printed step 2 bundle can be pushed later with `cic push_tx`.
+    print("This spend bundle must be pushed in two steps.")
+    print("Step 1: non-ephemeral spends (the START_REKEY spend and any non-ephemeral fee).")
+    print("Step 2: ephemeral spends (the lock coin completion, FINISH_REKEY, and any ephemeral fee).")
+    try:
+        first_result, second_result = await push_in_two_steps(
+            node_client,
+            first_bundle,
+            second_bundle,
+            confirmation_timeout,
+            poll_interval,
+        )
+    except TwoStepPushError as error:
+        raise click.ClickException(str(error))
+    print(first_result)
+    print(second_result)

@@ -16,7 +16,8 @@ from chia.types.coin_spend import make_spend
 from chia.util.bech32m import encode_puzzle_hash
 from chia.util.hash import std_hash
 
-from cic.cli.main import _find_fee_announcement, cli, read_unsigned_spend
+from cic.cli.fees import find_fee_announcement
+from cic.cli.main import cli, read_unsigned_spend
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
 from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm_info import PrefarmInfo
@@ -690,7 +691,7 @@ def test_init(monkeypatch):
         fee_target_bundle = bundles_with_fee[0]
         fee_target_coin_ids = {coin_spend.coin.name() for coin_spend in fee_target_bundle.coin_spends}
 
-        announcement = _find_fee_announcement(signed_lock_bundle)
+        announcement = find_fee_announcement(signed_lock_bundle)
         assert announcement is not None
         assert announcement.asserted_id is not None
         assert announcement.asserted_msg is not None

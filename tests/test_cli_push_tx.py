@@ -13,7 +13,8 @@ from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program
 from chia.types.coin_spend import make_spend
 
-from cic.cli.main import _find_fee_announcement, cli
+from cic.cli.fees import find_fee_announcement
+from cic.cli.main import cli
 
 ACS: Program = Program.to(1)
 ACS_PH: bytes32 = ACS.get_tree_hash()
@@ -38,7 +39,7 @@ def test_find_fee_announcement_uses_last_match():
         G2Element(),
     )
 
-    announcement = _find_fee_announcement(bundle)
+    announcement = find_fee_announcement(bundle)
 
     assert announcement is not None
     assert announcement.asserted_id == second_coin.name()
