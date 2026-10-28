@@ -326,7 +326,7 @@ def sync_cmd(
     asyncio.get_event_loop().run_until_complete(do_sync())
 
     if show:
-        show_cmd(db_path, False, False)
+        show_status(db_path, False, False)
 
 
 @click.command("p2_address", short_help="Print the address to pay to the singleton")
@@ -376,15 +376,15 @@ def address_cmd(db_path: str, prefix: str):
     help="Display the private details of the private config",
     is_flag=True,
 )
-def _show_cmd(
+def show_cmd(
     db_path: str,
     config: bool,
     derivation: bool,
 ):
-    show_cmd(db_path, config, derivation)
+    show_status(db_path, config, derivation)
 
 
-def show_cmd(
+def show_status(
     db_path: str,
     config: bool,
     derivation: bool,

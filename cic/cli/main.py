@@ -13,8 +13,7 @@ from cic.cli.examine_commands import examine_cmd, which_pubkeys_cmd
 from cic.cli.payment_commands import clawback_cmd, complete_cmd, payments_cmd
 from cic.cli.push_commands import push_cmd
 from cic.cli.rekey_commands import increase_cmd, start_rekey_cmd
-from cic.cli.sync_commands import _show_cmd as show_cmd
-from cic.cli.sync_commands import address_cmd, audit_cmd, sync_cmd
+from cic.cli.sync_commands import address_cmd, audit_cmd, show_cmd, sync_cmd
 
 
 @click.group(
