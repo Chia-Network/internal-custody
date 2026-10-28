@@ -12,10 +12,11 @@ from chia_rs.sized_ints import uint16
 
 
 async def get_node_client(full_node_rpc_port: Optional[int]):
+    """Create a client for the configured host; an explicit port overrides the configured port."""
     try:
+        config = load_config(DEFAULT_ROOT_PATH, "config.yaml")
+        self_hostname = config["self_hostname"]
         if full_node_rpc_port is None:
-            config = load_config(DEFAULT_ROOT_PATH, "config.yaml")
-            self_hostname = config["self_hostname"]
             full_node_rpc_port = config["full_node"]["rpc_port"]
         full_node_client = await FullNodeRpcClient.create(
             self_hostname, uint16(full_node_rpc_port), DEFAULT_ROOT_PATH, config
@@ -30,10 +31,11 @@ async def get_node_client(full_node_rpc_port: Optional[int]):
 
 
 async def get_wallet_client(wallet_rpc_port: Optional[int]):
+    """Create a client for the configured host; an explicit port overrides the configured port."""
     try:
+        config = load_config(DEFAULT_ROOT_PATH, "config.yaml")
+        self_hostname = config["self_hostname"]
         if wallet_rpc_port is None:
-            config = load_config(DEFAULT_ROOT_PATH, "config.yaml")
-            self_hostname = config["self_hostname"]
             wallet_rpc_port = config["wallet"]["rpc_port"]
         wallet_client = await WalletRpcClient.create(self_hostname, uint16(wallet_rpc_port), DEFAULT_ROOT_PATH, config)
         return wallet_client
