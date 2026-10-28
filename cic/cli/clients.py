@@ -4,11 +4,11 @@ from pprint import pprint
 from typing import Optional
 
 from chia.cmds.cmds_util import get_wallet
-from chia.rpc.full_node_rpc_client import FullNodeRpcClient
-from chia.rpc.wallet_rpc_client import WalletRpcClient
+from chia.full_node.full_node_rpc_client import FullNodeRpcClient
 from chia.util.config import load_config
 from chia.util.default_root import DEFAULT_ROOT_PATH
-from chia.util.ints import uint16
+from chia.wallet.wallet_rpc_client import WalletRpcClient
+from chia_rs.sized_ints import uint16
 
 
 async def get_node_client(full_node_rpc_port: Optional[int]):

@@ -6,16 +6,17 @@ with open("README.md", "rt") as fh:
     long_description = fh.read()
 
 dependencies = [
-    "chia-blockchain==1.7.0",
-    "click==8.1.3",
+    "chia-blockchain==2.7.5",
+    "chia_base>=0.1.5",
+    "click==8.5.0",
     "segno==1.4.1",
-    "hsms==0.1.3",
+    "hsms==0.3.2",
 ]
 
 dev_dependencies = [
     "flake8",
     "mypy",
-    "black==21.12b0",
+    "black==26.10.1",
     "pytest",
     "pytest-asyncio",
     "pytest-env",
@@ -39,12 +40,11 @@ setup(
     description="Custody puzzles and CLI tailored to Chia Network's business and security requirements",
     long_description=long_description,
     long_description_content_type="text/markdown",
+    python_requires=">=3.10",
     classifiers=[
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.6",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
         "License :: OSI Approved :: Apache Software License",
         "Topic :: Security :: Cryptography",
     ],

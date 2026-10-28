@@ -1,11 +1,11 @@
-from blspy import G1Element
+from chia_rs import G1Element
 from dataclasses import dataclass
 from typing import Optional
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import SerializedProgram
-from chia.types.blockchain_format.sized_bytes import bytes32
-from chia.util.ints import uint32, uint64
+from chia_rs.sized_bytes import bytes32
+from chia_rs.sized_ints import uint32, uint64
 from chia.wallet.lineage_proof import LineageProof
 
 from cic.drivers.prefarm import SpendType

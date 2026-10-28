@@ -1,6 +1,6 @@
 from chia.types.blockchain_format.program import Program
-from chia.types.blockchain_format.sized_bytes import bytes32
-from chia.util.ints import uint8
+from chia_rs.sized_bytes import bytes32
+from chia_rs.sized_ints import uint8
 
 from cic.drivers.drop_coins import (
     P2_MERKLE_MOD,
