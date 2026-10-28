@@ -15,7 +15,7 @@ from clvm.casts import int_to_bytes
 from datetime import datetime
 from operator import attrgetter
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program, INFINITE_COST
@@ -37,6 +37,7 @@ from chia.wallet.wallet_request_types import Addition, CreateSignedTransaction, 
 from cic import __version__
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
 from cic.cli.sync_store import SyncStore
+from cic.cli.two_step_push import TwoStepPushError, push_in_two_steps
 from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.prefarm import (
     SpendType,
@@ -61,6 +62,7 @@ from cic.drivers.prefarm import (
 )
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
 from cic.drivers.singleton import generate_launch_conditions_and_coin_spend, construct_p2_singleton
+from cic.drivers.two_step_push import needs_two_step_push, split_two_step_push
 
 from chia_base.bls12_381 import BLSPublicKey, BLSSecretExponent
 from hsms.core.signing_hints import SumHint
@@ -848,6 +850,59 @@ def address_cmd(db_path: str, prefix: str):
     asyncio.get_event_loop().run_until_complete(do_command())
 
 
+def _find_fee_announcement_and_spend(
+    spend_bundle: SpendBundle,
+) -> Optional[Tuple[CoinSpend, AssertCoinAnnouncement]]:
+    result: Optional[Tuple[CoinSpend, AssertCoinAnnouncement]] = None
+    for coin_spend in spend_bundle.coin_spends:
+        puzzle_reveal = Program.from_bytes(bytes(coin_spend.puzzle_reveal))
+        solution = Program.from_bytes(bytes(coin_spend.solution))
+        _, conditions = puzzle_reveal.run_with_cost(INFINITE_COST, solution)
+        for condition in conditions.as_python():
+            if condition[0] == int_to_bytes(60):  # CREATE_COIN_ANNOUNCEMENT
+                result = (
+                    coin_spend,
+                    AssertCoinAnnouncement(
+                        asserted_id=coin_spend.coin.name(),
+                        asserted_msg=condition[1],
+                    ),
+                )
+                break
+    return result
+
+
+def _find_fee_announcement(spend_bundle: SpendBundle) -> Optional[AssertCoinAnnouncement]:
+    result = _find_fee_announcement_and_spend(spend_bundle)
+    return None if result is None else result[1]
+
+
+async def _create_fee_spend_bundle(
+    wallet_client: Any,
+    fee: int,
+    fee_announcement: Optional[AssertCoinAnnouncement],
+) -> SpendBundle:
+    extra_conditions: tuple = () if fee_announcement is None else (fee_announcement,)
+    tx_response = await wallet_client.create_signed_transactions(
+        CreateSignedTransaction(
+            wallet_id=uint32(1),
+            additions=[Addition(puzzle_hash=bytes32([0] * 32), amount=uint64(0))],
+            fee=uint64(fee),
+            push=False,
+            sign=True,
+        ),
+        DEFAULT_TX_CONFIG,
+        extra_conditions,
+    )
+    txs: List[TransactionRecord] = tx_response.signed_txs
+    if len(txs) == 0:
+        raise ValueError("`create_signed_transaction` returned empty list!")
+
+    tx = txs[0]
+    if tx.spend_bundle is None:
+        raise ValueError("`create_signed_transaction` returned an unsigned transaction!")
+    return tx.spend_bundle
+
+
 @cli.command("push_tx", short_help="Push a signed spend bundle to the network")
 @click.option(
     "-b",
@@ -877,12 +932,28 @@ def address_cmd(db_path: str, prefix: str):
     type=int,
     default=0,
 )
+@click.option(
+    "--confirmation-timeout",
+    help="Seconds to wait for step 1 confirmations when the bundle must be pushed in two steps",
+    type=float,
+    default=900,
+    show_default=True,
+)
+@click.option(
+    "--poll-interval",
+    help="Seconds between confirmation checks when the bundle must be pushed in two steps",
+    type=float,
+    default=10,
+    show_default=True,
+)
 def push_cmd(
     spend_bundle: str,
     wallet_rpc_port: Optional[int],
     fingerprint: Optional[int],
     node_rpc_port: Optional[int],
     fee: int,
+    confirmation_timeout: float,
+    poll_interval: float,
 ):
     async def do_command():
         try:
@@ -899,47 +970,65 @@ def push_cmd(
                 print("Spend bundle cannot be recognized.  Please make sure this spend bundle is signed and try again.")
                 return
 
-            spends: List[SpendBundle] = [push_bundle]
+            if needs_two_step_push(push_bundle):
+                two_step_bundles = split_two_step_push(push_bundle)
+                first_bundle = two_step_bundles.first
+                second_bundle = two_step_bundles.second
 
-            if fee > 0:
-                fee_announcement: Optional[AssertCoinAnnouncement] = None
-                for coin_spend in push_bundle.coin_spends:
-                    puzzle_reveal = Program.from_bytes(bytes(coin_spend.puzzle_reveal))
-                    solution = Program.from_bytes(bytes(coin_spend.solution))
-                    _, conditions = puzzle_reveal.run_with_cost(INFINITE_COST, solution)
-                    for condition in conditions.as_python():
-                        if condition[0] == int_to_bytes(60):  # CREATE_COIN_ANNOUNCEMENT
-                            fee_announcement = AssertCoinAnnouncement(
-                                asserted_id=coin_spend.coin.name(),
-                                asserted_msg=condition[1],
-                            )
-                            break
-                if fee_announcement is None:
-                    print("Cannot find a way to link fee to this transaction. Please specify 0 fee and try again.")
-                    return
-                else:
-                    tx_response = await wallet_client.create_signed_transactions(
-                        CreateSignedTransaction(
-                            wallet_id=uint32(1),
-                            additions=[Addition(puzzle_hash=bytes32([0] * 32), amount=uint64(0))],
-                            fee=uint64(fee),
-                            push=False,
-                            sign=True,
-                        ),
-                        DEFAULT_TX_CONFIG,
-                        (fee_announcement,),
+                if fee > 0:
+                    # Find the announcement with the original last-match rule over the whole
+                    # bundle, then put the fee transaction in the same step as the spend that
+                    # emits it.  A lock level increase emits its only coin announcement from the
+                    # lock coin completion spend, which is an ephemeral spend and therefore part
+                    # of step 2.  Step 2 then carries the fee, so the fee assertion and the
+                    # announcement are pushed atomically.  If step 2 has to be retried manually,
+                    # the printed step 2 hex can be pushed again with `cic push_tx --fee N`,
+                    # which attaches a fee in the ordinary single-push way.
+                    fee_match = _find_fee_announcement_and_spend(push_bundle)
+                    if fee_match is None:
+                        print("Cannot find a way to link fee to this transaction. Please specify 0 fee and try again.")
+                        return
+                    announcement_spend, fee_announcement = fee_match
+                    fee_spend_bundle = await _create_fee_spend_bundle(wallet_client, fee, fee_announcement)
+                    if announcement_spend.coin.name() in {
+                        coin_spend.coin.name() for coin_spend in first_bundle.coin_spends
+                    }:
+                        first_bundle = SpendBundle.aggregate([first_bundle, fee_spend_bundle])
+                    else:
+                        second_bundle = SpendBundle.aggregate([second_bundle, fee_spend_bundle])
+
+                # A lock level increase creates the lock coin and the new singleton coin inside the
+                # same bundle.  Chia 2.7.5 rejects relative time conditions on such ephemeral spends,
+                # so step 1 confirms those coins first and step 2 spends them afterwards.  Step 2 needs
+                # no signature (unless it carries the fee).  If step 2 never lands, the lock coin stays
+                # pending on chain and the printed step 2 bundle can be pushed later with `cic push_tx`.
+                print("This spend bundle must be pushed in two steps.")
+                print("Step 1: non-ephemeral spends (the START_REKEY spend and any non-ephemeral fee).")
+                print("Step 2: ephemeral spends (the lock coin completion, FINISH_REKEY, and any ephemeral fee).")
+                try:
+                    first_result, second_result = await push_in_two_steps(
+                        node_client,
+                        first_bundle,
+                        second_bundle,
+                        confirmation_timeout,
+                        poll_interval,
                     )
-                    txs: List[TransactionRecord] = tx_response.signed_txs
-                    if len(txs) == 0:
-                        raise ValueError("`create_signed_transaction` returned empty list!")
+                except TwoStepPushError as error:
+                    raise click.ClickException(str(error))
+                print(first_result)
+                print(second_result)
+            else:
+                spends: List[SpendBundle] = [push_bundle]
 
-                    tx = txs[0]
-                    if tx.spend_bundle is None:
-                        raise ValueError("`create_signed_transaction` returned an unsigned transaction!")
-                    spends.append(tx.spend_bundle)
+                if fee > 0:
+                    fee_announcement = _find_fee_announcement(push_bundle)
+                    if fee_announcement is None:
+                        print("Cannot find a way to link fee to this transaction. Please specify 0 fee and try again.")
+                        return
+                    spends.append(await _create_fee_spend_bundle(wallet_client, fee, fee_announcement))
 
-            result = await node_client.push_tx(SpendBundle.aggregate(spends))
-            print(result)
+                result = await node_client.push_tx(SpendBundle.aggregate(spends))
+                print(result)
 
         finally:
             node_client.close()

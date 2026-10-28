@@ -46,8 +46,9 @@ from cic.drivers.puzzle_root_construction import (
 )
 from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.singleton import generate_launch_conditions_and_coin_spend, construct_p2_singleton
+from cic.drivers.two_step_push import split_two_step_push
 
-from tests import push_tx_with_fallback, run_coin_spend
+from tests import push_two_step_bundle, run_coin_spend
 from tests.cost_logger import CostLogger
 
 ACS = Program.to(1)
@@ -485,9 +486,12 @@ async def test_rekeys(_setup_info, cost_logger):
     with pytest.raises(ValueError, match="clvm raise"):
         run_coin_spend(cancellation_spend)
     # Now actually push the honest bundle
-    result = await push_tx_with_fallback(setup_info.sim, setup_info.sim_client, aggregate_bundle)
-    assert result[0] == MempoolInclusionStatus.SUCCESS
-    cost_logger.add_cost("Lock Level 3 -> 4", aggregate_bundle)
+    first_result, second_result = await push_two_step_bundle(setup_info.sim, setup_info.sim_client, aggregate_bundle)
+    assert first_result[0] == MempoolInclusionStatus.SUCCESS
+    assert second_result[0] == MempoolInclusionStatus.SUCCESS
+    two_step_bundles = split_two_step_push(aggregate_bundle)
+    cost_logger.add_cost("Lock Level 3 -> 4 (step 1)", two_step_bundles.first)
+    cost_logger.add_cost("Lock Level 3 -> 4 (step 2)", two_step_bundles.second)
 
     # Then make sure there's no way to bump it with 3 again
     new_derivation: RootDerivation = calculate_puzzle_root(
@@ -512,6 +516,10 @@ async def test_rekeys(_setup_info, cost_logger):
         construct_singleton_inner_puzzle(setup_info.prefarm_info).get_tree_hash(),
         ephemeral_singleton.amount,
     )
+    new_singleton_record = await setup_info.sim_client.get_coin_record_by_name(new_singleton.name())
+    assert new_singleton_record is not None
+    assert new_singleton_record.confirmed_block_index > 0
+    assert not new_singleton_record.spent
     with pytest.raises(ValueError, match="Could not find a puzzle matching the specified pubkey"):
         _, _ = get_rekey_spend_info(
             new_singleton,
@@ -531,9 +539,12 @@ async def test_rekeys(_setup_info, cost_logger):
         [sign_message_at_index(i, data_to_sign, AGG_FIVE) for i in range(0, 5)]
     )
     aggregate_bundle = SpendBundle.aggregate([four_to_five_bundle, SpendBundle([], signature)])
-    result = await push_tx_with_fallback(setup_info.sim, setup_info.sim_client, aggregate_bundle)
-    assert result[0] == MempoolInclusionStatus.SUCCESS
-    cost_logger.add_cost("Lock Level 4 -> 5", aggregate_bundle)
+    first_result, second_result = await push_two_step_bundle(setup_info.sim, setup_info.sim_client, aggregate_bundle)
+    assert first_result[0] == MempoolInclusionStatus.SUCCESS
+    assert second_result[0] == MempoolInclusionStatus.SUCCESS
+    two_step_bundles = split_two_step_push(aggregate_bundle)
+    cost_logger.add_cost("Lock Level 4 -> 5 (step 1)", two_step_bundles.first)
+    cost_logger.add_cost("Lock Level 4 -> 5 (step 2)", two_step_bundles.second)
 
     # Then make sure we can't increase any further
     previous_prefarm_info: PrefarmInfo = new_derivation.prefarm_info
@@ -717,14 +728,16 @@ async def test_rekeys(_setup_info, cost_logger):
     cost_logger.add_cost("Start Rekey", aggregate_bundle)
 
     # Try to maliciously rekey the singleton with an announcement
-    rekey_coin: Coin = [c for c in start_slow_rekey_bundle.additions() if c.amount == 0][0]
+    rekey_coin: Coin = [c for c in start_fast_rekey_bundle.additions() if c.amount == 0][0]
     rekey_lineage = LineageProof(
         new_singleton.parent_coin_info,
         construct_singleton_inner_puzzle(new_derivation.prefarm_info).get_tree_hash(),
         new_singleton.amount,
     )
     new_lineage_proof = LineageProof(
-        new_singleton.parent_coin_info, new_lineage_proof.inner_puzzle_hash, new_singleton.amount
+        new_singleton.parent_coin_info,
+        construct_singleton_inner_puzzle(new_derivation.prefarm_info).get_tree_hash(),
+        new_singleton.amount,
     )
     new_singleton = Coin(
         new_singleton.name(),
@@ -757,12 +770,20 @@ async def test_rekeys(_setup_info, cost_logger):
             *[sign_message_at_index(i, data_to_sign, synth_pk) for i in range(5, 8)],
         ]
     )
+    # The completion spend is valid by itself; it is the malicious announcement in the
+    # other spend that makes the aggregate fail.
+    setup_info.sim.pass_time(setup_info.prefarm_info.rekey_clawback_period)
+    await setup_info.sim.farm_block()
+    accidental_validity_height = setup_info.sim.block_height
+    accidental_result = await setup_info.sim_client.push_tx(accidental_rekey_spend)
+    assert accidental_result == (MempoolInclusionStatus.SUCCESS, None)
+    await setup_info.sim.rewind(accidental_validity_height)
+
     aggregate_bundle = SpendBundle.aggregate(
-        [accidental_rekey_spend, malicious_rekey_clawback_bundle, SpendBundle([], signature)]
+        [malicious_rekey_clawback_bundle, accidental_rekey_spend, SpendBundle([], signature)]
     )
     result = await setup_info.sim_client.push_tx(aggregate_bundle)
-    assert result[0] == MempoolInclusionStatus.FAILED
-    assert result[1] in (Err.GENERATOR_RUNTIME_ERROR, Err.ASSERT_MY_PARENT_ID_FAILED)
+    assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
     with pytest.raises(ValueError, match="clvm raise"):
         run_coin_spend(malicious_rekey_clawback_bundle.coin_spends[0])
 
@@ -784,11 +805,10 @@ async def test_rekeys(_setup_info, cost_logger):
         ]
     )
     aggregate_bundle = SpendBundle.aggregate(
-        [accidental_rekey_spend, malicious_withdrawal_bundle, SpendBundle([], signature)]
+        [malicious_withdrawal_bundle, accidental_rekey_spend, SpendBundle([], signature)]
     )
     result = await setup_info.sim_client.push_tx(aggregate_bundle)
-    assert result[0] == MempoolInclusionStatus.FAILED
-    assert result[1] in (Err.GENERATOR_RUNTIME_ERROR, Err.ASSERT_MY_PARENT_ID_FAILED)
+    assert result == (MempoolInclusionStatus.FAILED, Err.GENERATOR_RUNTIME_ERROR)
     with pytest.raises(ValueError, match="clvm raise"):
         run_coin_spend(malicious_withdrawal_bundle.coin_spends[0])
 

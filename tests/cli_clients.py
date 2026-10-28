@@ -11,7 +11,6 @@ from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program
 from chia.types.coin_spend import CoinSpend, make_spend
 from chia.types.mempool_inclusion_status import MempoolInclusionStatus
-from chia.util.errors import Err
 from chia.wallet.wallet_request_types import CreateSignedTransaction, SelectCoins
 
 ACS = Program.to(1)
@@ -44,11 +43,6 @@ class FullNodeClientMock(SimClient):
 
     async def push_tx(self, spend_bundle: SpendBundle) -> Dict[str, Any]:  # type: ignore
         result = await super().push_tx(spend_bundle)
-        if result == (MempoolInclusionStatus.FAILED, Err.EPHEMERAL_RELATIVE_CONDITION):
-            from tests import farm_block_with_bundle
-
-            await farm_block_with_bundle(self.service, spend_bundle)
-            return {"success": True, "status": MempoolInclusionStatus.SUCCESS.name}
         if result[0] == MempoolInclusionStatus.SUCCESS:
             await self.service.farm_block()
             return {"success": True, "status": MempoolInclusionStatus.SUCCESS.name}

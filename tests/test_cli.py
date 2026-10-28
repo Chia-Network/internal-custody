@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 
 from chia_rs import AugSchemeMPL, G2Element, PrivateKey, SpendBundle
 from chia_rs.sized_bytes import bytes32
@@ -10,12 +11,13 @@ from typing import List, Optional, Tuple
 
 from chia._tests.util.spend_sim import SpendSim, SimClient
 from chia.types.blockchain_format.coin import Coin
-from chia.types.blockchain_format.program import Program
+from chia.types.blockchain_format.program import INFINITE_COST, Program
+from chia.types.condition_opcodes import ConditionOpcode
 from chia.types.coin_spend import make_spend
 from chia.util.bech32m import encode_puzzle_hash
 from chia.util.hash import std_hash
 
-from cic.cli.main import cli, read_unsigned_spend
+from cic.cli.main import _find_fee_announcement, cli, read_unsigned_spend
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
 from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm_info import PrefarmInfo
@@ -47,7 +49,25 @@ def test_help():
     assert "Commands to control a prefarm singleton" in result.output
 
 
-def test_init():
+def test_find_fee_announcement_uses_last_match():
+    first_coin = Coin(bytes32([1] * 32), ACS_PH, uint64(10))
+    second_coin = Coin(bytes32([2] * 32), ACS_PH, uint64(10))
+    bundle = SpendBundle(
+        [
+            make_spend(first_coin, ACS, Program.to([[60, b"first"], [51, ACS_PH, 10]])),
+            make_spend(second_coin, ACS, Program.to([[60, b"second"], [51, ACS_PH, 10]])),
+        ],
+        G2Element(),
+    )
+
+    announcement = _find_fee_announcement(bundle)
+
+    assert announcement is not None
+    assert announcement.asserted_id == second_coin.name()
+    assert announcement.asserted_msg == b"second"
+
+
+def test_init(monkeypatch):
     runner = CliRunner()
 
     prefarm_info = PrefarmInfo(
@@ -616,6 +636,25 @@ def test_init():
 
         asyncio.get_event_loop().run_until_complete(rewind_again())
 
+        from tests.cli_clients import FullNodeClientMock, WalletClientMock
+
+        pushed_bundles: List[SpendBundle] = []
+        fee_bundles: List[SpendBundle] = []
+        original_push_tx = FullNodeClientMock.push_tx
+        original_create_signed_transactions = WalletClientMock.create_signed_transactions
+
+        async def record_push_tx(self, spend_bundle):
+            pushed_bundles.append(spend_bundle)
+            return await original_push_tx(self, spend_bundle)
+
+        async def record_create_signed_transactions(self, request, tx_config, extra_conditions=()):
+            tx_response = await original_create_signed_transactions(self, request, tx_config, extra_conditions)
+            fee_bundles.append(tx_response.signed_txs[0].spend_bundle)
+            return tx_response
+
+        monkeypatch.setattr(FullNodeClientMock, "push_tx", record_push_tx)
+        monkeypatch.setattr(WalletClientMock, "create_signed_transactions", record_create_signed_transactions)
+
         # Try a lock level increase
         result = runner.invoke(
             cli,
@@ -650,7 +689,47 @@ def test_init():
                 100,
             ],
         )
-        assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
+        assert "This spend bundle must be pushed in two steps." in result.output
+        assert "Step 1: non-ephemeral spends" in result.output
+        assert "Step 2: ephemeral spends" in result.output
+        assert result.output.count(r"{'success': True, 'status': 'SUCCESS'}") == 2
+
+        # The lock level increase only emits a coin announcement from the lock coin completion
+        # spend, which is part of step 2.  The fee must therefore be in step 2, linked to that
+        # announcement.
+        assert len(pushed_bundles) == 2
+        assert len(fee_bundles) == 1
+        fee_coin_ids = {coin_spend.coin.name() for coin_spend in fee_bundles[0].coin_spends}
+        bundles_with_fee = [
+            bundle
+            for bundle in pushed_bundles
+            if fee_coin_ids <= {coin_spend.coin.name() for coin_spend in bundle.coin_spends}
+        ]
+        assert len(bundles_with_fee) == 1
+        fee_target_bundle = bundles_with_fee[0]
+        fee_target_coin_ids = {coin_spend.coin.name() for coin_spend in fee_target_bundle.coin_spends}
+
+        announcement = _find_fee_announcement(signed_lock_bundle)
+        assert announcement is not None
+        assert announcement.asserted_id is not None
+        assert announcement.asserted_msg is not None
+        assert announcement.asserted_id in fee_target_coin_ids
+        expected_announcement_id = std_hash(announcement.asserted_id + announcement.asserted_msg)
+
+        found_fee_assertion = False
+        for coin_spend in fee_target_bundle.coin_spends:
+            if coin_spend.coin.name() not in fee_coin_ids:
+                continue
+            _, conditions = Program.from_bytes(bytes(coin_spend.puzzle_reveal)).run_with_cost(
+                INFINITE_COST, Program.from_bytes(bytes(coin_spend.solution))
+            )
+            for condition in conditions.as_python():
+                if (
+                    condition[0] == ConditionOpcode.ASSERT_COIN_ANNOUNCEMENT.value
+                    and bytes32(condition[1]) == expected_announcement_id
+                ):
+                    found_fee_assertion = True
+        assert found_fee_assertion
 
         result = runner.invoke(
             cli,
@@ -797,3 +876,149 @@ def test_init():
             ],
         )
         assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
+
+
+def test_push_tx_two_step_confirmation_timeout(monkeypatch):
+    from tests.cli_clients import FullNodeClientMock
+
+    runner = CliRunner()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        with runner.isolated_filesystem():
+
+            async def setup_sim() -> Coin:
+                async with SpendSim.managed(Path("./sim.db")) as sim:
+                    await sim.farm_block(ACS_PH)
+                    sim_client = SimClient(sim)
+                    coin_records = await sim_client.get_coin_records_by_puzzle_hashes(
+                        [ACS_PH], include_spent_coins=False
+                    )
+                    return sorted((record.coin for record in coin_records), key=lambda coin: coin.name())[0]
+
+            coin = loop.run_until_complete(setup_sim())
+
+            child_coin = Coin(coin.name(), ACS_PH, coin.amount)
+            first_spend = make_spend(coin, ACS, Program.to([[51, ACS_PH, coin.amount]]))
+            second_spend = make_spend(
+                child_coin,
+                ACS,
+                Program.to([[80, 0], [51, ACS_PH, child_coin.amount]]),
+            )
+            two_step_bundle = SpendBundle([first_spend, second_spend], G2Element())
+
+            original_get_coin_record_by_name = FullNodeClientMock.get_coin_record_by_name
+
+            async def no_coin_record(self, coin_id):
+                return None
+
+            monkeypatch.setattr(FullNodeClientMock, "get_coin_record_by_name", no_coin_record)
+
+            result = runner.invoke(
+                cli,
+                [
+                    "push_tx",
+                    "--spend-bundle",
+                    bytes(two_step_bundle).hex(),
+                    "--confirmation-timeout",
+                    "0",
+                    "--poll-interval",
+                    "0.01",
+                ],
+            )
+            assert result.exit_code != 0
+            assert "not seen confirmed" in result.output
+            match = re.search(r"Step 2 spend bundle \(hex\): ([0-9a-f]+)", result.output)
+            assert match is not None
+            second_hex = match.group(1)
+
+            monkeypatch.setattr(FullNodeClientMock, "get_coin_record_by_name", original_get_coin_record_by_name)
+
+            result = runner.invoke(
+                cli,
+                [
+                    "push_tx",
+                    "--spend-bundle",
+                    second_hex,
+                ],
+            )
+            assert result.exit_code == 0
+            assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
+
+            async def check_state() -> None:
+                async with SpendSim.managed(Path("./sim.db")) as sim:
+                    sim_client = SimClient(sim)
+                    child_record = await sim_client.get_coin_record_by_name(child_coin.name())
+                    assert child_record is not None
+                    assert child_record.spent
+                    grandchildren = await sim_client.get_coin_records_by_parent_ids([child_coin.name()])
+                    assert len(grandchildren) == 1
+
+            loop.run_until_complete(check_state())
+    finally:
+        loop.close()
+        asyncio.set_event_loop(None)
+
+
+def test_push_tx_two_step_no_announcement_does_not_push(monkeypatch):
+    from tests.cli_clients import FullNodeClientMock
+
+    runner = CliRunner()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        with runner.isolated_filesystem():
+
+            async def setup_sim() -> Coin:
+                async with SpendSim.managed(Path("./sim.db")) as sim:
+                    await sim.farm_block(ACS_PH)
+                    sim_client = SimClient(sim)
+                    coin_records = await sim_client.get_coin_records_by_puzzle_hashes(
+                        [ACS_PH], include_spent_coins=False
+                    )
+                    return sorted((record.coin for record in coin_records), key=lambda coin: coin.name())[0]
+
+            coin = loop.run_until_complete(setup_sim())
+
+            child_coin = Coin(coin.name(), ACS_PH, coin.amount)
+            first_spend = make_spend(coin, ACS, Program.to([[51, ACS_PH, coin.amount]]))
+            second_spend = make_spend(
+                child_coin,
+                ACS,
+                Program.to([[80, 0], [51, ACS_PH, child_coin.amount]]),
+            )
+            two_step_bundle = SpendBundle([first_spend, second_spend], G2Element())
+
+            pushed_bundles: List[SpendBundle] = []
+            original_push_tx = FullNodeClientMock.push_tx
+
+            async def record_push_tx(self, spend_bundle):
+                pushed_bundles.append(spend_bundle)
+                return await original_push_tx(self, spend_bundle)
+
+            monkeypatch.setattr(FullNodeClientMock, "push_tx", record_push_tx)
+
+            result = runner.invoke(
+                cli,
+                [
+                    "push_tx",
+                    "--spend-bundle",
+                    bytes(two_step_bundle).hex(),
+                    "--fee",
+                    100,
+                    "--confirmation-timeout",
+                    "0",
+                    "--poll-interval",
+                    "0.01",
+                ],
+            )
+
+            assert result.exit_code == 0
+            assert (
+                "Cannot find a way to link fee to this transaction. Please specify 0 fee and try again."
+                in result.output
+            )
+            assert pushed_bundles == []
+    finally:
+        loop.close()
+        asyncio.set_event_loop(None)

@@ -105,3 +105,7 @@ hsmmerge ./lock.unsigned ./lock.1.sig ./lock.2.sig > lock.signed
 cic push_tx -b ./lock.signed -m 100000000
 cic sync
 ```
+
+## Two-step push for lock level increases
+
+A lock level increase creates the lock coin and the new singleton coin inside the same bundle. Chia 2.7.5 rejects relative time conditions on coins created and spent in the same bundle, so `cic push_tx` automatically pushes such a bundle in two steps. Step 1 contains the START_REKEY spend. Once the lock coin and the new singleton coin have at least one confirmation, step 2 spends them. Step 2 normally needs no signature, so anyone can submit it. Because a lock level increase emits its only coin announcement from the lock coin completion spend in step 2, a fee passed with `--fee` is attached to step 2 as well; this keeps the fee assertion together with the announcement it references. Step 2 then carries the fee transaction (and its signature). If a bundle's announcement instead comes from step 1, the fee goes into step 1. If step 2 does not land, the lock coin stays pending on chain and the CLI prints the exact step 2 bundle hex. Push it later with `cic push_tx -b <hex>` (or save the hex to a file and pass the path). If step 2 has to be retried manually, the printed step 2 hex can be pushed again with `cic push_tx --fee N`, which attaches a fee in the ordinary single-push way. Use `--confirmation-timeout` and `--poll-interval` to control how long the CLI waits for step 1 confirmations.
