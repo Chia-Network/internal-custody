@@ -112,13 +112,26 @@ A lock level increase creates the lock coin and the new singleton coin inside th
 
 ### Fees on both steps
 
-`cic push_tx --fee N` attaches a fee transaction of N mojos to each step, so the total fee is 2 * N mojos. For a lock level increase the only coin announcement comes from the lock coin completion in step 2. Step 2 binds its fee to that coin announcement. Step 1 binds its fee with `ASSERT_CONCURRENT_SPEND` on its first spend. The wallet fee coins of the two steps are disjoint: the second fee excludes the coins of the first, so the two steps cannot double-spend each other. Both fee transactions are built before anything is pushed. If the bundle has no coin announcement to link a fee to, the CLI says so and pushes nothing. Use `--fee 0` in that case.
+`cic push_tx --fee N` attaches a fee transaction of N mojos to each step of a two-step push, so the total fee is 2 * N mojos. Before anything is pushed, the CLI prints `Fee: N mojos per step, 2N mojos total.` The `--fee` help text says the same.
+
+For a lock level increase the only coin announcement comes from the lock coin completion in step 2. Step 2 binds its fee to that coin announcement. Step 1 binds its fee with `ASSERT_CONCURRENT_SPEND` on its first spend.
+
+Only step 1's fee is built before anything is pushed. Step 2's fee is built after step 1 confirms its coins. The wallet is called with `push=False` both times, so it does not reserve the selected coins while the CLI waits between the steps. Step 1's fee coin ids are excluded when selecting step 2's fee, so the two steps cannot double-spend each other. Two fee coins are not needed: step 1's fee change coin can pay step 2's fee once step 1 has confirmed and the wallet has synced it, so a wallet with a single spendable fee coin can complete both steps.
+
+If the bundle has no coin announcement to link a fee to, the CLI exits non-zero and pushes nothing. Use `--fee 0` in that case.
+
+Failure modes:
+
+* If step 1's fee cannot be built, nothing is pushed. The error names the wallet failure and suggests `--fee 0`.
+* If step 2's fee cannot be built or step 2 with its fee is rejected by the node, step 1 has already been accepted and confirmed. The CLI prints the fee-less step 2 hex so it can be pushed as-is, or with `--fee N` later, for example after the wallet has synced step 1's change coin.
+
+A bundle that already pays a fee is refused when it is pushed with `--fee N` where N > 0: pushing it that way would pay a second fee. Push the fee-bearing hex without `--fee` (or with `--fee 0`), or use the fee-less hex. This applies to both the single-push and two-step paths.
 
 ### Retrying step 2
 
 If step 2 does not land, the lock coin stays pending on chain and the CLI prints the exact step 2 bundle hex. Push it later with `cic push_tx -b <hex>` (or save the hex to a file and pass the path). The printed step 2 hex can be re-pushed as is.
 
-When a fee was attached, the CLI also prints a fee-less step 2 hex. A step 2 hex that already contains a fee must not be pushed with `--fee`, because that attaches a second fee. Either push the fee-bearing hex without `--fee`, or push the printed fee-less hex with `--fee N` to attach a new fee.
+When a fee was attached, the CLI also prints a fee-less step 2 hex. A step 2 hex that already contains a fee must not be pushed with `--fee`, because that attaches a second fee. Either push the fee-bearing hex without `--fee`, or push the printed fee-less hex with `--fee N` to attach a new fee. When step 2's fee could not be built at all, only the fee-less hex is printed.
 
 ### Pending lock coins
 

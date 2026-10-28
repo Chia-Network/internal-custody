@@ -13,6 +13,12 @@ from chia.wallet.util.tx_config import DEFAULT_TX_CONFIG
 from chia.wallet.wallet_request_types import Addition, CreateSignedTransaction
 from clvm.casts import int_to_bytes
 
+CANNOT_LINK_FEE_MESSAGE = "Cannot find a way to link fee to this transaction. Please specify 0 fee and try again."
+
+
+class FeeSpendError(Exception):
+    """Raised when the wallet cannot fund or build a fee transaction."""
+
 
 def find_fee_announcement_and_spend(
     spend_bundle: SpendBundle,
@@ -40,6 +46,15 @@ def find_fee_announcement(spend_bundle: SpendBundle) -> Optional[AssertCoinAnnou
     """Return the last coin announcement in the bundle, if any."""
     result = find_fee_announcement_and_spend(spend_bundle)
     return None if result is None else result[1]
+
+
+def bundle_fee(spend_bundle: SpendBundle) -> int:
+    """Return the fee a spend bundle pays: spent coins minus created coins.
+
+    An ephemeral coin that is both created and spent inside the bundle appears on
+    both sides and therefore cancels out.
+    """
+    return sum(coin.amount for coin in spend_bundle.removals()) - sum(coin.amount for coin in spend_bundle.additions())
 
 
 def fee_condition_for_step(
@@ -72,28 +87,33 @@ async def create_fee_spend_bundle(
     ``excluded_coin_ids`` keeps the wallet from selecting coins that are already
     spent by another fee transaction.  The wallet is called with ``push=False``,
     so it does not reserve the selected coins itself.
+
+    Wallet failures are reported as ``FeeSpendError`` so callers can explain what
+    happened without leaking a raw wallet exception to the CLI user.
     """
     extra_conditions: tuple = () if condition is None else (condition,)
     excluded_ids: List[bytes32] = list(excluded_coin_ids)
     tx_config = DEFAULT_TX_CONFIG
     if excluded_ids:
         tx_config = DEFAULT_TX_CONFIG.override(excluded_coin_ids=excluded_ids)
-    tx_response = await wallet_client.create_signed_transactions(
-        CreateSignedTransaction(
-            wallet_id=uint32(1),
-            additions=[Addition(puzzle_hash=bytes32([0] * 32), amount=uint64(0))],
-            fee=uint64(fee),
-            push=False,
-            sign=True,
-        ),
-        tx_config,
-        extra_conditions,
-    )
-    txs: List[TransactionRecord] = tx_response.signed_txs
-    if len(txs) == 0:
-        raise ValueError("`create_signed_transaction` returned empty list!")
-
-    tx = txs[0]
-    if tx.spend_bundle is None:
-        raise ValueError("`create_signed_transaction` returned an unsigned transaction!")
+    try:
+        tx_response = await wallet_client.create_signed_transactions(
+            CreateSignedTransaction(
+                wallet_id=uint32(1),
+                additions=[Addition(puzzle_hash=bytes32([0] * 32), amount=uint64(0))],
+                fee=uint64(fee),
+                push=False,
+                sign=True,
+            ),
+            tx_config,
+            extra_conditions,
+        )
+        txs: List[TransactionRecord] = tx_response.signed_txs
+        if len(txs) == 0:
+            raise ValueError("`create_signed_transaction` returned empty list!")
+        tx = txs[0]
+        if tx.spend_bundle is None:
+            raise ValueError("`create_signed_transaction` returned an unsigned transaction!")
+    except Exception as error:
+        raise FeeSpendError(str(error)) from error
     return tx.spend_bundle

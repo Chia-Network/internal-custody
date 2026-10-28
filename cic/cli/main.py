@@ -35,7 +35,13 @@ from chia.wallet.wallet_request_types import Addition, CreateSignedTransaction, 
 from cic import __version__
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
 from cic.cli.sync_store import SyncStore
-from cic.cli.fees import create_fee_spend_bundle, find_fee_announcement
+from cic.cli.fees import (
+    CANNOT_LINK_FEE_MESSAGE,
+    FeeSpendError,
+    bundle_fee,
+    create_fee_spend_bundle,
+    find_fee_announcement,
+)
 from cic.cli.rekey_completion import get_rekey_completion_bundle
 from cic.cli.two_step_push import run_two_step_push
 from cic.drivers.prefarm_info import PrefarmInfo
@@ -874,7 +880,10 @@ def address_cmd(db_path: str, prefix: str):
 @click.option(
     "-m",
     "--fee",
-    help="The fee to attach to this spend (in mojos)",
+    help=(
+        "Fee in mojos attached to each push. A two-step push (lock level increase) attaches this fee "
+        "to BOTH steps, so it pays 2 * N mojos in total."
+    ),
     type=int,
     default=0,
 )
@@ -916,6 +925,16 @@ def push_cmd(
                 print("Spend bundle cannot be recognized.  Please make sure this spend bundle is signed and try again.")
                 return
 
+            if fee > 0:
+                existing_fee = bundle_fee(push_bundle)
+                if existing_fee > 0:
+                    raise click.ClickException(
+                        f"This spend bundle already pays a fee of {existing_fee} mojos "
+                        "(it already contains a fee transaction). "
+                        f"Pushing it with --fee {fee} would pay a second fee. "
+                        "Push it without --fee (or use --fee 0), or use the fee-less hex."
+                    )
+
             if needs_two_step_push(push_bundle):
                 await run_two_step_push(
                     node_client,
@@ -931,9 +950,14 @@ def push_cmd(
                 if fee > 0:
                     fee_announcement = find_fee_announcement(push_bundle)
                     if fee_announcement is None:
-                        print("Cannot find a way to link fee to this transaction. Please specify 0 fee and try again.")
-                        return
-                    spends.append(await create_fee_spend_bundle(wallet_client, fee, fee_announcement))
+                        raise click.ClickException(CANNOT_LINK_FEE_MESSAGE)
+                    try:
+                        spends.append(await create_fee_spend_bundle(wallet_client, fee, fee_announcement))
+                    except FeeSpendError as error:
+                        raise click.ClickException(
+                            f"Could not create the fee transaction: {error}. Nothing was pushed. "
+                            "Make sure the wallet has a spendable balance of at least the fee, or use --fee 0."
+                        ) from error
 
                 result = await node_client.push_tx(SpendBundle.aggregate(spends))
                 print(result)
