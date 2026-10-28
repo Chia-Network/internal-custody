@@ -44,9 +44,11 @@ def test_python_matrix_matches_classifiers():
 
     matrix_versions = sorted(tuple(int(part) for part in str(version).split(".")) for version in matrix)
     classifier_versions = sorted((3, int(minor)) for minor in classifiers)
+    expected_versions = [(3, 11), (3, 12), (3, 13), (3, 14)]
     assert (
         matrix_versions == classifier_versions
     ), f"CI Python matrix {matrix} does not match setup.py classifiers {classifiers}"
+    assert matrix_versions == expected_versions, f"CI Python matrix {matrix} must cover 3.11-3.14"
 
     python_requires_match = re.search(r"python_requires\s*=\s*[\"']>=3\.(\d+)[\"']", setup_py)
     assert python_requires_match, "setup.py is missing a python_requires lower bound of the form >=3.X"
