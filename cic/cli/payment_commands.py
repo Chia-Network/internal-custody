@@ -39,6 +39,7 @@ from cic.drivers.prefarm import (
 from chia_base.bls12_381 import BLSPublicKey, BLSSecretExponent
 from hsms.core.signing_hints import SumHint
 from hsms.core.unsigned_spend import UnsignedSpend
+from hsms.util.byte_chunks import chunks_for_zlib_blob
 from hsms.util.qrint_encoding import b2a_qrint
 
 
@@ -168,7 +169,7 @@ def payments_cmd(
                 write_unsigned_spend(filename, unsigned_spend)
                 print(f"Successfully wrote spend to {filename}")
             else:
-                for chunk in unsigned_spend.chunk(255):
+                for chunk in chunks_for_zlib_blob(bytes(unsigned_spend), 255):
                     print(str(b2a_qrint(chunk)))
         finally:
             await sync_store.db_wrapper.close()
@@ -296,7 +297,7 @@ def clawback_cmd(
                 write_unsigned_spend(filename, unsigned_spend)
                 print(f"Successfully wrote spend to {filename}")
             else:
-                for chunk in unsigned_spend.chunk(255):
+                for chunk in chunks_for_zlib_blob(bytes(unsigned_spend), 255):
                     print(str(b2a_qrint(chunk)))
         finally:
             await sync_store.db_wrapper.close()
