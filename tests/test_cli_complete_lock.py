@@ -91,7 +91,7 @@ def test_complete_selects_lock_before_clawback_period(monkeypatch):
         setup = setup_launched_singleton(runner)
         _push_lock_step_one(runner, setup)
 
-        monkeypatch.setattr("cic.cli.main.time.time", lambda: 0)
+        monkeypatch.setattr("cic.cli.payment_commands.time.time", lambda: 0)
         result = runner.invoke(
             cli,
             ["complete", "--filename", "./completion_bundle", "--db-path", str(setup.sync_db_path)],
@@ -151,7 +151,7 @@ def test_complete_still_lists_normal_rekey_with_clawback_wait(monkeypatch):
         result = runner.invoke(cli, ["sync", "--db-path", db_path])
         assert result.exit_code == 0, result.output
 
-        monkeypatch.setattr("cic.cli.main.time.time", lambda: 0)
+        monkeypatch.setattr("cic.cli.payment_commands.time.time", lambda: 0)
         result = runner.invoke(
             cli,
             ["complete", "--filename", "./unused_bundle", "--db-path", db_path],
