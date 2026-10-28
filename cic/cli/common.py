@@ -67,14 +67,15 @@ def load_root_derivation(configuration: Optional[str]) -> RootDerivation:
             path = next(path.glob("Configuration (*).txt"))
     with open(path, "rb") as file:
         file_bytes = file.read()
-        try:
-            return RootDerivation.from_bytes(file_bytes)
-        except (AssertionError, ValueError):
-            try:
-                PrefarmInfo.from_bytes(file_bytes)
-                raise ValueError("The specified configuration file can only perform observer actions")
-            except (AssertionError, ValueError):
-                raise ValueError("The configuration specified is not a recognizable format")
+    try:
+        return RootDerivation.from_bytes(file_bytes)
+    except (AssertionError, ValueError):
+        pass
+    try:
+        PrefarmInfo.from_bytes(file_bytes)
+    except (AssertionError, ValueError):
+        raise ValueError("The configuration specified is not a recognizable format")
+    raise ValueError("The specified configuration file can only perform observer actions")
 
 
 async def load_db(db_path: str, launcher_id: Optional[bytes32] = None) -> SyncStore:
