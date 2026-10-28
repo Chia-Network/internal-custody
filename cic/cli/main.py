@@ -1393,6 +1393,46 @@ def clawback_cmd(
     asyncio.get_event_loop().run_until_complete(do_command())
 
 
+def _get_rekey_completion_bundle(
+    current_singleton: SingletonRecord,
+    parent_singleton: SingletonRecord,
+    record: RekeyRecord,
+    derivation: RootDerivation,
+) -> SpendBundle:
+    if record.timelock == 0:
+        new_derivation = None
+        num_pubkeys = derivation.required_pubkeys + 1
+    else:
+        new_derivation = dataclasses.replace(
+            derivation,
+            prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=record.to_root),
+        )
+        num_pubkeys = derivation.required_pubkeys - (record.timelock - 1)
+
+    completion_bundle = get_rekey_completion_spend(
+        current_singleton.coin,
+        record.coin,
+        derivation.pubkey_list[0:num_pubkeys],
+        derivation,
+        current_singleton.lineage_proof,
+        LineageProof(
+            parent_singleton.coin.parent_coin_info,
+            construct_singleton_inner_puzzle(derivation.prefarm_info).get_tree_hash(),
+            parent_singleton.coin.amount,
+        ),
+        new_derivation,
+    )
+    if record.timelock == 0:
+        completion_bundle = SpendBundle(
+            sorted(
+                completion_bundle.coin_spends,
+                key=lambda coin_spend: coin_spend.coin.name() != record.coin.name(),
+            ),
+            completion_bundle.aggregated_signature,
+        )
+    return completion_bundle
+
+
 @cli.command("complete", short_help="Complete a withdrawal or rekey attempt (will be prompted which one)")
 @click.option(
     "-db",
@@ -1438,13 +1478,17 @@ def complete_cmd(
                 print(f"{prefix} PAYMENT to {encode_puzzle_hash(ach.p2_ph, 'xch')} of amount {ach.coin.amount}")
 
             for rekey in rekeys:
-                if rekey.confirmed_at_time + derivation.prefarm_info.rekey_clawback_period < time.time():
+                is_lock = rekey.timelock == 0
+                if is_lock or rekey.confirmed_at_time + derivation.prefarm_info.rekey_clawback_period < time.time():
                     prefix = f"{index})"
                     selectable_records[index] = rekey
                     index += 1
                 else:
                     prefix = "-)"
-                print(f"{prefix} REKEY from {rekey.from_root} to {rekey.to_root}")
+                if is_lock:
+                    print(f"{prefix} LOCK LEVEL INCREASE from {rekey.from_root} (step 2 pending)")
+                else:
+                    print(f"{prefix} REKEY from {rekey.from_root} to {rekey.to_root}")
             if index == 1:
                 print("No actions can be completed at this time.")
                 return
@@ -1475,24 +1519,12 @@ def complete_cmd(
                 if parent_singleton is None:
                     raise RuntimeError("Bad sync information. Please try a resync.")
 
-                num_pubkeys: int = derivation.required_pubkeys - (record.timelock - 1)
-
                 # Get the spend bundle
-                completion_bundle = get_rekey_completion_spend(
-                    current_singleton.coin,
-                    record.coin,
-                    derivation.pubkey_list[0:num_pubkeys],
+                completion_bundle = _get_rekey_completion_bundle(
+                    current_singleton,
+                    parent_singleton,
+                    record,
                     derivation,
-                    current_singleton.lineage_proof,
-                    LineageProof(
-                        parent_singleton.coin.parent_coin_info,
-                        construct_singleton_inner_puzzle(derivation.prefarm_info).get_tree_hash(),
-                        parent_singleton.coin.amount,
-                    ),
-                    dataclasses.replace(
-                        derivation,
-                        prefarm_info=dataclasses.replace(derivation.prefarm_info, puzzle_root=record.to_root),
-                    ),
                 )
 
             if filename is not None:
