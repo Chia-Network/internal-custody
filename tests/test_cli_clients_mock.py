@@ -20,14 +20,8 @@ def test_wallet_client_mock_select_coins_signature_matches_real_client():
 
 def test_wallet_client_mock_select_coins_rejects_tx_config():
     request = SelectCoins(wallet_id=uint32(1), amount=uint64(0))
-    loop = asyncio.new_event_loop()
-    try:
-        with pytest.raises(TypeError):
-            # The extra argument is intentional: it proves the mock rejects a tx_config like the real client.
-            loop.run_until_complete(
-                WalletClientMock(None).select_coins(  # pylint: disable=too-many-function-args
-                    request, DEFAULT_TX_CONFIG
-                )
-            )
-    finally:
-        loop.close()
+    with pytest.raises(TypeError):
+        # The extra argument is intentional: it proves the mock rejects a tx_config like the real client.
+        asyncio.run(
+            WalletClientMock(None).select_coins(request, DEFAULT_TX_CONFIG)  # pylint: disable=too-many-function-args
+        )

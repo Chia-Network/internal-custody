@@ -266,7 +266,6 @@ def _fund_singleton(runner: CliRunner, launched: LaunchedSingleton) -> None:
             await sim.farm_block()
 
     asyncio.run(pay_p2_singleton())
-    asyncio.set_event_loop(asyncio.new_event_loop())
     _sync(runner, launched)
 
 
@@ -487,7 +486,6 @@ def test_push_tx_reads_signed_bundle_file_with_trailing_newline(monkeypatch: pyt
     runner = CliRunner()
     with runner.isolated_filesystem():
         coin = asyncio.run(_setup_sim_coin())
-        asyncio.set_event_loop(asyncio.new_event_loop())
         spend_bundle = SpendBundle(
             [make_spend(coin, ACS, Program.to([[51, ACS_PH, coin.amount]]))],
             G2Element(),

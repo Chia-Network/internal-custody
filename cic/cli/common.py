@@ -1,7 +1,8 @@
+import contextlib
 import os
 
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import AsyncIterator, Iterable, Optional
 
 from chia.types.coin_spend import CoinSpend
 from chia_rs import G1Element
@@ -76,6 +77,16 @@ def load_root_derivation(configuration: Optional[str]) -> RootDerivation:
     except (AssertionError, ValueError):
         raise ValueError("The configuration specified is not a recognizable format")
     raise ValueError("The specified configuration file can only perform observer actions")
+
+
+@contextlib.asynccontextmanager
+async def open_sync_store(db_path: str) -> AsyncIterator[SyncStore]:
+    """Open a sync store and close it when the context manager exits."""
+    sync_store = await load_db(db_path)
+    try:
+        yield sync_store
+    finally:
+        await sync_store.db_wrapper.close()
 
 
 async def load_db(db_path: str, launcher_id: Optional[bytes32] = None) -> SyncStore:

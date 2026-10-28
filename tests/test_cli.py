@@ -159,7 +159,7 @@ def test_init(monkeypatch):
                     len(await sim_client.get_coin_records_by_parent_ids([new_derivation.prefarm_info.launcher_id])) > 0
                 )
 
-        asyncio.get_event_loop().run_until_complete(check_for_launcher())
+        asyncio.run(check_for_launcher())
 
         result = runner.invoke(cli, ["sync", "--configuration", config_path, "--db-path", "./infos/"])
 
@@ -177,7 +177,7 @@ def test_init(monkeypatch):
             finally:
                 await sync_store.db_wrapper.close()
 
-        latest_singleton_record = asyncio.get_event_loop().run_until_complete(check_for_singleton_record())
+        latest_singleton_record = asyncio.run(check_for_singleton_record())
 
         # Test the other derive_root options
         result = runner.invoke(
@@ -260,7 +260,7 @@ def test_init(monkeypatch):
                 sim.pass_time(derivation.prefarm_info.withdrawal_timelock)
                 await sim.farm_block()
 
-        asyncio.get_event_loop().run_until_complete(pay_singleton_and_pass_time())
+        asyncio.run(pay_singleton_and_pass_time())
 
         result = runner.invoke(
             cli,
@@ -281,7 +281,7 @@ def test_init(monkeypatch):
             finally:
                 await sync_store.db_wrapper.close()
 
-        asyncio.get_event_loop().run_until_complete(check_for_singleton_record_and_payments())
+        asyncio.run(check_for_singleton_record_and_payments())
 
         spend_bundle_out_path: str = "./unsigned_bundle"
         result = runner.invoke(
@@ -356,9 +356,7 @@ def test_init(monkeypatch):
             finally:
                 await sync_store.db_wrapper.close()
 
-        latest_singleton_record, ach_payment = asyncio.get_event_loop().run_until_complete(
-            check_for_singleton_record_and_payment()
-        )
+        latest_singleton_record, ach_payment = asyncio.run(check_for_singleton_record_and_payment())
 
         # Attempt a rekey
         new_derivation: RootDerivation = calculate_puzzle_root(
@@ -403,7 +401,7 @@ def test_init(monkeypatch):
                 sim.pass_time(derivation.prefarm_info.rekey_increments)
                 await sim.farm_block()
 
-        asyncio.get_event_loop().run_until_complete(fast_forward())
+        asyncio.run(fast_forward())
 
         result = runner.invoke(
             cli,
@@ -440,9 +438,7 @@ def test_init(monkeypatch):
             finally:
                 await sync_store.db_wrapper.close()
 
-        latest_singleton_record, rekey_drop = asyncio.get_event_loop().run_until_complete(
-            check_for_singleton_record_and_rekey()
-        )
+        latest_singleton_record, rekey_drop = asyncio.run(check_for_singleton_record_and_rekey())
 
         db_backup_path = "./db_backup.sqlite"
 
@@ -454,7 +450,7 @@ def test_init(monkeypatch):
             async with SpendSim.managed(Path("./sim.db")) as sim:
                 return sim.block_height
 
-        REWIND_HERE: uint32 = asyncio.get_event_loop().run_until_complete(set_rewind_height())
+        REWIND_HERE: uint32 = asyncio.run(set_rewind_height())
 
         # Attempt to claw back both coins
         for i in range(0, 2):
@@ -516,7 +512,7 @@ def test_init(monkeypatch):
                 finally:
                     await sync_store.db_wrapper.close()
 
-            asyncio.get_event_loop().run_until_complete(check_for_spent_clawback())
+            asyncio.run(check_for_spent_clawback())
 
         async def rewind():
             async with SpendSim.managed(Path("./sim.db")) as sim:
@@ -527,7 +523,7 @@ def test_init(monkeypatch):
                     with open(sync_db_path, "wb") as file:
                         file.write(backup.read())
 
-        asyncio.get_event_loop().run_until_complete(rewind())
+        asyncio.run(rewind())
 
         # Attempt to complete both coins
         for i in range(0, 2):
@@ -581,7 +577,7 @@ def test_init(monkeypatch):
                 finally:
                     await sync_store.db_wrapper.close()
 
-            asyncio.get_event_loop().run_until_complete(check_for_spent_completion())
+            asyncio.run(check_for_spent_completion())
 
         # Check to see that updating the config works
         result = runner.invoke(
@@ -616,7 +612,7 @@ def test_init(monkeypatch):
                     with open(sync_db_path, "wb") as file:
                         file.write(backup.read())
 
-        asyncio.get_event_loop().run_until_complete(rewind_again())
+        asyncio.run(rewind_again())
 
         from tests.cli_clients import FullNodeClientMock, WalletClientMock
 
@@ -779,7 +775,7 @@ def test_init(monkeypatch):
             finally:
                 await sync_store.db_wrapper.close()
 
-        asyncio.get_event_loop().run_until_complete(check_for_spent_completion_again())
+        asyncio.run(check_for_spent_completion_again())
 
         # Try a slow rekey
         async def fast_forward_slow_rekey():
@@ -787,7 +783,7 @@ def test_init(monkeypatch):
                 sim.pass_time(prefarm_info.rekey_increments * 2 + prefarm_info.slow_rekey_timelock)
                 await sim.farm_block()
 
-        asyncio.get_event_loop().run_until_complete(fast_forward_slow_rekey())
+        asyncio.run(fast_forward_slow_rekey())
 
         result = runner.invoke(
             cli,
@@ -829,7 +825,7 @@ def test_init(monkeypatch):
                 sim.pass_time(prefarm_info.rekey_clawback_period)
                 await sim.farm_block()
 
-        asyncio.get_event_loop().run_until_complete(fast_forward_rekey_timelock())
+        asyncio.run(fast_forward_rekey_timelock())
 
         result = runner.invoke(
             cli,

@@ -30,7 +30,6 @@ def _pass_time(seconds: int) -> None:
             await sim.farm_block()
 
     asyncio.run(advance())
-    asyncio.set_event_loop(asyncio.new_event_loop())
 
 
 def _payment_file(runner: CliRunner, launched: LaunchedSingleton, filename: str) -> None:

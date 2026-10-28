@@ -19,12 +19,11 @@ from chia.wallet.wallet_request_types import Addition, CreateSignedTransaction, 
 
 from cic.cli.common import (
     get_node_and_wallet_clients,
-    load_db,
+    open_sync_store,
     load_prefarm_info,
     load_pubkeys,
     load_root_derivation,
 )
-from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm import construct_singleton_inner_puzzle
 from cic.drivers.prefarm_info import PrefarmInfo
 from cic.drivers.puzzle_root_construction import RootDerivation, calculate_puzzle_root
@@ -148,15 +147,12 @@ def derive_cmd(
 
         async def get_prefarm_info() -> PrefarmInfo:
             assert db_path is not None
-            sync_store = await load_db(db_path)
-            try:
+            async with open_sync_store(db_path) as sync_store:
                 prefarm_info = await sync_store.get_configuration(True, block_outdated=False)
                 assert isinstance(prefarm_info, PrefarmInfo)
                 return prefarm_info
-            finally:
-                await sync_store.db_wrapper.close()
 
-        prefarm_info = asyncio.get_event_loop().run_until_complete(get_prefarm_info())
+        prefarm_info = asyncio.run(get_prefarm_info())
     pubkey_list: List[G1Element] = list(load_pubkeys(pubkeys))
     derivation: RootDerivation = calculate_puzzle_root(
         prefarm_info,
@@ -291,7 +287,7 @@ def launch_cmd(
             await node_client.await_closed()
             await wallet_client.await_closed()
 
-    asyncio.get_event_loop().run_until_complete(do_command())
+    asyncio.run(do_command())
 
 
 @click.command("update_config", short_help="Update an outdated config in a sync DB with a new config")
@@ -313,8 +309,7 @@ def update_cmd(
     db_path: str,
 ):
     async def do_command():
-        sync_store: SyncStore = await load_db(db_path)
-        try:
+        async with open_sync_store(db_path) as sync_store:
             if not await sync_store.is_configuration_outdated():
                 print("The configuration of this sync DB is not outdated")
             else:
@@ -334,10 +329,8 @@ def update_cmd(
                 await sync_store.add_configuration(db_config, outdated)
                 # await sync_store.db_wrapper.commit_transaction()
                 print("Configuration update successful")
-        finally:
-            await sync_store.db_wrapper.close()
 
-    asyncio.get_event_loop().run_until_complete(do_command())
+    asyncio.run(do_command())
 
 
 @click.command("export_config", short_help="Export a copy of the current DB's config")
@@ -366,8 +359,7 @@ def export_cmd(
     public: bool,
 ):
     async def do_command():
-        sync_store: SyncStore = await load_db(db_path)
-        try:
+        async with open_sync_store(db_path) as sync_store:
             if not public:
                 try:
                     configuration = await sync_store.get_configuration(False, block_outdated=False)
@@ -385,7 +377,5 @@ def export_cmd(
             with open(Path(_filename), "wb") as file:
                 file.write(bytes(configuration))
             print(f"Config successfully exported to {_filename}")
-        finally:
-            await sync_store.db_wrapper.close()
 
-    asyncio.get_event_loop().run_until_complete(do_command())
+    asyncio.run(do_command())

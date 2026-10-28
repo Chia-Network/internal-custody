@@ -55,316 +55,277 @@ def test_push_tx_two_step_confirmation_timeout(monkeypatch):
     from tests.cli_clients import FullNodeClientMock
 
     runner = CliRunner()
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        with runner.isolated_filesystem():
-            coin = loop.run_until_complete(_setup_sim_coin())
+    with runner.isolated_filesystem():
+        coin = asyncio.run(_setup_sim_coin())
 
-            child_coin = Coin(coin.name(), ACS_PH, coin.amount)
-            first_spend = make_spend(coin, ACS, Program.to([[51, ACS_PH, coin.amount]]))
-            second_spend = make_spend(
-                child_coin,
-                ACS,
-                Program.to([[80, 0], [51, ACS_PH, child_coin.amount]]),
-            )
-            two_step_bundle = SpendBundle([first_spend, second_spend], G2Element())
+        child_coin = Coin(coin.name(), ACS_PH, coin.amount)
+        first_spend = make_spend(coin, ACS, Program.to([[51, ACS_PH, coin.amount]]))
+        second_spend = make_spend(
+            child_coin,
+            ACS,
+            Program.to([[80, 0], [51, ACS_PH, child_coin.amount]]),
+        )
+        two_step_bundle = SpendBundle([first_spend, second_spend], G2Element())
 
-            original_get_coin_record_by_name = FullNodeClientMock.get_coin_record_by_name
+        original_get_coin_record_by_name = FullNodeClientMock.get_coin_record_by_name
 
-            async def no_coin_record(self, coin_id):
-                return None
+        async def no_coin_record(self, coin_id):
+            return None
 
-            monkeypatch.setattr(FullNodeClientMock, "get_coin_record_by_name", no_coin_record)
+        monkeypatch.setattr(FullNodeClientMock, "get_coin_record_by_name", no_coin_record)
 
-            result = runner.invoke(
-                cli,
-                [
-                    "push_tx",
-                    "--spend-bundle",
-                    bytes(two_step_bundle).hex(),
-                    "--confirmation-timeout",
-                    "0",
-                    "--poll-interval",
-                    "0.01",
-                ],
-            )
-            assert result.exit_code != 0
-            assert "not seen confirmed" in result.output
-            assert "cic sync" in result.output
-            assert "may have been dropped" in result.output
-            assert "Step 1 was accepted, but" not in result.output
-            match = re.search(r"Step 2 spend bundle \(hex\): ([0-9a-f]+)", result.output)
-            assert match is not None
-            second_hex = match.group(1)
+        result = runner.invoke(
+            cli,
+            [
+                "push_tx",
+                "--spend-bundle",
+                bytes(two_step_bundle).hex(),
+                "--confirmation-timeout",
+                "0",
+                "--poll-interval",
+                "0.01",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "not seen confirmed" in result.output
+        assert "cic sync" in result.output
+        assert "may have been dropped" in result.output
+        assert "Step 1 was accepted, but" not in result.output
+        match = re.search(r"Step 2 spend bundle \(hex\): ([0-9a-f]+)", result.output)
+        assert match is not None
+        second_hex = match.group(1)
 
-            monkeypatch.setattr(FullNodeClientMock, "get_coin_record_by_name", original_get_coin_record_by_name)
+        monkeypatch.setattr(FullNodeClientMock, "get_coin_record_by_name", original_get_coin_record_by_name)
 
-            result = runner.invoke(
-                cli,
-                [
-                    "push_tx",
-                    "--spend-bundle",
-                    second_hex,
-                ],
-            )
-            assert result.exit_code == 0
-            assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
+        result = runner.invoke(
+            cli,
+            [
+                "push_tx",
+                "--spend-bundle",
+                second_hex,
+            ],
+        )
+        assert result.exit_code == 0
+        assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
 
-            async def check_state() -> None:
-                async with SpendSim.managed(Path("./sim.db")) as sim:
-                    sim_client = SimClient(sim)
-                    child_record = await sim_client.get_coin_record_by_name(child_coin.name())
-                    assert child_record is not None
-                    assert child_record.spent
-                    grandchildren = await sim_client.get_coin_records_by_parent_ids([child_coin.name()])
-                    assert len(grandchildren) == 1
+        async def check_state() -> None:
+            async with SpendSim.managed(Path("./sim.db")) as sim:
+                sim_client = SimClient(sim)
+                child_record = await sim_client.get_coin_record_by_name(child_coin.name())
+                assert child_record is not None
+                assert child_record.spent
+                grandchildren = await sim_client.get_coin_records_by_parent_ids([child_coin.name()])
+                assert len(grandchildren) == 1
 
-            loop.run_until_complete(check_state())
-    finally:
-        loop.close()
-        asyncio.set_event_loop(asyncio.new_event_loop())
+        asyncio.run(check_state())
 
 
 def test_push_tx_two_step_no_announcement_does_not_push(monkeypatch):
     from tests.cli_clients import FullNodeClientMock
 
     runner = CliRunner()
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        with runner.isolated_filesystem():
-            coin = loop.run_until_complete(_setup_sim_coin())
+    with runner.isolated_filesystem():
+        coin = asyncio.run(_setup_sim_coin())
 
-            child_coin = Coin(coin.name(), ACS_PH, coin.amount)
-            first_spend = make_spend(coin, ACS, Program.to([[51, ACS_PH, coin.amount]]))
-            second_spend = make_spend(
-                child_coin,
-                ACS,
-                Program.to([[80, 0], [51, ACS_PH, child_coin.amount]]),
-            )
-            two_step_bundle = SpendBundle([first_spend, second_spend], G2Element())
+        child_coin = Coin(coin.name(), ACS_PH, coin.amount)
+        first_spend = make_spend(coin, ACS, Program.to([[51, ACS_PH, coin.amount]]))
+        second_spend = make_spend(
+            child_coin,
+            ACS,
+            Program.to([[80, 0], [51, ACS_PH, child_coin.amount]]),
+        )
+        two_step_bundle = SpendBundle([first_spend, second_spend], G2Element())
 
-            pushed_bundles: List[SpendBundle] = []
-            original_push_tx = FullNodeClientMock.push_tx
+        pushed_bundles: List[SpendBundle] = []
+        original_push_tx = FullNodeClientMock.push_tx
 
-            async def record_push_tx(self, spend_bundle):
-                pushed_bundles.append(spend_bundle)
-                return await original_push_tx(self, spend_bundle)
+        async def record_push_tx(self, spend_bundle):
+            pushed_bundles.append(spend_bundle)
+            return await original_push_tx(self, spend_bundle)
 
-            monkeypatch.setattr(FullNodeClientMock, "push_tx", record_push_tx)
+        monkeypatch.setattr(FullNodeClientMock, "push_tx", record_push_tx)
 
-            result = runner.invoke(
-                cli,
-                [
-                    "push_tx",
-                    "--spend-bundle",
-                    bytes(two_step_bundle).hex(),
-                    "--fee",
-                    100,
-                    "--confirmation-timeout",
-                    "0",
-                    "--poll-interval",
-                    "0.01",
-                ],
-            )
+        result = runner.invoke(
+            cli,
+            [
+                "push_tx",
+                "--spend-bundle",
+                bytes(two_step_bundle).hex(),
+                "--fee",
+                100,
+                "--confirmation-timeout",
+                "0",
+                "--poll-interval",
+                "0.01",
+            ],
+        )
 
-            assert result.exit_code != 0
-            assert (
-                "Cannot find a way to link fee to this transaction. Please specify 0 fee and try again."
-                in result.output
-            )
-            assert pushed_bundles == []
-    finally:
-        loop.close()
-        asyncio.set_event_loop(asyncio.new_event_loop())
+        assert result.exit_code != 0
+        assert "Cannot find a way to link fee to this transaction. Please specify 0 fee and try again." in result.output
+        assert pushed_bundles == []
 
 
 def test_push_tx_two_step_fee_in_both_steps(monkeypatch):
     runner = CliRunner()
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        with runner.isolated_filesystem():
-            coins = loop.run_until_complete(_setup_sim_coins())
-            _, second_spend, two_step_bundle = _two_step_bundle_with_announcement(coins[-1])
-            pushed_bundles, fee_bundles, _ = _record_wallet_calls(monkeypatch)
+    with runner.isolated_filesystem():
+        coins = asyncio.run(_setup_sim_coins())
+        _, second_spend, two_step_bundle = _two_step_bundle_with_announcement(coins[-1])
+        pushed_bundles, fee_bundles, _ = _record_wallet_calls(monkeypatch)
 
-            result = runner.invoke(
-                cli,
-                [
-                    "push_tx",
-                    "--spend-bundle",
-                    bytes(two_step_bundle).hex(),
-                    "--fee",
-                    "100",
-                ],
-            )
+        result = runner.invoke(
+            cli,
+            [
+                "push_tx",
+                "--spend-bundle",
+                bytes(two_step_bundle).hex(),
+                "--fee",
+                "100",
+            ],
+        )
 
-            assert result.exit_code == 0
-            assert result.output.count(r"{'success': True, 'status': 'SUCCESS'}") == 2
-            assert len(pushed_bundles) == 2
-            assert len(fee_bundles) == 2
+        assert result.exit_code == 0
+        assert result.output.count(r"{'success': True, 'status': 'SUCCESS'}") == 2
+        assert len(pushed_bundles) == 2
+        assert len(fee_bundles) == 2
 
-            fees_for_push = []
-            for pushed in pushed_bundles:
-                containing = [fee for fee in fee_bundles if _bundle_coin_ids(fee) <= _bundle_coin_ids(pushed)]
-                assert len(containing) == 1
-                fees_for_push.append(containing[0])
+        fees_for_push = []
+        for pushed in pushed_bundles:
+            containing = [fee for fee in fee_bundles if _bundle_coin_ids(fee) <= _bundle_coin_ids(pushed)]
+            assert len(containing) == 1
+            fees_for_push.append(containing[0])
 
-            step_one, step_two = pushed_bundles
-            step_one_fee, step_two_fee = fees_for_push
+        step_one, step_two = pushed_bundles
+        step_one_fee, step_two_fee = fees_for_push
 
-            assert any(
-                condition[0] == ConditionOpcode.ASSERT_CONCURRENT_SPEND.value
-                and bytes32(condition[1]) == step_one.coin_spends[0].coin.name()
-                for condition in _bundle_conditions(step_one_fee)
-            )
+        assert any(
+            condition[0] == ConditionOpcode.ASSERT_CONCURRENT_SPEND.value
+            and bytes32(condition[1]) == step_one.coin_spends[0].coin.name()
+            for condition in _bundle_conditions(step_one_fee)
+        )
 
-            expected_announcement_id = std_hash(second_spend.coin.name() + b"msg")
-            assert any(
-                condition[0] == ConditionOpcode.ASSERT_COIN_ANNOUNCEMENT.value
-                and bytes32(condition[1]) == expected_announcement_id
-                for condition in _bundle_conditions(step_two_fee)
-            )
+        expected_announcement_id = std_hash(second_spend.coin.name() + b"msg")
+        assert any(
+            condition[0] == ConditionOpcode.ASSERT_COIN_ANNOUNCEMENT.value
+            and bytes32(condition[1]) == expected_announcement_id
+            for condition in _bundle_conditions(step_two_fee)
+        )
 
-            assert _fee_paid(step_one_fee) == 100
-            assert _fee_paid(step_two_fee) == 100
-    finally:
-        loop.close()
-        asyncio.set_event_loop(asyncio.new_event_loop())
+        assert _fee_paid(step_one_fee) == 100
+        assert _fee_paid(step_two_fee) == 100
 
 
 def test_push_tx_two_step_fee_coins_are_set_aside(monkeypatch):
     runner = CliRunner()
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        with runner.isolated_filesystem():
-            coins = loop.run_until_complete(_setup_sim_coins())
-            _, _, two_step_bundle = _two_step_bundle_with_announcement(coins[-1])
-            _, fee_bundles, fee_tx_configs = _record_wallet_calls(monkeypatch)
+    with runner.isolated_filesystem():
+        coins = asyncio.run(_setup_sim_coins())
+        _, _, two_step_bundle = _two_step_bundle_with_announcement(coins[-1])
+        _, fee_bundles, fee_tx_configs = _record_wallet_calls(monkeypatch)
 
-            result = runner.invoke(
-                cli,
-                [
-                    "push_tx",
-                    "--spend-bundle",
-                    bytes(two_step_bundle).hex(),
-                    "--fee",
-                    "100",
-                ],
-            )
+        result = runner.invoke(
+            cli,
+            [
+                "push_tx",
+                "--spend-bundle",
+                bytes(two_step_bundle).hex(),
+                "--fee",
+                "100",
+            ],
+        )
 
-            assert result.exit_code == 0
-            assert len(fee_bundles) == 2
-            assert len(fee_tx_configs) == 2
+        assert result.exit_code == 0
+        assert len(fee_bundles) == 2
+        assert len(fee_tx_configs) == 2
 
-            first_fee_coin_ids = _bundle_coin_ids(fee_bundles[0])
-            second_fee_coin_ids = _bundle_coin_ids(fee_bundles[1])
-            assert first_fee_coin_ids.isdisjoint(second_fee_coin_ids)
-            assert fee_tx_configs[0].excluded_coin_ids == []
-            assert set(fee_tx_configs[1].excluded_coin_ids) == first_fee_coin_ids
-    finally:
-        loop.close()
-        asyncio.set_event_loop(asyncio.new_event_loop())
+        first_fee_coin_ids = _bundle_coin_ids(fee_bundles[0])
+        second_fee_coin_ids = _bundle_coin_ids(fee_bundles[1])
+        assert first_fee_coin_ids.isdisjoint(second_fee_coin_ids)
+        assert fee_tx_configs[0].excluded_coin_ids == []
+        assert set(fee_tx_configs[1].excluded_coin_ids) == first_fee_coin_ids
 
 
 def test_push_tx_two_step_overlapping_fee_coins_abort(monkeypatch):
     from tests.cli_clients import WalletClientMock
 
     runner = CliRunner()
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        with runner.isolated_filesystem():
-            coins = loop.run_until_complete(_setup_sim_coins())
-            _, _, two_step_bundle = _two_step_bundle_with_announcement(coins[-1])
-            pushed_bundles, _, _ = _record_wallet_calls(monkeypatch)
+    with runner.isolated_filesystem():
+        coins = asyncio.run(_setup_sim_coins())
+        _, _, two_step_bundle = _two_step_bundle_with_announcement(coins[-1])
+        pushed_bundles, _, _ = _record_wallet_calls(monkeypatch)
 
-            async def select_same_coin(self, request, tx_config=None):
-                return SimpleNamespace(coins=[coins[0]])
+        async def select_same_coin(self, request, tx_config=None):
+            return SimpleNamespace(coins=[coins[0]])
 
-            monkeypatch.setattr(WalletClientMock, "_select_coins", select_same_coin)
+        monkeypatch.setattr(WalletClientMock, "_select_coins", select_same_coin)
 
-            result = runner.invoke(
-                cli,
-                [
-                    "push_tx",
-                    "--spend-bundle",
-                    bytes(two_step_bundle).hex(),
-                    "--fee",
-                    "100",
-                ],
-            )
+        result = runner.invoke(
+            cli,
+            [
+                "push_tx",
+                "--spend-bundle",
+                bytes(two_step_bundle).hex(),
+                "--fee",
+                "100",
+            ],
+        )
 
-            assert result.exit_code != 0
-            assert "same coin(s)" in result.output
-            assert "Nothing was pushed" not in result.output
-            assert len(pushed_bundles) == 1
-            match = re.search(r"Step 2 spend bundle \(hex\): ([0-9a-f]+)", result.output)
-            assert match is not None
-            assert SpendBundle.from_bytes(bytes.fromhex(match.group(1))) == split_two_step_push(two_step_bundle).second
-    finally:
-        loop.close()
-        asyncio.set_event_loop(asyncio.new_event_loop())
+        assert result.exit_code != 0
+        assert "same coin(s)" in result.output
+        assert "Nothing was pushed" not in result.output
+        assert len(pushed_bundles) == 1
+        match = re.search(r"Step 2 spend bundle \(hex\): ([0-9a-f]+)", result.output)
+        assert match is not None
+        assert SpendBundle.from_bytes(bytes.fromhex(match.group(1))) == split_two_step_push(two_step_bundle).second
 
 
 def test_push_tx_two_step_timeout_prints_fee_less_step_2(monkeypatch):
     from tests.cli_clients import FullNodeClientMock
 
     runner = CliRunner()
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        with runner.isolated_filesystem():
-            coins = loop.run_until_complete(_setup_sim_coins())
-            _, _, two_step_bundle = _two_step_bundle_with_announcement(coins[-1])
-            expected_second = split_two_step_push(two_step_bundle).second
+    with runner.isolated_filesystem():
+        coins = asyncio.run(_setup_sim_coins())
+        _, _, two_step_bundle = _two_step_bundle_with_announcement(coins[-1])
+        expected_second = split_two_step_push(two_step_bundle).second
 
-            original_get_coin_record_by_name = FullNodeClientMock.get_coin_record_by_name
+        original_get_coin_record_by_name = FullNodeClientMock.get_coin_record_by_name
 
-            async def no_coin_record(self, coin_id):
-                return None
+        async def no_coin_record(self, coin_id):
+            return None
 
-            monkeypatch.setattr(FullNodeClientMock, "get_coin_record_by_name", no_coin_record)
+        monkeypatch.setattr(FullNodeClientMock, "get_coin_record_by_name", no_coin_record)
 
-            result = runner.invoke(
-                cli,
-                [
-                    "push_tx",
-                    "--spend-bundle",
-                    bytes(two_step_bundle).hex(),
-                    "--fee",
-                    "100",
-                    "--confirmation-timeout",
-                    "0",
-                    "--poll-interval",
-                    "0.01",
-                ],
-            )
+        result = runner.invoke(
+            cli,
+            [
+                "push_tx",
+                "--spend-bundle",
+                bytes(two_step_bundle).hex(),
+                "--fee",
+                "100",
+                "--confirmation-timeout",
+                "0",
+                "--poll-interval",
+                "0.01",
+            ],
+        )
 
-            assert result.exit_code != 0
-            match = re.search(r"Step 2 spend bundle \(hex\): ([0-9a-f]+)", result.output)
-            assert match is not None
-            fee_less_hex = match.group(1)
-            assert SpendBundle.from_bytes(bytes.fromhex(fee_less_hex)) == expected_second
-            assert "without the fee" not in result.output
+        assert result.exit_code != 0
+        match = re.search(r"Step 2 spend bundle \(hex\): ([0-9a-f]+)", result.output)
+        assert match is not None
+        fee_less_hex = match.group(1)
+        assert SpendBundle.from_bytes(bytes.fromhex(fee_less_hex)) == expected_second
+        assert "without the fee" not in result.output
 
-            monkeypatch.setattr(FullNodeClientMock, "get_coin_record_by_name", original_get_coin_record_by_name)
+        monkeypatch.setattr(FullNodeClientMock, "get_coin_record_by_name", original_get_coin_record_by_name)
 
-            result = runner.invoke(
-                cli,
-                [
-                    "push_tx",
-                    "--spend-bundle",
-                    fee_less_hex,
-                    "--fee",
-                    "100",
-                ],
-            )
-            assert result.exit_code == 0
-            assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
-    finally:
-        loop.close()
-        asyncio.set_event_loop(asyncio.new_event_loop())
+        result = runner.invoke(
+            cli,
+            [
+                "push_tx",
+                "--spend-bundle",
+                fee_less_hex,
+                "--fee",
+                "100",
+            ],
+        )
+        assert result.exit_code == 0
+        assert r"{'success': True, 'status': 'SUCCESS'}" in result.output

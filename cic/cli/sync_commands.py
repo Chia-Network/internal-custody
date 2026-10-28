@@ -16,7 +16,7 @@ from chia_rs.sized_ints import uint32
 from chia.util.bech32m import encode_puzzle_hash
 from chia.wallet.lineage_proof import LineageProof
 
-from cic.cli.common import get_node_client, load_db, load_prefarm_info, load_root_derivation
+from cic.cli.common import get_node_client, load_db, load_prefarm_info, load_root_derivation, open_sync_store
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
 from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm import (
@@ -323,7 +323,7 @@ def sync_cmd(
         # await sync_store.db_wrapper.commit_transaction()
         await sync_store.db_wrapper.close()
 
-    asyncio.get_event_loop().run_until_complete(do_sync())
+    asyncio.run(do_sync())
 
     if show:
         show_status(db_path, False, False)
@@ -346,14 +346,11 @@ def sync_cmd(
 )
 def address_cmd(db_path: str, prefix: str):
     async def do_command():
-        sync_store: SyncStore = await load_db(db_path)
-        try:
+        async with open_sync_store(db_path) as sync_store:
             prefarm_info = await sync_store.get_configuration(True, block_outdated=False)
             print(encode_puzzle_hash(construct_p2_singleton(prefarm_info.launcher_id).get_tree_hash(), prefix))
-        finally:
-            await sync_store.db_wrapper.close()
 
-    asyncio.get_event_loop().run_until_complete(do_command())
+    asyncio.run(do_command())
 
 
 @click.command("show", short_help="Show the status of the singleton, payments, and rekeys")
@@ -390,8 +387,7 @@ def show_status(
     derivation: bool,
 ):
     async def do_command():
-        sync_store: SyncStore = await load_db(db_path)
-        try:
+        async with open_sync_store(db_path) as sync_store:
             current_time = int(time.time())
             latest_singleton = await sync_store.get_latest_singleton()
             ach_records = await sync_store.get_ach_records()
@@ -463,10 +459,7 @@ def show_status(
                     as_bech32m: str = BLSPublicKey(pk).as_bech32m()
                     print(f"    - {as_bech32m}")
 
-        finally:
-            await sync_store.db_wrapper.close()
-
-    asyncio.get_event_loop().run_until_complete(do_command())
+    asyncio.run(do_command())
 
 
 @click.command("audit", short_help="Export a history of the singleton to a CSV")
@@ -499,8 +492,7 @@ def audit_cmd(
             old_dict = json.load(file)
 
     async def do_command():
-        sync_store: SyncStore = await load_db(db_path)
-        try:
+        async with open_sync_store(db_path) as sync_store:
             singletons: List[SingletonRecord] = await sync_store.get_all_singletons()
             achs: List[ACHRecord] = await sync_store.get_ach_records(include_completed_coins=True)
             rekeys: List[RekeyRecord] = await sync_store.get_rekey_records(include_completed_coins=True)
@@ -591,7 +583,4 @@ def audit_cmd(
                 with open(filepath, "w") as file:
                     file.write(json.dumps(final_dict))
 
-        finally:
-            await sync_store.db_wrapper.close()
-
-    asyncio.get_event_loop().run_until_complete(do_command())
+    asyncio.run(do_command())
