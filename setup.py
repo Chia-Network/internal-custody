@@ -9,7 +9,7 @@ dependencies = [
     "chia-blockchain==2.7.5",
     "chia_base>=0.1.5",
     "click==8.5.0",
-    "segno==1.4.1",
+    "segno==1.6.6",
     "hsms==0.3.2",
 ]
 
