@@ -1,13 +1,13 @@
 """Helpers for finding a fee announcement and building a linked fee spend bundle."""
 
-from typing import Any, List, Optional, Tuple
+from typing import Any, Iterable, List, Optional, Tuple
 
 from chia_rs import SpendBundle
 from chia_rs.sized_bytes import bytes32
 from chia_rs.sized_ints import uint32, uint64
 from chia.types.blockchain_format.program import Program, INFINITE_COST
 from chia.types.coin_spend import CoinSpend
-from chia.wallet.conditions import AssertCoinAnnouncement
+from chia.wallet.conditions import AssertCoinAnnouncement, AssertConcurrentSpend, Condition
 from chia.wallet.transaction_record import TransactionRecord
 from chia.wallet.util.tx_config import DEFAULT_TX_CONFIG
 from chia.wallet.wallet_request_types import Addition, CreateSignedTransaction
@@ -42,13 +42,42 @@ def find_fee_announcement(spend_bundle: SpendBundle) -> Optional[AssertCoinAnnou
     return None if result is None else result[1]
 
 
+def fee_condition_for_step(
+    step_bundle: SpendBundle,
+    announcement_spend: CoinSpend,
+    announcement: AssertCoinAnnouncement,
+) -> Condition:
+    """Return the condition binding a fee transaction to ``step_bundle``.
+
+    The step that contains the announcement spend asserts the announcement itself.
+    The other step asserts that its first coin spend happens concurrently with the
+    fee spend, which keeps the fee in the same push as the rest of that step.
+    """
+    announcement_coin_id = announcement_spend.coin.name()
+    if any(coin_spend.coin.name() == announcement_coin_id for coin_spend in step_bundle.coin_spends):
+        return announcement
+    if len(step_bundle.coin_spends) == 0:
+        raise ValueError("Cannot link a fee to an empty step of a two-step push")
+    return AssertConcurrentSpend(step_bundle.coin_spends[0].coin.name())
+
+
 async def create_fee_spend_bundle(
     wallet_client: Any,
     fee: int,
-    fee_announcement: Optional[AssertCoinAnnouncement],
+    condition: Optional[Condition],
+    excluded_coin_ids: Iterable[bytes32] = (),
 ) -> SpendBundle:
-    """Create a fee spend bundle, optionally asserting the given announcement."""
-    extra_conditions: tuple = () if fee_announcement is None else (fee_announcement,)
+    """Create a fee spend bundle, optionally asserting the given condition.
+
+    ``excluded_coin_ids`` keeps the wallet from selecting coins that are already
+    spent by another fee transaction.  The wallet is called with ``push=False``,
+    so it does not reserve the selected coins itself.
+    """
+    extra_conditions: tuple = () if condition is None else (condition,)
+    excluded_ids: List[bytes32] = list(excluded_coin_ids)
+    tx_config = DEFAULT_TX_CONFIG
+    if excluded_ids:
+        tx_config = DEFAULT_TX_CONFIG.override(excluded_coin_ids=excluded_ids)
     tx_response = await wallet_client.create_signed_transactions(
         CreateSignedTransaction(
             wallet_id=uint32(1),
@@ -57,7 +86,7 @@ async def create_fee_spend_bundle(
             push=False,
             sign=True,
         ),
-        DEFAULT_TX_CONFIG,
+        tx_config,
         extra_conditions,
     )
     txs: List[TransactionRecord] = tx_response.signed_txs

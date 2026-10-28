@@ -676,42 +676,51 @@ def test_init(monkeypatch):
         assert "Step 2: ephemeral spends" in result.output
         assert result.output.count(r"{'success': True, 'status': 'SUCCESS'}") == 2
 
-        # The lock level increase only emits a coin announcement from the lock coin completion
-        # spend, which is part of step 2.  The fee must therefore be in step 2, linked to that
-        # announcement.
+        # Both steps carry a fee.  Step 2's fee is still linked to the lock coin
+        # completion announcement; step 1's fee is linked to step 1's first spend.
         assert len(pushed_bundles) == 2
-        assert len(fee_bundles) == 1
-        fee_coin_ids = {coin_spend.coin.name() for coin_spend in fee_bundles[0].coin_spends}
-        bundles_with_fee = [
-            bundle
-            for bundle in pushed_bundles
-            if fee_coin_ids <= {coin_spend.coin.name() for coin_spend in bundle.coin_spends}
-        ]
-        assert len(bundles_with_fee) == 1
-        fee_target_bundle = bundles_with_fee[0]
-        fee_target_coin_ids = {coin_spend.coin.name() for coin_spend in fee_target_bundle.coin_spends}
+        assert len(fee_bundles) == 2
+
+        def _coin_ids(bundle: SpendBundle) -> set:
+            return {coin_spend.coin.name() for coin_spend in bundle.coin_spends}
+
+        def _fee_conditions(bundle: SpendBundle) -> List:
+            all_conditions: List = []
+            for coin_spend in bundle.coin_spends:
+                _, conditions = Program.from_bytes(bytes(coin_spend.puzzle_reveal)).run_with_cost(
+                    INFINITE_COST, Program.from_bytes(bytes(coin_spend.solution))
+                )
+                all_conditions.extend(conditions.as_python())
+            return all_conditions
+
+        def _bundle_with_fee(fee_bundle: SpendBundle) -> SpendBundle:
+            fee_coin_ids = _coin_ids(fee_bundle)
+            matching = [bundle for bundle in pushed_bundles if fee_coin_ids <= _coin_ids(bundle)]
+            assert len(matching) == 1
+            return matching[0]
+
+        step_one_bundle = _bundle_with_fee(fee_bundles[0])
+        step_two_bundle = _bundle_with_fee(fee_bundles[1])
+        assert step_one_bundle != step_two_bundle
 
         announcement = find_fee_announcement(signed_lock_bundle)
         assert announcement is not None
         assert announcement.asserted_id is not None
         assert announcement.asserted_msg is not None
-        assert announcement.asserted_id in fee_target_coin_ids
         expected_announcement_id = std_hash(announcement.asserted_id + announcement.asserted_msg)
 
-        found_fee_assertion = False
-        for coin_spend in fee_target_bundle.coin_spends:
-            if coin_spend.coin.name() not in fee_coin_ids:
-                continue
-            _, conditions = Program.from_bytes(bytes(coin_spend.puzzle_reveal)).run_with_cost(
-                INFINITE_COST, Program.from_bytes(bytes(coin_spend.solution))
-            )
-            for condition in conditions.as_python():
-                if (
-                    condition[0] == ConditionOpcode.ASSERT_COIN_ANNOUNCEMENT.value
-                    and bytes32(condition[1]) == expected_announcement_id
-                ):
-                    found_fee_assertion = True
-        assert found_fee_assertion
+        assert any(
+            condition[0] == ConditionOpcode.ASSERT_COIN_ANNOUNCEMENT.value
+            and bytes32(condition[1]) == expected_announcement_id
+            for condition in _fee_conditions(fee_bundles[1])
+        )
+        assert announcement.asserted_id in _coin_ids(step_two_bundle)
+
+        assert any(
+            condition[0] == ConditionOpcode.ASSERT_CONCURRENT_SPEND.value
+            and bytes32(condition[1]) == step_one_bundle.coin_spends[0].coin.name()
+            for condition in _fee_conditions(fee_bundles[0])
+        )
 
         result = runner.invoke(
             cli,

@@ -71,15 +71,14 @@ class WalletClientMock:
         self.sim_client = sim_client
 
     # These are the only two methods we need
-    async def select_coins(self, request: SelectCoins):
-        return SimpleNamespace(
-            coins=[
-                sorted(
-                    await self.sim_client.get_coin_records_by_puzzle_hashes([ACS_PH], include_spent_coins=False),
-                    key=lambda cr: cr.coin.name(),
-                )[0].coin
-            ]
-        )
+    async def select_coins(self, request: SelectCoins, tx_config: Any = None):
+        excluded_coin_ids = set() if tx_config is None else set(tx_config.excluded_coin_ids)
+        coin_records = [
+            record
+            for record in await self.sim_client.get_coin_records_by_puzzle_hashes([ACS_PH], include_spent_coins=False)
+            if record.coin.name() not in excluded_coin_ids
+        ]
+        return SimpleNamespace(coins=[sorted(coin_records, key=lambda cr: cr.coin.name())[0].coin])
 
     async def create_signed_transactions(
         self,
@@ -100,6 +99,7 @@ class WalletClientMock:
             coins = (
                 await self.select_coins(
                     SelectCoins(wallet_id=uint32(1), amount=uint64(total_amount + request.fee)),
+                    tx_config,
                 )
             ).coins
         change_amount = sum(c.amount for c in coins) - (total_amount + request.fee)

@@ -3,22 +3,34 @@
 import asyncio
 import click
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from chia_rs import SpendBundle
 from chia_rs.sized_bytes import bytes32
 
-from cic.cli.fees import create_fee_spend_bundle, find_fee_announcement_and_spend
+from cic.cli.fees import create_fee_spend_bundle, fee_condition_for_step, find_fee_announcement_and_spend
 from cic.drivers.two_step_push import split_two_step_push
 
 
 class TwoStepPushError(Exception):
     """Raised when one of the two push steps cannot be completed."""
 
-    def __init__(self, message: str, second_bundle: SpendBundle) -> None:
-        super().__init__(message)
+    def __init__(
+        self,
+        message: str,
+        second_bundle: SpendBundle,
+        second_bundle_without_fee: Optional[SpendBundle] = None,
+    ) -> None:
         self.second_bundle = second_bundle
         self.second_bundle_hex = bytes(second_bundle).hex()
+        self.second_bundle_without_fee = second_bundle_without_fee
+        if second_bundle_without_fee is not None and second_bundle_without_fee != second_bundle:
+            message += (
+                "\nStep 2 spend bundle without the fee (hex, retry with "
+                "`cic push_tx --spend-bundle <hex> --fee N` to attach a new fee): "
+                f"{bytes(second_bundle_without_fee).hex()}"
+            )
+        super().__init__(message)
 
 
 def _second_bundle_description(second_bundle: SpendBundle) -> str:
@@ -39,6 +51,7 @@ async def push_in_two_steps(
     second_bundle: SpendBundle,
     confirmation_timeout: float,
     poll_interval: float,
+    second_bundle_without_fee: Optional[SpendBundle] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Push a bundle in two steps.
 
@@ -52,7 +65,9 @@ async def push_in_two_steps(
 
     If step 1 is rejected, nothing is pushed and step 2 is not attempted.  If the
     wait times out or step 2 is rejected, the raised ``TwoStepPushError`` carries
-    the second bundle so it can be pushed later with ``cic push_tx``.
+    the second bundle so it can be pushed later with ``cic push_tx``.  When a fee
+    was attached, it also carries the step 2 bundle without that fee so a new
+    fee can be attached to a retry.
     """
     first_result = await node_client.push_tx(first_bundle)
     if not first_result.get("success"):
@@ -61,6 +76,7 @@ async def push_in_two_steps(
             f"{first_result.get('error')}. Step 2 was not attempted. "
             f"{_second_bundle_description(second_bundle)}",
             second_bundle,
+            second_bundle_without_fee,
         )
 
     coin_ids: List[bytes32] = []
@@ -82,6 +98,7 @@ async def push_in_two_steps(
                 f"{confirmation_timeout} seconds. The second part can be pushed later with `cic push_tx`. "
                 f"{_second_bundle_description(second_bundle)}",
                 second_bundle,
+                second_bundle_without_fee,
             )
         await asyncio.sleep(poll_interval)
 
@@ -92,6 +109,7 @@ async def push_in_two_steps(
             f"{second_result.get('error')}. The second part can be retried with `cic push_tx`. "
             f"{_second_bundle_description(second_bundle)}",
             second_bundle,
+            second_bundle_without_fee,
         )
 
     return first_result, second_result
@@ -105,30 +123,58 @@ async def run_two_step_push(
     confirmation_timeout: float,
     poll_interval: float,
 ) -> None:
-    """Push a bundle that needs a two-step push, linking any fee to its announcement spend."""
+    """Push a bundle that needs a two-step push, attaching a fee to both steps.
+
+    When ``fee`` is greater than zero, BOTH steps carry a fee transaction of
+    ``fee`` mojos each, so ``2 * fee`` mojos are paid in total.  The step that
+    contains the announcement spend binds its fee with an
+    ``AssertCoinAnnouncement``; the other step binds its fee with an
+    ``AssertConcurrentSpend`` on its first coin spend.
+    """
     two_step_bundles = split_two_step_push(push_bundle)
     first_bundle = two_step_bundles.first
     second_bundle = two_step_bundles.second
+    second_bundle_without_fee: Optional[SpendBundle] = None
 
     if fee > 0:
         # Find the announcement with the original last-match rule over the whole
-        # bundle, then put the fee transaction in the same step as the spend that
-        # emits it.  A lock level increase emits its only coin announcement from the
-        # lock coin completion spend, which is an ephemeral spend and therefore part
-        # of step 2.  Step 2 then carries the fee, so the fee assertion and the
-        # announcement are pushed atomically.  If step 2 has to be retried manually,
-        # the printed step 2 hex can be pushed again with `cic push_tx --fee N`,
-        # which attaches a fee in the ordinary single-push way.
+        # bundle.  The step that holds the announcement spend keeps the
+        # announcement binding; the other step gets an AssertConcurrentSpend on
+        # its first coin spend so its fee is pushed atomically with that step.
         fee_match = find_fee_announcement_and_spend(push_bundle)
         if fee_match is None:
             print("Cannot find a way to link fee to this transaction. Please specify 0 fee and try again.")
             return
         announcement_spend, fee_announcement = fee_match
-        fee_spend_bundle = await create_fee_spend_bundle(wallet_client, fee, fee_announcement)
-        if announcement_spend.coin.name() in {coin_spend.coin.name() for coin_spend in first_bundle.coin_spends}:
-            first_bundle = SpendBundle.aggregate([first_bundle, fee_spend_bundle])
-        else:
-            second_bundle = SpendBundle.aggregate([second_bundle, fee_spend_bundle])
+        second_bundle_without_fee = second_bundle
+
+        # The wallet is called with push=False, so it does not reserve the coins
+        # selected for a fee.  Build both fee bundles before pushing anything: a
+        # wallet failure then never leaves a half-pushed lock.  Build step 1's fee
+        # first and exclude its coins from step 2's fee, or the wallet would select
+        # the same coin for both and step 1 would make step 2 a double spend.
+        first_fee_condition = fee_condition_for_step(first_bundle, announcement_spend, fee_announcement)
+        first_fee_bundle = await create_fee_spend_bundle(wallet_client, fee, first_fee_condition)
+        first_fee_coin_ids = [coin_spend.coin.name() for coin_spend in first_fee_bundle.coin_spends]
+        second_fee_condition = fee_condition_for_step(second_bundle, announcement_spend, fee_announcement)
+        second_fee_bundle = await create_fee_spend_bundle(
+            wallet_client,
+            fee,
+            second_fee_condition,
+            excluded_coin_ids=first_fee_coin_ids,
+        )
+
+        second_fee_coin_ids = {coin_spend.coin.name() for coin_spend in second_fee_bundle.coin_spends}
+        overlapping_coin_ids = set(first_fee_coin_ids) & second_fee_coin_ids
+        if overlapping_coin_ids:
+            raise click.ClickException(
+                "The two fee transactions spend the same coin(s): "
+                f"{', '.join(sorted(coin_id.hex() for coin_id in overlapping_coin_ids))}. "
+                "Nothing was pushed; retry with a larger wallet balance or a different fee."
+            )
+
+        first_bundle = SpendBundle.aggregate([first_bundle, first_fee_bundle])
+        second_bundle = SpendBundle.aggregate([second_bundle, second_fee_bundle])
 
     # A lock level increase creates the lock coin and the new singleton coin inside the
     # same bundle.  Chia 2.7.5 rejects relative time conditions on such ephemeral spends,
@@ -145,6 +191,7 @@ async def run_two_step_push(
             second_bundle,
             confirmation_timeout,
             poll_interval,
+            second_bundle_without_fee,
         )
     except TwoStepPushError as error:
         raise click.ClickException(str(error))
