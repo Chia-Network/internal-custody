@@ -479,7 +479,6 @@ def get_rekey_clawback_spend_info(
     new_derivation: Optional[RootDerivation] = None,  # None means we're performing a lock
     additional_conditions: List[Program] = [],
 ) -> Tuple[SpendBundle, bytes]:
-
     timelock, new_puzzle_root, filter_puzzle, filter_proof, filter_solution, data_to_sign = calculate_rekey_args(
         rekey_coin,
         pubkeys,
@@ -522,7 +521,6 @@ def get_rekey_completion_spend(
     rekey_lineage: LineageProof,
     new_derivation: Optional[RootDerivation] = None,  # None means we're performing a lock
 ) -> SpendBundle:
-
     timelock, new_puzzle_root, _, _, _, _ = calculate_rekey_args(
         rekey_coin,
         pubkeys,
