@@ -413,7 +413,7 @@ def test_qr_output_round_trips(command_name: str) -> None:
                 "--db-path",
                 db_path,
                 "--pubkeys",
-                ",".join(launched.pubkey_files[0:4]),
+                keys_3,
             ]
 
         qr_result = runner.invoke(cli, base_args, input=command_input)

@@ -12,6 +12,7 @@ from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
 )
 
 from cic.cli.common import (
+    format_duration,
     get_additional_data,
     open_sync_store,
     load_pubkeys,
@@ -21,13 +22,48 @@ from cic.cli.common import (
 )
 from cic.cli.record_types import SingletonRecord
 from cic.drivers.prefarm import get_rekey_spend_info
-from cic.drivers.puzzle_root_construction import RootDerivation
+from cic.drivers.puzzle_root_construction import RootDerivation, derive_next_lock_level
 
 from chia_base.bls12_381 import BLSPublicKey, BLSSecretExponent
 from hsms.core.signing_hints import SumHint
 from hsms.core.unsigned_spend import UnsignedSpend
 from hsms.util.byte_chunks import chunks_for_zlib_blob
 from hsms.util.qrint_encoding import b2a_qrint
+
+
+def build_rekey_unsigned_spend(
+    current_singleton: SingletonRecord,
+    pubkey_list: List[G1Element],
+    derivation: RootDerivation,
+    new_derivation: Optional[RootDerivation],
+) -> UnsignedSpend:
+    """Build the unsigned rekey spend for the current singleton."""
+    fee_conditions: List[Program] = [Program.to([60, b""])]
+    singleton_bundle, _ = get_rekey_spend_info(
+        current_singleton.coin,
+        pubkey_list,
+        derivation,
+        current_singleton.lineage_proof,
+        new_derivation,
+        fee_conditions,
+    )
+
+    as_bls_pubkey_list = [BLSPublicKey(pk) for pk in pubkey_list]
+    aggregate_pubkey = G1Element()
+    for pubkey in pubkey_list:
+        aggregate_pubkey += pubkey
+    synth_sk = BLSSecretExponent(
+        PrivateKey.from_bytes(
+            calculate_synthetic_offset(aggregate_pubkey, DEFAULT_HIDDEN_PUZZLE_HASH).to_bytes(32, "big")
+        )
+    )
+    coin_spends = [to_hsm_coin_spend(cs) for cs in singleton_bundle.coin_spends]
+    return UnsignedSpend(
+        coin_spends,
+        [SumHint(as_bls_pubkey_list, synth_sk)],
+        [],
+        get_additional_data(),
+    )
 
 
 @click.command("start_rekey", short_help="Rekey the singleton to a new set of keys/options")
@@ -79,32 +115,13 @@ def start_rekey_cmd(
             if current_singleton is None:
                 raise RuntimeError("No singleton is found for this configuration.  Try `cic sync` then try again.")
             pubkey_list: List[G1Element] = list(load_pubkeys(pubkeys))
-            fee_conditions: List[Program] = [Program.to([60, b""])]
 
             # Get the spend bundle
-            singleton_bundle, data_to_sign = get_rekey_spend_info(
-                current_singleton.coin,
+            unsigned_spend = build_rekey_unsigned_spend(
+                current_singleton,
                 pubkey_list,
                 derivation,
-                current_singleton.lineage_proof,
                 new_derivation,
-                fee_conditions,
-            )
-
-            # Cast everything into HSM types
-            as_bls_pubkey_list = [BLSPublicKey(pk) for pk in pubkey_list]
-            agg_pk = sum(as_bls_pubkey_list, start=BLSPublicKey.zero())
-            synth_sk = BLSSecretExponent(
-                PrivateKey.from_bytes(
-                    calculate_synthetic_offset(agg_pk, DEFAULT_HIDDEN_PUZZLE_HASH).to_bytes(32, "big")
-                )
-            )
-            coin_spends = [to_hsm_coin_spend(cs) for cs in singleton_bundle.coin_spends]
-            unsigned_spend = UnsignedSpend(
-                coin_spends,
-                [SumHint(as_bls_pubkey_list, synth_sk)],
-                [],
-                get_additional_data(),
             )
 
             # Print the result
@@ -153,36 +170,48 @@ def increase_cmd(
             if current_singleton is None:
                 raise RuntimeError("No singleton is found for this configuration.  Try `cic sync` then try again.")
             pubkey_list: List[G1Element] = list(load_pubkeys(pubkeys))
-            fee_conditions: List[Program] = [Program.to([60, b""])]
 
-            # Validate we have enough pubkeys
-            if len(pubkey_list) < derivation.required_pubkeys + 1:
-                print("Not enough keys to increase the security level")
-                return
+            if derivation.next_root is None:
+                raise click.ClickException("already at maximum lock level")
+
+            # Validate we have exactly the current number of required pubkeys
+            if len(pubkey_list) != derivation.required_pubkeys:
+                raise click.ClickException(
+                    f"A lock level increase is signed by exactly {derivation.required_pubkeys} keys "
+                    f"(the current lock level); you passed {len(pubkey_list)}."
+                )
+
+            try:
+                new_derivation = derive_next_lock_level(derivation)
+            except ValueError as error:
+                raise click.ClickException(str(error)) from error
 
             # Create the spend
-            lock_bundle, data_to_sign = get_rekey_spend_info(
-                current_singleton.coin,
+            unsigned_spend = build_rekey_unsigned_spend(
+                current_singleton,
                 pubkey_list,
                 derivation,
-                current_singleton.lineage_proof,
-                additional_conditions=fee_conditions,
+                new_derivation,
             )
 
-            as_bls_pubkey_list = [BLSPublicKey(pk) for pk in pubkey_list]
-            coin_spends = [to_hsm_coin_spend(cs) for cs in lock_bundle.coin_spends]
-            unsigned_spend = UnsignedSpend(
-                coin_spends,
-                [SumHint(as_bls_pubkey_list, BLSSecretExponent.zero())],
-                [],
-                get_additional_data(),
+            rekey_increments = derivation.prefarm_info.rekey_increments
+            rekey_clawback_period = derivation.prefarm_info.rekey_clawback_period
+            explanation = (
+                f"Rekey to lock level {derivation.required_pubkeys + 1} of {derivation.maximum_pubkeys}. "
+                f"It can be pushed once the singleton has not been spent for {rekey_increments} "
+                f"({format_duration(rekey_increments)}), and completed with cic complete "
+                f"{rekey_clawback_period} ({format_duration(rekey_clawback_period)}) after it confirms. "
+                "It can be cancelled with cic clawback until it is completed. "
+                "cic sync updates the configuration afterwards."
             )
 
             if filename is not None:
                 write_unsigned_spend(filename, unsigned_spend)
+                print(explanation)
                 print(f"Successfully wrote spend to {filename}")
             else:
                 for chunk in chunks_for_zlib_blob(bytes(unsigned_spend), 255):
                     print(str(b2a_qrint(chunk)))
+                click.echo(explanation, err=True)
 
     asyncio.run(do_command())

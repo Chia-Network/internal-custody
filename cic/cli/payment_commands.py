@@ -262,6 +262,14 @@ def clawback_cmd(
             achs: List[ACHRecord] = await sync_store.get_ach_records(include_completed_coins=False)
             rekeys: List[RekeyRecord] = await sync_store.get_rekey_records(include_completed_coins=False)
 
+            for rekey in rekeys:
+                if rekey.timelock == 0:
+                    print(
+                        "Skipping lock level increase coin (timelock 0) from "
+                        f"{rekey.from_root}: not supported by this version of cic."
+                    )
+            rekeys = [rekey for rekey in rekeys if rekey.timelock != 0]
+
             # Prompt the user for the action to cancel
             if len(achs) == 0 and len(rekeys) == 0:
                 print("No actions outstanding")
@@ -275,7 +283,13 @@ def clawback_cmd(
                 selectable_records[index] = ach
                 index += 1
             for rekey in rekeys:
-                print(f"{index}) REKEY from {rekey.from_root} to {rekey.to_root}")
+                if rekey.to_root == derivation.next_root:
+                    print(
+                        f"{index}) LOCK LEVEL INCREASE to {derivation.required_pubkeys + 1} "
+                        f"of {derivation.maximum_pubkeys} (REKEY from {rekey.from_root} to {rekey.to_root})"
+                    )
+                else:
+                    print(f"{index}) REKEY from {rekey.from_root} to {rekey.to_root}")
                 selectable_records[index] = rekey
                 index += 1
             selected_action = int(input("(Enter index of action to cancel): "))
@@ -379,6 +393,14 @@ def complete_cmd(
             achs: List[ACHRecord] = await sync_store.get_ach_records(include_completed_coins=False)
             rekeys: List[RekeyRecord] = await sync_store.get_rekey_records(include_completed_coins=False)
 
+            for rekey in rekeys:
+                if rekey.timelock == 0:
+                    print(
+                        "Skipping lock level increase coin (timelock 0) from "
+                        f"{rekey.from_root}: not supported by this version of cic."
+                    )
+            rekeys = [rekey for rekey in rekeys if rekey.timelock != 0]
+
             # Prompt the user for the action to complete
             if len(achs) == 0 and len(rekeys) == 0:
                 print("No actions outstanding")
@@ -397,15 +419,17 @@ def complete_cmd(
                 print(f"{prefix} PAYMENT to {encode_puzzle_hash(ach.p2_ph, 'xch')} of amount {ach.coin.amount}")
 
             for rekey in rekeys:
-                is_lock = rekey.timelock == 0
-                if is_lock or rekey.confirmed_at_time + derivation.prefarm_info.rekey_clawback_period < time.time():
+                if rekey.confirmed_at_time + derivation.prefarm_info.rekey_clawback_period < time.time():
                     prefix = f"{index})"
                     selectable_records[index] = rekey
                     index += 1
                 else:
                     prefix = "-)"
-                if is_lock:
-                    print(f"{prefix} LOCK LEVEL INCREASE from {rekey.from_root} (step 2 pending)")
+                if rekey.to_root == derivation.next_root:
+                    print(
+                        f"{prefix} LOCK LEVEL INCREASE to {derivation.required_pubkeys + 1} "
+                        f"of {derivation.maximum_pubkeys} (REKEY from {rekey.from_root} to {rekey.to_root})"
+                    )
                 else:
                     print(f"{prefix} REKEY from {rekey.from_root} to {rekey.to_root}")
             if index == 1:

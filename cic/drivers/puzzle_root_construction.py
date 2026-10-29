@@ -95,6 +95,29 @@ def get_all_aggregate_pubkey_combinations(pubkey_list: List[G1Element], m: int) 
     return aggregated_pubkeys
 
 
+def derive_next_lock_level(derivation: RootDerivation) -> RootDerivation:
+    """Return the derivation for the next lock level.
+
+    Uses the same pubkey list as ``derivation`` with one more required key.  Raises
+    ``ValueError`` when there is no next level or when the derived root does not match
+    ``derivation.next_root``.
+    """
+    if derivation.next_root is None:
+        raise ValueError("already at maximum lock level")
+    next_derivation = calculate_puzzle_root(
+        derivation.prefarm_info,
+        derivation.pubkey_list,
+        uint32(derivation.required_pubkeys + 1),
+        derivation.maximum_pubkeys,
+        derivation.minimum_pubkeys,
+    )
+    if next_derivation.prefarm_info.puzzle_root != derivation.next_root:
+        raise ValueError(
+            "The derived next lock level root does not match the configured next root. Run `cic sync` and try again."
+        )
+    return next_derivation
+
+
 def construct_lock_puzzle(pubkey: G1Element, prefarm_info: PrefarmInfo, next_root: bytes32) -> Program:
     return P2_NEW_LOCK_LEVEL.curry(
         pubkey,

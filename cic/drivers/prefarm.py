@@ -293,6 +293,11 @@ def calculate_rekey_args(
     new_derivation: Optional[RootDerivation] = None,  # None means this is a lock level increase
     additional_conditions: List[Program] = [],
 ) -> Tuple[uint8, bytes32, Program, Program, Program, bytes]:
+    """Calculate the arguments shared by the rekey spends.
+
+    ``new_derivation=None`` builds the one-bundle lock level increase, which the CLI
+    does not use.
+    """
     agg_pk = G1Element()
     for pk in pubkeys:
         agg_pk += pk
@@ -384,6 +389,11 @@ def get_rekey_spend_info(
     new_derivation: Optional[RootDerivation] = None,  # None means this is a lock level increase
     additional_conditions: List[Program] = [],
 ) -> Tuple[SpendBundle, bytes]:
+    """Build the spend that starts a rekey.
+
+    ``new_derivation=None`` builds the one-bundle lock level increase, which the CLI
+    does not use.
+    """
     assert len(pubkeys) > 0
 
     timelock, new_puzzle_root, filter_puzzle, filter_proof, filter_solution, data_to_sign = calculate_rekey_args(
@@ -521,6 +531,11 @@ def get_rekey_completion_spend(
     rekey_lineage: LineageProof,
     new_derivation: Optional[RootDerivation] = None,  # None means we're performing a lock
 ) -> SpendBundle:
+    """Build the spend that completes a rekey.
+
+    ``new_derivation=None`` builds the one-bundle lock level increase, which the CLI
+    does not use.
+    """
     timelock, new_puzzle_root, _, _, _, _ = calculate_rekey_args(
         rekey_coin,
         pubkeys,

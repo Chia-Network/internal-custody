@@ -110,8 +110,6 @@ BASELINE_PARAMS: Dict[str, Tuple[Tuple[Any, ...], ...]] = {
         ("fingerprint", ("--fingerprint", "-f"), (), None, False, False, False, "integer", 1),
         ("node_rpc_port", ("--node-rpc-port", "-np"), (), None, False, False, False, "integer", 1),
         ("fee", ("--fee", "-m"), (), 0, False, False, False, "integer", 1),
-        ("confirmation_timeout", ("--confirmation-timeout",), (), 900, False, False, False, "float", 1),
-        ("poll_interval", ("--poll-interval",), (), 10, False, False, False, "float", 1),
     ),
     "show": (
         ("db_path", ("--db-path", "-db"), (), "./", True, False, False, "text", 1),

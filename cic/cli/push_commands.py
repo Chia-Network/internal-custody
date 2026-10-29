@@ -15,8 +15,6 @@ from cic.cli.fees import (
     create_fee_spend_bundle,
     find_fee_announcement,
 )
-from cic.cli.two_step_push import run_two_step_push
-from cic.drivers.two_step_push import needs_two_step_push
 
 
 @click.command("push_tx", short_help="Push a signed spend bundle to the network")
@@ -44,26 +42,9 @@ from cic.drivers.two_step_push import needs_two_step_push
 @click.option(
     "-m",
     "--fee",
-    help=(
-        "Fee in mojos attached to each push. A two-step push (lock level increase) attaches this fee "
-        "to BOTH steps, so it pays 2 * N mojos in total."
-    ),
+    help="Fee in mojos attached to the push.",
     type=int,
     default=0,
-)
-@click.option(
-    "--confirmation-timeout",
-    help="Seconds to wait for step 1 confirmations when the bundle must be pushed in two steps",
-    type=float,
-    default=900,
-    show_default=True,
-)
-@click.option(
-    "--poll-interval",
-    help="Seconds between confirmation checks when the bundle must be pushed in two steps",
-    type=float,
-    default=10,
-    show_default=True,
 )
 def push_cmd(
     spend_bundle: str,
@@ -71,8 +52,6 @@ def push_cmd(
     fingerprint: Optional[int],
     node_rpc_port: Optional[int],
     fee: int,
-    confirmation_timeout: float,
-    poll_interval: float,
 ):
     async def do_command():
         try:
@@ -99,32 +78,22 @@ def push_cmd(
                         "Push it without --fee (or use --fee 0), or use the fee-less hex."
                     )
 
-            if needs_two_step_push(push_bundle):
-                await run_two_step_push(
-                    node_client,
-                    wallet_client,
-                    push_bundle,
-                    fee,
-                    confirmation_timeout,
-                    poll_interval,
-                )
-            else:
-                spends: List[SpendBundle] = [push_bundle]
+            spends: List[SpendBundle] = [push_bundle]
 
-                if fee > 0:
-                    fee_announcement = find_fee_announcement(push_bundle)
-                    if fee_announcement is None:
-                        raise click.ClickException(CANNOT_LINK_FEE_MESSAGE)
-                    try:
-                        spends.append(await create_fee_spend_bundle(wallet_client, fee, fee_announcement))
-                    except FeeSpendError as error:
-                        raise click.ClickException(
-                            f"Could not create the fee transaction: {error}. Nothing was pushed. "
-                            "Make sure the wallet has a spendable balance of at least the fee, or use --fee 0."
-                        ) from error
+            if fee > 0:
+                fee_announcement = find_fee_announcement(push_bundle)
+                if fee_announcement is None:
+                    raise click.ClickException(CANNOT_LINK_FEE_MESSAGE)
+                try:
+                    spends.append(await create_fee_spend_bundle(wallet_client, fee, fee_announcement))
+                except FeeSpendError as error:
+                    raise click.ClickException(
+                        f"Could not create the fee transaction: {error}. Nothing was pushed. "
+                        "Make sure the wallet has a spendable balance of at least the fee, or use --fee 0."
+                    ) from error
 
-                result = await node_client.push_tx(SpendBundle.aggregate(spends))
-                print(result)
+            result = await node_client.push_tx(SpendBundle.aggregate(spends))
+            print(result)
 
         finally:
             node_client.close()

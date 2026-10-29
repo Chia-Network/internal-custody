@@ -633,6 +633,34 @@ def test_init(monkeypatch):
         monkeypatch.setattr(FullNodeClientMock, "push_tx", record_push_tx)
         monkeypatch.setattr(WalletClientMock, "create_signed_transactions", record_create_signed_transactions)
 
+        # Complete the pending payment before the lock level increase
+        result = runner.invoke(
+            cli,
+            ["complete", "--filename", spend_bundle_out_path, "--db-path", sync_db_path],
+            input="1\n",
+        )
+        with open(spend_bundle_out_path, "r") as file:
+            completion_bundle = SpendBundle.from_bytes(bytes.fromhex(file.read()))
+        result = runner.invoke(
+            cli,
+            ["push_tx", "--spend-bundle", bytes(completion_bundle).hex(), "--fee", 100],
+        )
+        assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
+        result = runner.invoke(cli, ["sync", "--db-path", sync_db_path])
+
+        async def check_for_completed_payment() -> None:
+            sync_store = await SyncStore.create(sync_db_path)
+            try:
+                records = await sync_store.get_ach_records(include_completed_coins=True)
+                assert len(records) == 1
+                assert records[0].completed
+            finally:
+                await sync_store.db_wrapper.close()
+
+        asyncio.run(check_for_completed_payment())
+        pushed_bundles.clear()
+        fee_bundles.clear()
+
         # Try a lock level increase
         result = runner.invoke(
             cli,
@@ -643,39 +671,39 @@ def test_init(monkeypatch):
                 "--db-path",
                 sync_db_path,
                 "--pubkeys",
-                ",".join(pubkey_files[0:4]),
+                ",".join(pubkey_files[0:3]),
             ],
         )
+        assert result.exit_code == 0
+        output_lines = [line for line in result.output.splitlines() if line]
+        assert any(line.startswith("Rekey to lock level 4 of 5.") for line in output_lines)
+        assert output_lines[-1].startswith("Successfully wrote spend to")
 
         # Do a little bit of a signing cermony
         lock_bundle = read_unsigned_spend(spend_bundle_out_path)
         sigs: List[BLSSignature] = [
             si.signature
-            for si in sign(lock_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 4)])
+            for si in sign(lock_bundle, [BLSSecretExponent(secret_key_for_index(key)) for key in range(0, 3)])
         ]
         _hsms_bundle = create_spend_bundle(lock_bundle, sigs)
         signed_lock_bundle = SpendBundle.from_bytes(to_bytes(_hsms_bundle))  # gotta convert from the hsms here
 
+        async def fast_forward_lock_increase():
+            async with SpendSim.managed(Path("./sim.db")) as sim:
+                sim.pass_time(prefarm_info.rekey_increments)
+                await sim.farm_block()
+
+        asyncio.run(fast_forward_lock_increase())
+
         # Push the tx
         result = runner.invoke(
             cli,
-            [
-                "push_tx",
-                "--spend-bundle",
-                bytes(signed_lock_bundle).hex(),
-                "--fee",
-                100,
-            ],
+            ["push_tx", "--spend-bundle", bytes(signed_lock_bundle).hex(), "--fee", 100],
         )
-        assert "This spend bundle must be pushed in two steps." in result.output
-        assert "Step 1: non-ephemeral spends" in result.output
-        assert "Step 2: ephemeral spends" in result.output
-        assert result.output.count(r"{'success': True, 'status': 'SUCCESS'}") == 2
-
-        # Both steps carry a fee.  Step 2's fee is still linked to the lock coin
-        # completion announcement; step 1's fee is linked to step 1's first spend.
-        assert len(pushed_bundles) == 2
-        assert len(fee_bundles) == 2
+        assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
+        assert "Step" not in result.output
+        assert len(pushed_bundles) == 1
+        assert len(fee_bundles) == 1
 
         def _coin_ids(bundle: SpendBundle) -> set:
             return {coin_spend.coin.name() for coin_spend in bundle.coin_spends}
@@ -689,16 +717,6 @@ def test_init(monkeypatch):
                 all_conditions.extend(conditions.as_python())
             return all_conditions
 
-        def _bundle_with_fee(fee_bundle: SpendBundle) -> SpendBundle:
-            fee_coin_ids = _coin_ids(fee_bundle)
-            matching = [bundle for bundle in pushed_bundles if fee_coin_ids <= _coin_ids(bundle)]
-            assert len(matching) == 1
-            return matching[0]
-
-        step_one_bundle = _bundle_with_fee(fee_bundles[0])
-        step_two_bundle = _bundle_with_fee(fee_bundles[1])
-        assert step_one_bundle != step_two_bundle
-
         announcement = find_fee_announcement(signed_lock_bundle)
         assert announcement is not None
         assert announcement.asserted_id is not None
@@ -708,37 +726,26 @@ def test_init(monkeypatch):
         assert any(
             condition[0] == ConditionOpcode.ASSERT_COIN_ANNOUNCEMENT.value
             and bytes32(condition[1]) == expected_announcement_id
-            for condition in _fee_conditions(fee_bundles[1])
-        )
-        assert announcement.asserted_id in _coin_ids(step_two_bundle)
-
-        assert any(
-            condition[0] == ConditionOpcode.ASSERT_CONCURRENT_SPEND.value
-            and bytes32(condition[1]) == step_one_bundle.coin_spends[0].coin.name()
             for condition in _fee_conditions(fee_bundles[0])
         )
+        assert announcement.asserted_id in _coin_ids(pushed_bundles[0])
 
+        async def fast_forward_lock_completion():
+            async with SpendSim.managed(Path("./sim.db")) as sim:
+                sim.pass_time(prefarm_info.rekey_clawback_period)
+                await sim.farm_block()
+
+        asyncio.run(fast_forward_lock_completion())
+
+        result = runner.invoke(cli, ["sync", "--db-path", sync_db_path])
+
+        # Try completing the lock level increase after a rekey
         result = runner.invoke(
             cli,
-            [
-                "sync",
-                "--db-path",
-                sync_db_path,
-            ],
-        )
-
-        # Try completing the payment after a rekey
-        result = runner.invoke(
-            cli,
-            [
-                "complete",
-                "--filename",
-                spend_bundle_out_path,
-                "--db-path",
-                sync_db_path,
-            ],
+            ["complete", "--filename", spend_bundle_out_path, "--db-path", sync_db_path],
             input="1\n",
         )
+        assert "LOCK LEVEL INCREASE to 4 of 5" in result.output
 
         with open(spend_bundle_out_path, "r") as file:
             completion_bundle = SpendBundle.from_bytes(bytes.fromhex(file.read()))
@@ -746,36 +753,22 @@ def test_init(monkeypatch):
         # Push the tx
         result = runner.invoke(
             cli,
-            [
-                "push_tx",
-                "--spend-bundle",
-                bytes(completion_bundle).hex(),
-                "--fee",
-                100,
-            ],
+            ["push_tx", "--spend-bundle", bytes(completion_bundle).hex(), "--fee", 100],
         )
         assert r"{'success': True, 'status': 'SUCCESS'}" in result.output
 
         # Sync up
-        result = runner.invoke(
-            cli,
-            [
-                "sync",
-                "--db-path",
-                sync_db_path,
-            ],
-        )
+        result = runner.invoke(cli, ["sync", "--db-path", sync_db_path])
 
-        async def check_for_spent_completion_again():
+        async def check_for_lock_level_four() -> uint32:
             sync_store = await SyncStore.create(sync_db_path)
             try:
-                records = await sync_store.get_ach_records(include_completed_coins=True)
-                assert len(records) == 1
-                assert records[0].completed
+                current_derivation = await sync_store.get_configuration(False, block_outdated=False)
+                return current_derivation.required_pubkeys
             finally:
                 await sync_store.db_wrapper.close()
 
-        asyncio.run(check_for_spent_completion_again())
+        assert asyncio.run(check_for_lock_level_four()) == uint32(4)
 
         # Try a slow rekey
         async def fast_forward_slow_rekey():
