@@ -13,6 +13,8 @@ If you're on Windows, you need one extra package:
 
 `pip install pyreadline`
 
+Supported Python: 3.10-3.14 (matches chia-blockchain 2.7.5).
+
 ## Key Generation
 ```
 hsmgen > 1.se

@@ -21,13 +21,12 @@ from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
 
 from cic.cli.common import (
     get_additional_data,
-    load_db,
+    open_sync_store,
     load_pubkeys,
     to_hsm_coin_spend,
     write_unsigned_spend,
 )
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
-from cic.cli.sync_store import SyncStore
 from cic.cli.rekey_completion import get_rekey_completion_bundle
 from cic.drivers.prefarm import (
     get_withdrawal_spend_info,
@@ -111,8 +110,7 @@ def payments_cmd(
         raise ValueError("You can not make payments of an odd amount")
 
     async def do_command():
-        sync_store: SyncStore = await load_db(db_path)
-        try:
+        async with open_sync_store(db_path) as sync_store:
             derivation = await sync_store.get_configuration(False, block_outdated=True)
             # Collect some relevant information
             current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
@@ -171,10 +169,8 @@ def payments_cmd(
             else:
                 for chunk in chunks_for_zlib_blob(bytes(unsigned_spend), 255):
                     print(str(b2a_qrint(chunk)))
-        finally:
-            await sync_store.db_wrapper.close()
 
-    asyncio.get_event_loop().run_until_complete(do_command())
+    asyncio.run(do_command())
 
 
 @click.command("clawback", short_help="Clawback a withdrawal or rekey attempt (will be prompted which one)")
@@ -203,9 +199,7 @@ def clawback_cmd(
     filename: Optional[str],
 ):
     async def do_command():
-        sync_store: SyncStore = await load_db(db_path)
-
-        try:
+        async with open_sync_store(db_path) as sync_store:
             derivation = await sync_store.get_configuration(False, block_outdated=True)
 
             achs: List[ACHRecord] = await sync_store.get_ach_records(include_completed_coins=False)
@@ -299,10 +293,8 @@ def clawback_cmd(
             else:
                 for chunk in chunks_for_zlib_blob(bytes(unsigned_spend), 255):
                     print(str(b2a_qrint(chunk)))
-        finally:
-            await sync_store.db_wrapper.close()
 
-    asyncio.get_event_loop().run_until_complete(do_command())
+    asyncio.run(do_command())
 
 
 @click.command("complete", short_help="Complete a withdrawal or rekey attempt (will be prompted which one)")
@@ -324,9 +316,7 @@ def complete_cmd(
     filename: Optional[str],
 ):
     async def do_command():
-        sync_store: SyncStore = await load_db(db_path)
-
-        try:
+        async with open_sync_store(db_path) as sync_store:
             derivation = await sync_store.get_configuration(False, block_outdated=True)
 
             achs: List[ACHRecord] = await sync_store.get_ach_records(include_completed_coins=False)
@@ -405,7 +395,5 @@ def complete_cmd(
                 print(f"Successfully wrote spend to {filename}")
             else:
                 print(bytes(completion_bundle).hex())
-        finally:
-            await sync_store.db_wrapper.close()
 
-    asyncio.get_event_loop().run_until_complete(do_command())
+    asyncio.run(do_command())

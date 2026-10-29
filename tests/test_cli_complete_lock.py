@@ -82,7 +82,7 @@ def test_complete_pending_lock_after_step_1_only():
             finally:
                 await sync_store.db_wrapper.close()
 
-        asyncio.get_event_loop().run_until_complete(check_completed())
+        asyncio.run(check_completed())
 
 
 def test_complete_selects_lock_before_clawback_period(monkeypatch):
@@ -124,7 +124,7 @@ def test_complete_still_lists_normal_rekey_with_clawback_wait(monkeypatch):
                 sim.pass_time(setup.prefarm_info.rekey_increments * 2 + setup.prefarm_info.slow_rekey_timelock)
                 await sim.farm_block()
 
-        asyncio.get_event_loop().run_until_complete(fast_forward())
+        asyncio.run(fast_forward())
 
         bundle_path = "./rekey_bundle"
         result = runner.invoke(

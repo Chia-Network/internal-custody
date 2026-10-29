@@ -132,4 +132,4 @@ def push_cmd(
             await node_client.await_closed()
             await wallet_client.await_closed()
 
-    asyncio.get_event_loop().run_until_complete(do_command())
+    asyncio.run(do_command())

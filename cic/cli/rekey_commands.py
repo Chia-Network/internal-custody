@@ -13,14 +13,13 @@ from chia.wallet.puzzles.p2_delegated_puzzle_or_hidden_puzzle import (
 
 from cic.cli.common import (
     get_additional_data,
-    load_db,
+    open_sync_store,
     load_pubkeys,
     load_root_derivation,
     to_hsm_coin_spend,
     write_unsigned_spend,
 )
 from cic.cli.record_types import SingletonRecord
-from cic.cli.sync_store import SyncStore
 from cic.drivers.prefarm import get_rekey_spend_info
 from cic.drivers.puzzle_root_construction import RootDerivation
 
@@ -64,9 +63,7 @@ def start_rekey_cmd(
     filename: Optional[str],
 ):
     async def do_command():
-        sync_store: SyncStore = await load_db(db_path)
-
-        try:
+        async with open_sync_store(db_path) as sync_store:
             derivation = await sync_store.get_configuration(False, block_outdated=True)
             new_derivation: RootDerivation = load_root_derivation(new_configuration)
 
@@ -117,10 +114,8 @@ def start_rekey_cmd(
             else:
                 for chunk in chunks_for_zlib_blob(bytes(unsigned_spend), 255):
                     print(str(b2a_qrint(chunk)))
-        finally:
-            await sync_store.db_wrapper.close()
 
-    asyncio.get_event_loop().run_until_complete(do_command())
+    asyncio.run(do_command())
 
 
 @click.command(
@@ -151,8 +146,7 @@ def increase_cmd(
     filename: Optional[str],
 ):
     async def do_command():
-        sync_store: SyncStore = await load_db(db_path)
-        try:
+        async with open_sync_store(db_path) as sync_store:
             derivation = await sync_store.get_configuration(False, block_outdated=True)
 
             current_singleton: Optional[SingletonRecord] = await sync_store.get_latest_singleton()
@@ -190,7 +184,5 @@ def increase_cmd(
             else:
                 for chunk in chunks_for_zlib_blob(bytes(unsigned_spend), 255):
                     print(str(b2a_qrint(chunk)))
-        finally:
-            await sync_store.db_wrapper.close()
 
-    asyncio.get_event_loop().run_until_complete(do_command())
+    asyncio.run(do_command())
