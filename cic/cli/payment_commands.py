@@ -4,12 +4,13 @@ import math
 import time
 
 from operator import attrgetter
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import click
 
 from chia.types.blockchain_format.coin import Coin
 from chia.types.blockchain_format.program import Program
+from chia.types.coin_spend import CoinSpend
 from chia_rs import PrivateKey, G1Element
 from chia_rs.sized_bytes import bytes32
 from chia_rs.sized_ints import uint8, uint32, uint64
@@ -27,6 +28,7 @@ from cic.cli.common import (
     write_unsigned_spend,
 )
 from cic.cli.record_types import SingletonRecord, ACHRecord, RekeyRecord
+from cic.cli.payment_series import advance_through_previous_payments, load_previous_spend
 from cic.cli.rekey_completion import get_rekey_completion_bundle
 from cic.drivers.prefarm import (
     get_withdrawal_spend_info,
@@ -95,6 +97,16 @@ from hsms.util.qrint_encoding import b2a_qrint
     default=1000000000000,
     show_default=True,
 )
+@click.option(
+    "-ps",
+    "--previous-spends",
+    help=(
+        "A comma separated list of previously generated spend files (unsigned or signed), in the order they will "
+        "be pushed, that this spend follows. The spend is built against the singleton as it will be after they are "
+        "confirmed."
+    ),
+    default=None,
+)
 def payments_cmd(
     db_path: str,
     pubkeys: str,
@@ -104,6 +116,7 @@ def payments_cmd(
     maximum_extra_cost: Optional[int],
     amount_threshold: int,
     filename: Optional[str],
+    previous_spends: Optional[str],
 ):
     # Check to make sure we've been given a correct set of parameters
     if amount % 2 == 1:
@@ -120,12 +133,56 @@ def payments_cmd(
             clawforward_ph: bytes32 = decode_puzzle_hash(recipient_address)
             fee_conditions: List[Program] = [Program.to([60, b""])]
 
+            current_coin: Coin = current_singleton.coin
+            current_lineage_proof = current_singleton.lineage_proof
+            absorbed_from_previous: Set[bytes32] = set()
+            previous_entries: List[Tuple[str, List[CoinSpend]]] = []
+            if previous_spends is not None and previous_spends.strip() != "":
+                previous_names: List[str] = [name.strip() for name in previous_spends.split(",")]
+                for position, name in enumerate(previous_names, start=1):
+                    if name == "":
+                        raise ValueError(f"Previous spend list entry {position} is empty; remove it and try again")
+                for name in previous_names:
+                    try:
+                        coin_spends = load_previous_spend(name)
+                    except OSError as error:
+                        raise ValueError(
+                            f"Cannot read previous spend file {name}: {error.strerror or error}"
+                        ) from error
+                    except ValueError as error:
+                        raise ValueError(f"Cannot read previous spend file {name}: {error}") from error
+                    previous_entries.append((name, coin_spends))
+                current_coin, current_lineage_proof, absorbed_from_previous = advance_through_previous_payments(
+                    current_singleton.coin,
+                    current_singleton.lineage_proof,
+                    derivation,
+                    previous_entries,
+                )
+                click.echo(
+                    f"This spend is only valid after the {len(previous_entries)} previous spend(s) are confirmed, "
+                    "in order. Each payment can be pushed no sooner than "
+                    f"{derivation.prefarm_info.withdrawal_timelock} seconds after the previous one confirms. "
+                    "Any other spend of the singleton in between invalidates this file; regenerate it.",
+                    err=True,
+                )
+
             # Get any p2_singletons to spend
             if absorb_available_payments:
                 max_num: Optional[uint32] = (
                     (uint32(0), uint32(math.floor(maximum_extra_cost / 10))) if maximum_extra_cost is not None else None
                 )
-                p2_singletons: List[Coin] = await sync_store.get_p2_singletons(amount_threshold, start_end=max_num)
+                fetch_max_num: Optional[Tuple[uint32, uint32]] = max_num
+                if max_num is not None and absorbed_from_previous:
+                    start, end = max_num
+                    fetch_max_num = (start, uint32(end + len(absorbed_from_previous)))
+                p2_singletons: List[Coin] = await sync_store.get_p2_singletons(
+                    amount_threshold, start_end=fetch_max_num
+                )
+                if absorbed_from_previous:
+                    p2_singletons = [c for c in p2_singletons if c.name() not in absorbed_from_previous]
+                    if max_num is not None:
+                        start, end = max_num
+                        p2_singletons = p2_singletons[: end - start]
                 if sum(c.amount for c in p2_singletons) % 2 == 1:
                     smallest_odd_coin: Coin = sorted(
                         [c for c in p2_singletons if c.amount % 2 == 1], key=attrgetter("amount")
@@ -136,10 +193,10 @@ def payments_cmd(
 
             # Get the spend bundle
             singleton_bundle, data_to_sign = get_withdrawal_spend_info(
-                current_singleton.coin,
+                current_coin,
                 pubkey_list,
                 derivation,
-                current_singleton.lineage_proof,
+                current_lineage_proof,
                 amount,
                 clawforward_ph,
                 p2_singletons_to_claim=p2_singletons,
