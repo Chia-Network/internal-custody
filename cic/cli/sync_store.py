@@ -319,6 +319,10 @@ class SyncStore:
             launcher_id = configuration.launcher_id
         elif isinstance(configuration, RootDerivation):
             launcher_id = configuration.prefarm_info.launcher_id
+        else:
+            raise TypeError(
+                f"Configuration must be a PrefarmInfo or a RootDerivation; got {type(configuration).__name__}."
+            )
         async with self.db_wrapper.writer_maybe_transaction() as conn:
             cursor = await conn.execute(
                 "INSERT OR REPLACE INTO configuration_info VALUES(?, ?, ?)",
