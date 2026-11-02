@@ -34,6 +34,7 @@ from cic.drivers.puzzle_root_construction import calculate_puzzle_root
 from chia_base.atoms import bytes32 as HSMbytes32
 from chia_base.bls12_381 import BLSPublicKey
 from chia_base.core import CoinSpend as HSMCoinSpend
+from hsms.util.byte_chunks import chunks_for_zlib_blob
 from hsms.util.qrint_encoding import b2a_qrint
 
 
@@ -189,7 +190,7 @@ def examine_cmd(
     # Transform the bundle in qr codes and then inline them in a div
     all_qr_divs = ""
     normal_qr_width: Optional[float] = None
-    for segment in bundle.chunk(qr_density):
+    for segment in chunks_for_zlib_blob(bytes(bundle), qr_density):
         qr_int = b2a_qrint(segment)
         qr = segno.make_qr(qr_int)
         if len(segment) == qr_density or normal_qr_width is None:
